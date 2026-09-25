@@ -16,7 +16,6 @@ pub mod schedules;
 pub mod sparkline;
 pub mod style;
 
-use bevy::asset::embedded_asset;
 use bevy::prelude::*;
 
 /// Registers the debugger's shared rendering and the Diagnostics view.
@@ -24,11 +23,7 @@ pub struct RemoteDebugPlugin;
 
 impl Plugin for RemoteDebugPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/sparkline.wgsl");
-        embedded_asset!(app, "shaders/graph_edge.wgsl");
 
-        app.add_plugins(UiMaterialPlugin::<sparkline::SparklineMaterial>::default());
-        app.add_plugins(UiMaterialPlugin::<graph::GraphEdgeMaterial>::default());
         app.add_plugins(poll::BrpPollPlugin::<diagnostics::DiagnosticsSample>::new(
             "jackdaw/diagnostics",
             0.25,

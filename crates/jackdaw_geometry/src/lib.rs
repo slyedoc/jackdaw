@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "render")]
-use bevy::prelude::{Handle, StandardMaterial};
+use bevy::prelude::Handle;
 #[cfg(feature = "reflect")]
 use bevy::prelude::{Reflect, ReflectDefault};
 use glam::{Quat, Vec2, Vec3};
+#[cfg(feature = "render")]
+use bevy_aurora::material::AuroraMaterial;
 
 pub mod mirror;
 pub use mirror::{
@@ -49,7 +51,7 @@ pub const EPSILON: f32 = 1e-4;
 /// string. Defined once here so every consumer (including `jackdaw_csg`) agrees
 /// on the type and materials round-trip through CSG in every feature combo.
 #[cfg(feature = "render")]
-pub type FaceMaterial = Handle<StandardMaterial>;
+pub type FaceMaterial = Handle<AuroraMaterial>;
 #[cfg(not(feature = "render"))]
 pub type FaceMaterial = String;
 

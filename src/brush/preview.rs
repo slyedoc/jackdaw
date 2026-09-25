@@ -12,6 +12,7 @@ use bevy::math::Vec3;
 use bevy::prelude::*;
 
 use jackdaw_geometry::{BrushTopology, triangulate_polygon};
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 #[derive(Resource, Default)]
 pub struct ActivePreview {
@@ -47,7 +48,7 @@ fn update_preview_mesh(
     mut commands: Commands,
     preview: Res<ActivePreview>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     existing: Query<Entity, With<PreviewMesh>>,
 ) -> Result<(), BevyError> {
     // If preview is empty, despawn any existing preview entities.
@@ -125,7 +126,7 @@ fn update_preview_mesh(
         PreviewState::Warning => Color::srgba(1.0, 0.75, 0.2, 0.4), // amber
         PreviewState::Invalid => Color::srgba(1.0, 0.3, 0.3, 0.4), // red
     };
-    let material = materials.add(StandardMaterial {
+    let material = materials.add(AuroraMaterial {
         base_color: color,
         alpha_mode: AlphaMode::Blend,
         unlit: true,
@@ -139,7 +140,7 @@ fn update_preview_mesh(
     // an identity local transform and let the parent's transform do the work.
     commands.spawn((
         Mesh3d(mesh_handle),
-        MeshMaterial3d(material),
+        AuroraMaterial3d(material),
         Transform::default(),
         PreviewMesh,
         ChildOf(brush_entity),

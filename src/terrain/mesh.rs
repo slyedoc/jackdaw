@@ -6,6 +6,7 @@ use jackdaw_terrain::ClipmapLevel;
 use super::regions::{TerrainRegionView, region_of};
 use super::{CHUNK_SIZE, TerrainDataStore, TerrainDirtyChunks, TerrainPaintState, TerrainSurface};
 use crate::viewport::{ActiveViewport, MainViewportCamera};
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(
@@ -27,7 +28,7 @@ pub(super) fn plugin(app: &mut App) {
 /// A terrain with a texture set draws with the splat material instead (see
 /// [`super::splat`]).
 #[derive(Resource)]
-struct TerrainMaterialHandle(Handle<StandardMaterial>);
+struct TerrainMaterialHandle(Handle<AuroraMaterial>);
 
 /// Vertex colour for unpainted ground and for every vertex when the
 /// channel view is off.
@@ -117,7 +118,7 @@ fn sync_terrain_surface(
     active: Res<ActiveViewport>,
     transforms: Query<&GlobalTransform>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     material_res: Option<Res<TerrainMaterialHandle>>,
     store: Res<TerrainDataStore>,
     paint: Res<TerrainPaintState>,
@@ -133,7 +134,7 @@ fn sync_terrain_surface(
         None => {
             // No depth_bias needed: the editor grid yields to opaque
             // geometry at its own plane (see `crate::editor_grid`).
-            let handle = materials.add(StandardMaterial {
+            let handle = materials.add(AuroraMaterial {
                 base_color: Color::WHITE,
                 perceptual_roughness: 0.9,
                 metallic: 0.0,
@@ -322,18 +323,20 @@ fn sync_terrain_surface(
 fn point_at_material(
     entity: &mut EntityCommands,
     splat: &Option<Handle<jackdaw_terrain::render::TerrainSplatMaterial>>,
-    fallback: &Handle<StandardMaterial>,
+    fallback: &Handle<AuroraMaterial>,
 ) {
     match splat {
         Some(handle) => {
+            // TerrainSplatMaterial is parked raster (AURORA.md item 2), so this stays a
+            // `MeshMaterial3d` until the terrain render port swaps it for a SurfaceClass.
             entity
-                .remove::<MeshMaterial3d<StandardMaterial>>()
+                .remove::<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>()
                 .insert(MeshMaterial3d(handle.clone()));
         }
         None => {
             entity
                 .remove::<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>()
-                .insert(MeshMaterial3d(fallback.clone()));
+                .insert(AuroraMaterial3d(fallback.clone()));
         }
     }
 }
@@ -448,7 +451,7 @@ mod tests {
     fn world_with_terrain(resolution: u32, heights: Vec<f32>) -> (World, Entity) {
         let mut world = World::new();
         world.insert_resource(Assets::<Mesh>::default());
-        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(Assets::<AuroraMaterial>::default());
         world.insert_resource(TerrainPaintState::default());
         world.insert_resource(ActiveViewport::default());
         world.insert_resource(super::super::splat::TerrainSplatMaterials::default());
@@ -658,7 +661,7 @@ mod tests {
     fn a_stroke_on_one_terrain_leaves_another_terrains_surface_alone() {
         let mut world = World::new();
         world.insert_resource(Assets::<Mesh>::default());
-        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(Assets::<AuroraMaterial>::default());
         world.insert_resource(TerrainPaintState::default());
         world.insert_resource(ActiveViewport::default());
         world.insert_resource(super::super::splat::TerrainSplatMaterials::default());
@@ -892,7 +895,7 @@ mod tests {
         let mut query = world.query::<(
             &TerrainSurface,
             &Mesh3d,
-            Has<MeshMaterial3d<StandardMaterial>>,
+            Has<AuroraMaterial3d>,
             Has<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>,
         )>();
         let held: Vec<(u32, Handle<Mesh>, bool)> = query

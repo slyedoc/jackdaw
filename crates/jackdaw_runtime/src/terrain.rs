@@ -35,6 +35,9 @@ use crate::JackdawCatalog;
 
 #[cfg(feature = "physics")]
 use avian3d::prelude::{Collider, RigidBody};
+// The plain PBR material this reads for texture handles is aurora's; the
+// `TerrainSplatMaterial` it inserts below is still parked raster (AURORA.md item 2).
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Colour of a terrain drawn without a texture set.
 ///
@@ -46,7 +49,12 @@ const UNTEXTURED: Color = Color::linear_rgb(0.5, 0.5, 0.5);
 /// Loads terrain sidecars and keeps ground surfaces in step with them, writing
 /// the scatter and detail projections before their renderers rebuild.
 pub(crate) fn plugin(app: &mut App) {
-    app.add_plugins((TerrainRenderPlugin, ScatterRenderPlugin, DetailRenderPlugin))
+    // `resolve_material_slots` reads this collection. It used to arrive with whichever
+    // `MaterialPlugin` owned `StandardMaterial`; the plain PBR material is aurora's now,
+    // so the plugin that runs the system registers what it needs. `init_asset` is
+    // idempotent, so an app that already has it is unaffected.
+    app.init_asset::<AuroraMaterial>()
+        .add_plugins((TerrainRenderPlugin, ScatterRenderPlugin, DetailRenderPlugin))
         .add_systems(
             Update,
             (
@@ -178,7 +186,7 @@ struct BuiltLevel(ClipmapLevel);
 
 /// Shared material for a terrain with no texture set.
 #[derive(Resource)]
-struct UntexturedTerrain(Handle<StandardMaterial>);
+struct UntexturedTerrain(Handle<AuroraMaterial>);
 
 /// Record the sidecar each freshly spawned terrain draws.
 ///
@@ -286,7 +294,7 @@ fn document_of(data: RegionTerrainData, terrain: &Terrain) -> TerrainDocument {
     }
 }
 
-/// The `StandardMaterial` a slot's reference addresses, through the project
+/// The `AuroraMaterial` a slot's reference addresses, through the project
 /// catalog that `materials/<name>.material.bsn` and `catalog.bsn` both feed.
 ///
 /// A slot spells the path of its material file; the catalog is keyed by the
@@ -295,13 +303,13 @@ fn document_of(data: RegionTerrainData, terrain: &Terrain) -> TerrainDocument {
 ///
 /// [`resolve_with`] decides what a resolved material means: which of its slots
 /// is albedo, and that a vacated or unfound reference keeps its texture id.
-fn catalog_material(catalog: &JackdawCatalog, reference: &str) -> Option<Handle<StandardMaterial>> {
+fn catalog_material(catalog: &JackdawCatalog, reference: &str) -> Option<Handle<AuroraMaterial>> {
     let name = jackdaw_bsn::asset_stem(reference);
     catalog
         .get(reference)
         .or_else(|| catalog.get(&format!("@{name}")))
         .cloned()
-        .and_then(|handle| handle.try_typed::<StandardMaterial>().ok())
+        .and_then(|handle| handle.try_typed::<AuroraMaterial>().ok())
 }
 
 /// Keep every terrain's resolved set following its material list.
@@ -312,7 +320,7 @@ fn catalog_material(catalog: &JackdawCatalog, reference: &str) -> Option<Handle<
 /// late is picked up on the next frame without invalidation bookkeeping.
 fn resolve_material_slots(
     catalog: Res<JackdawCatalog>,
-    standard: Res<Assets<StandardMaterial>>,
+    standard: Res<Assets<AuroraMaterial>>,
     assets: Res<AssetServer>,
     mut terrains: Query<(&TerrainDocument, &mut TerrainSplat)>,
 ) {
@@ -459,7 +467,7 @@ fn sync_surfaces(
     // A dedicated server builds these types with no rendering plugins, so
     // there is no mesh store to build a surface into.
     meshes: Option<ResMut<Assets<Mesh>>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     untextured: Option<Res<UntexturedTerrain>>,
 ) {
     let Some(mut meshes) = meshes else {
@@ -478,7 +486,7 @@ fn sync_surfaces(
     let fallback = match &untextured {
         Some(res) => res.0.clone(),
         None => {
-            let handle = materials.add(StandardMaterial {
+            let handle = materials.add(AuroraMaterial {
                 base_color: UNTEXTURED,
                 perceptual_roughness: 0.9,
                 metallic: 0.0,
@@ -604,16 +612,18 @@ fn sync_surfaces(
             }
             // The two material types are different components, so the unused
             // one has to be removed.
+            // The splat material is parked raster, the fallback is aurora's -- so the two
+            // arms wear different components and each removes the other's.
             match &splat.material {
                 Some(handle) => {
                     entity
-                        .remove::<MeshMaterial3d<StandardMaterial>>()
+                        .remove::<AuroraMaterial3d>()
                         .insert(MeshMaterial3d(handle.clone()));
                 }
                 None => {
                     entity
                         .remove::<MeshMaterial3d<TerrainSplatMaterial>>()
-                        .insert(MeshMaterial3d(fallback.clone()));
+                        .insert(AuroraMaterial3d(fallback.clone()));
                 }
             }
         }
@@ -825,9 +835,9 @@ mod tests {
             },
         ));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
         app.init_resource::<JackdawCatalog>();
         crate::load_walked_assets(app.world_mut(), assets_root, None);
         app
@@ -840,7 +850,7 @@ mod tests {
         slots: &[TerrainMaterialSlot],
     ) -> jackdaw_terrain::render::ResolvedSlots {
         let catalog = app.world().resource::<JackdawCatalog>();
-        let standard = app.world().resource::<Assets<StandardMaterial>>();
+        let standard = app.world().resource::<Assets<AuroraMaterial>>();
         resolve_with(
             slots,
             |name| catalog_material(catalog, name).and_then(|handle| standard.get(&handle)),
@@ -1101,7 +1111,7 @@ mod tests {
     fn surfaced_world(resolution: u32) -> (World, Entity) {
         let mut world = World::new();
         world.insert_resource(Assets::<Mesh>::default());
-        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(Assets::<AuroraMaterial>::default());
 
         let mut regions = jackdaw_terrain::TerrainRegions::new(
             jackdaw_terrain::RegionSize::new(256).expect("a power of two"),
@@ -1148,7 +1158,7 @@ mod tests {
         let mut query = world.query::<(
             &TerrainSurface,
             &Mesh3d,
-            Has<MeshMaterial3d<StandardMaterial>>,
+            Has<MeshMaterial3d<AuroraMaterial>>,
             Has<MeshMaterial3d<TerrainSplatMaterial>>,
         )>();
         let held: Vec<(u32, Handle<Mesh>, bool)> = query

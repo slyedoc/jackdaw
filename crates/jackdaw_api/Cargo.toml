@@ -18,7 +18,13 @@ repository = "https://github.com/jbuehler23/jackdaw"
 dynamic_linking = [
     "dep:jackdaw_dylib",
     "bevy/dynamic_linking",
-    "bevy/bevy_feathers",
+    # `bevy_feathers_core`, NOT `bevy_feathers`: the render half adds
+    # `UiMaterialPlugin<ColorPlaneMaterial>`, which loads a `Shader` asset that only
+    # `RenderPlugin` registers -- so it panics at startup on this branch. And because
+    # feature unification is per-build, naming the render half HERE turned it on for the
+    # whole editor even though the root manifest asks for the core half. This list has to
+    # stay in step with the root's bevy features for the dylib identity to match anyway.
+    "bevy/bevy_feathers_core",
     "bevy/serialize",
     "bevy/debug",
     "bevy/bevy_remote",

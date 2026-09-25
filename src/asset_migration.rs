@@ -543,16 +543,18 @@ fn version_of(bytes: &[u8]) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy_aurora::material::AuroraMaterial;
     use bevy::asset::AssetPlugin;
     use jackdaw_api_internal::operator::OperatorReports;
 
-    const STANDARD_MATERIAL: &str = "bevy_pbr::pbr_material::StandardMaterial";
+    // What the editor writes today; the catalog indexes material files by this path.
+    const STANDARD_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial";
 
     /// A component naming a material, of the shape a scene spells one in.
     #[derive(Component, Reflect, Default)]
     #[reflect(Component, Default)]
     struct Signpost {
-        board: Handle<StandardMaterial>,
+        board: Handle<AuroraMaterial>,
     }
 
     fn migration_app() -> (App, tempfile::TempDir) {
@@ -560,10 +562,10 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
-        app.register_type::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
+        app.register_type::<AuroraMaterial>();
         app.register_type::<Signpost>();
         app.insert_resource(crate::project::ProjectRoot {
             root: tmp.path().to_path_buf(),

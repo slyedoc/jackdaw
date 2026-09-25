@@ -1,6 +1,6 @@
 //! Frame-rate readout, off by default.
 //!
-//! Wraps `bevy_dev_tools`' stock overlay, which owns the diagnostic
+//! Wraps the overlay vendored in `overlay.rs`, which owns the diagnostic
 //! plumbing and a frame-time graph. Its root node is absolutely
 //! positioned at the window's top-left, where the menu bar sits;
 //! `place_overlay` moves it to the bottom-right corner, clear of both
@@ -17,9 +17,9 @@
 
 use core::time::Duration;
 
-use bevy::dev_tools::fps_overlay::{
-    FPS_OVERLAY_ZINDEX, FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig,
-};
+mod overlay;
+
+use overlay::{FPS_OVERLAY_ZINDEX, FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig};
 use bevy::diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::time::common_conditions::on_timer;

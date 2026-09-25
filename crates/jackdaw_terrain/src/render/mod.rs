@@ -16,6 +16,10 @@
 use bevy::asset::{RenderAssetUsages, embedded_asset};
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
+// `resolve_with` and the splat cache read a plain PBR material for its texture handles;
+// on this branch that is aurora's. `TerrainSplatMaterial` below is still a raster
+// `Material` and is parked with the rest of AURORA.md item 2.
+use bevy_aurora::material::AuroraMaterial;
 use bevy::render::render_resource::{
     AsBindGroup, Extent3d, TextureDataOrder, TextureDimension, TextureFormat,
     TextureViewDescriptor, TextureViewDimension,
@@ -141,7 +145,7 @@ pub struct ResolvedSlots {
 /// is shared across surfaces and tiles differently on each.
 pub fn resolve_with<'m>(
     slots: &[TerrainMaterialSlot],
-    lookup: impl Fn(&str) -> Option<&'m StandardMaterial>,
+    lookup: impl Fn(&str) -> Option<&'m AuroraMaterial>,
     assets: &AssetServer,
 ) -> ResolvedSlots {
     let path_of = |handle: &Option<Handle<Image>>| {
@@ -1104,13 +1108,13 @@ mod resolve_tests {
 
     /// A host's name store, minus everything resolution does not use.
     #[derive(Resource, Default)]
-    struct Saved(HashMap<String, Handle<StandardMaterial>>);
+    struct Saved(HashMap<String, Handle<AuroraMaterial>>);
 
     fn resolve_app() -> App {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_resource::<Saved>();
         app
     }
@@ -1123,8 +1127,8 @@ mod resolve_tests {
         let depth = server.load::<Image>(format!("t/{name}_height.png"));
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 base_color_texture: Some(base),
                 normal_map_texture: Some(normal),
                 depth_map: Some(depth),
@@ -1145,8 +1149,8 @@ mod resolve_tests {
         let roughness = server.load::<Image>(format!("t/{name}_orm.png"));
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 occlusion_texture: Some(occlusion),
                 metallic_roughness_texture: Some(roughness),
                 ..default()
@@ -1159,7 +1163,7 @@ mod resolve_tests {
 
     fn resolve_slots(app: &App, slots: &[TerrainMaterialSlot]) -> ResolvedSlots {
         let saved = app.world().resource::<Saved>();
-        let materials = app.world().resource::<Assets<StandardMaterial>>();
+        let materials = app.world().resource::<Assets<AuroraMaterial>>();
         resolve_with(
             slots,
             |name| saved.0.get(name).and_then(|handle| materials.get(handle)),
@@ -1267,8 +1271,8 @@ mod resolve_tests {
         let mut app = resolve_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<Saved>()
             .0

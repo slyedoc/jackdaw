@@ -332,7 +332,6 @@ impl Plugin for ViewportPlugin {
         app.add_plugins((JackdawCameraPlugin, InfiniteGridPlugin))
             // Must come after `InfiniteGridPlugin` in build order: it patches
             // the grid's shader in place. See `editor_grid_depth_patch`.
-            .add_plugins(crate::editor_grid_depth_patch::plugin)
             .init_resource::<CameraFlyActive>()
             .init_resource::<ActiveViewport>()
             .init_resource::<ViewportLayerCounter>()
@@ -431,6 +430,10 @@ fn viewport_target_image() -> Image {
     image.texture_descriptor.usage =
         TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
     image.sampler = ImageSampler::linear();
+    // No pixels: aurora builds the real Vulkan render target in this asset's place
+    // (`bevy_aurora::camera_target`), so bytes here would be uploaded as an ordinary
+    // texture and then thrown away the moment the camera claimed the asset.
+    image.data = None;
     image
 }
 

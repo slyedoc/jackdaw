@@ -7,15 +7,16 @@ use super::{
     ComponentDisplay, ComponentDisplayBody, ComponentDisplayTypePath, ComponentName, Inspector,
     InspectorDirty, InspectorTarget,
 };
+use bevy_aurora::material::AuroraMaterial;
 
-/// Resolve which `Handle<StandardMaterial>` to display for a brush entity.
+/// Resolve which `Handle<AuroraMaterial>` to display for a brush entity.
 ///
 /// Priority: selected face (face edit mode + at least one face selected) ->
 /// first face that has a non-default material handle -> None.
 pub(crate) fn resolve_brush_material_handle(
     world: &World,
     brush_entity: Entity,
-) -> Option<Handle<StandardMaterial>> {
+) -> Option<Handle<AuroraMaterial>> {
     let brush = world.get::<crate::brush::Brush>(brush_entity)?;
 
     // Try to read the selected faces from BrushSelection.

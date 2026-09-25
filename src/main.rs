@@ -1,9 +1,5 @@
-use bevy::{
-    asset::AssetPlugin,
-    ecs::error::ErrorContext,
-    image::{ImageAddressMode, ImagePlugin, ImageSamplerDescriptor},
-    prelude::*,
-};
+use bevy::{asset::AssetPlugin, ecs::error::ErrorContext, prelude::*};
+use bevy_aurora::AuroraDefaultPlugins;
 use jackdaw::prelude::*;
 
 fn main() -> AppExit {
@@ -90,41 +86,49 @@ fn main() -> AppExit {
         None
     };
 
-    // GPU timestamps are a device feature, so a diagnostics run has to
-    // ask for them before the device exists. `None` on every other
-    // launch, which leaves `RenderPlugin` exactly as it was.
-    let render_plugin =
-        jackdaw::render_diagnostics::wgpu_settings().map(|settings| bevy::render::RenderPlugin {
-            render_creation: settings.into(),
-            ..default()
-        });
-
-    let mut default_plugins = DefaultPlugins
+    // `AuroraDefaultPlugins`, not bevy's: this branch has no wgpu stack, so bevy's group
+    // would wire `RenderPlugin` and the ui/pbr render halves and then panic the moment
+    // something asked for a `DrawFunctions<TransparentUi>` that was never created.
+    //
+    // Dropped along with it:
+    // * `RenderPlugin` + `render_diagnostics::wgpu_settings()` -- GPU timestamps are a wgpu
+    //   device feature. Aurora has its own timing.
+    // * `.set(ImagePlugin { .. })` -- it was there to make the default sampler REPEAT on
+    //   all three axes, and aurora's one global linear sampler already does exactly that
+    //   (`render_device.rs`). `AuroraDefaultPlugins` has no `ImagePlugin` to `set` anyway,
+    //   and `PluginGroupBuilder::set` panics on a plugin the group does not contain.
+    let default_plugins = AuroraDefaultPlugins
+        .build()
+        // `AuroraDefaultPlugins` carries no state machinery, and the editor's AppState is
+        // `init_state`d -- without this it panics on a missing `StateTransition` schedule.
+        .add(bevy::state::app::StatesPlugin)
+        // Gizmo groups (brush handles, navmesh debug, the viewport overlays). Aurora's
+        // GizmoRenderPlugin is the draw half and is already in the group; this is the
+        // render-free half that DefaultPlugins used to bring.
+        .add(bevy::gizmos::GizmoPlugin)
+        // Aurora propagates only ROOT transforms by default, because the tracer reads its
+        // own GPU transforms and never touches `GlobalTransform`. An editor does: brush
+        // handles, gizmo placement, viewport picking and the scene tree all read a
+        // descendant's `GlobalTransform`, and every one of them would silently read the
+        // identity without CPU propagation.
+        .set(bevy_aurora::transform::TransformPlugin {
+            propagate_on_cpu: true,
+        })
         .set(AssetPlugin {
             file_path: project_root.join("assets").to_string_lossy().to_string(),
             ..default()
-        })
-        .set(ImagePlugin {
-            default_sampler: ImageSamplerDescriptor {
-                address_mode_u: ImageAddressMode::Repeat,
-                address_mode_v: ImageAddressMode::Repeat,
-                address_mode_w: ImageAddressMode::Repeat,
-                ..ImageSamplerDescriptor::linear()
-            },
         })
         // `editor_window_plugin` disables Bevy's default
         // window-close -> AppExit wiring so `intercept_window_close`
         // in ScenesPlugin owns the exit path, and it honors
         // `JACKDAW_WINDOW_SIZE`. Spelling its fields out here instead
         // would drop that override.
-        .set(editor_window_plugin())
-        // Its overlay inserts on every camera through a command
-        // buffer with no ordering against the dock reconciler, which
-        // despawns a rebuilt panel's cameras in the same frame.
-        .disable::<bevy::dev_tools::render_debug::RenderDebugOverlayPlugin>();
-    if let Some(render_plugin) = render_plugin {
-        default_plugins = default_plugins.set(render_plugin);
-    }
+        .set(editor_window_plugin());
+    // `RenderDebugOverlayPlugin` used to be disabled here -- its overlay inserted on
+    // every camera through a command buffer with no ordering against the dock
+    // reconciler, which despawns a rebuilt panel's cameras in the same frame. It is
+    // gone with the rest of bevy_dev_tools' drawing half, so there is nothing to
+    // disable; if aurora ever grows an equivalent, it must not do that.
 
     let mut app = App::new();
     app

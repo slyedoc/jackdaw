@@ -247,7 +247,7 @@ mod tests {
     }
 
     // App that registers the brush and material types plus asset stores, so a
-    // brush face can reference a runtime `StandardMaterial` handle and the
+    // brush face can reference a runtime `AuroraMaterial` handle and the
     // captured document can round-trip through the BSN loader.
     fn material_snapshot_app() -> App {
         let mut app = App::new();
@@ -260,6 +260,19 @@ mod tests {
             runtime_mesh_rebuild: false,
         });
         app.add_plugins(jackdaw_bsn::JackdawBsnPlugin);
+        // `SceneTypesPlugin { runtime_mesh_rebuild: false }` skips the module that owns
+        // this collection, and these tests mint materials directly. The reflect
+        // registrations are what let an unsaved material be written into the scene inline
+        // rather than as a dangling `@Name`.
+        {
+            use bevy_aurora::material::{AlphaMode, AuroraMaterial, Face, ParallaxMappingMethod};
+            app.init_asset::<AuroraMaterial>()
+                .register_type::<AuroraMaterial>()
+                .register_type::<AlphaMode>()
+                .register_type::<Face>()
+                .register_type::<ParallaxMappingMethod>()
+                .register_asset_reflect::<AuroraMaterial>();
+        }
         app.init_resource::<jackdaw_bsn::SceneBsnAst>();
         app.init_resource::<crate::selection::Selection>();
         app.init_resource::<EditMode>();
@@ -276,7 +289,7 @@ mod tests {
     // bare `@Name` would resolve to nothing outside this editor run.
     #[test]
     fn an_unsaved_catalog_material_embeds_inline_instead_of_emitting_a_name() {
-        use bevy::pbr::StandardMaterial;
+        use bevy_aurora::material::AuroraMaterial;
         use jackdaw_scene_types::Brush;
 
         for saved in [false, true] {
@@ -286,8 +299,8 @@ mod tests {
 
             let handle = app
                 .world_mut()
-                .resource_mut::<Assets<StandardMaterial>>()
-                .add(StandardMaterial {
+                .resource_mut::<Assets<AuroraMaterial>>()
+                .add(AuroraMaterial {
                     base_color: Color::srgb(0.9, 0.1, 0.2),
                     ..Default::default()
                 });
@@ -326,7 +339,7 @@ mod tests {
                     "a saved material has a file, so the scene references it:\n{text}"
                 );
                 assert!(
-                    !text.contains("StandardMaterial {"),
+                    !text.contains("AuroraMaterial {"),
                     "a saved material must not be duplicated into the scene:\n{text}"
                 );
             } else {
@@ -335,7 +348,7 @@ mod tests {
                     "nothing on disk defines this name:\n{text}"
                 );
                 assert!(
-                    text.contains("StandardMaterial"),
+                    text.contains("AuroraMaterial"),
                     "an unsaved material must travel with the scene:\n{text}"
                 );
             }
@@ -347,7 +360,7 @@ mod tests {
     // capture-time inline asset pass embeds it and rewrites the reference.
     #[test]
     fn bsn_snapshot_embeds_runtime_face_material() {
-        use bevy::pbr::StandardMaterial;
+        use bevy_aurora::material::AuroraMaterial;
         use jackdaw_scene_types::Brush;
 
         let mut app = material_snapshot_app();
@@ -356,8 +369,8 @@ mod tests {
         let color = Color::srgb(0.9, 0.1, 0.2);
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 base_color: color,
                 ..Default::default()
             });
@@ -389,11 +402,11 @@ mod tests {
         // The captured text embeds the material and references it by name, not
         // as an empty string.
         assert!(
-            text.contains("StandardMaterial"),
+            text.contains("AuroraMaterial"),
             "captured document must embed the inline material:\n{text}"
         );
         assert!(
-            text.contains("\"#StandardMaterial0\""),
+            text.contains("\"#AuroraMaterial0\""),
             "the runtime face material must emit its inline reference name:\n{text}"
         );
 
@@ -420,7 +433,7 @@ mod tests {
         let face_handle = reloaded_brush.faces[0].material.clone();
         let material = fresh
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&face_handle)
             .expect("face material asset survived the round trip");
 

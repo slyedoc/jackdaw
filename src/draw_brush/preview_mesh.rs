@@ -11,6 +11,7 @@ use bevy::{
 };
 use jackdaw_geometry::build_face_render_buffers;
 use jackdaw_scene_types::Brush;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 #[derive(Component)]
 pub(crate) struct DrawPreviewMesh;
@@ -57,15 +58,15 @@ pub(crate) fn manage_draw_preview_mesh(
     draw_state: Res<DrawBrushState>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     preview_query: Query<Entity, With<DrawPreviewMesh>>,
     result_preview_query: Query<Entity, With<CutResultPreviewMesh>>,
     brushes: Query<(Entity, &Brush, &GlobalTransform, Has<Selected>)>,
     hidden_query: Query<Entity, (With<CutPreviewHidden>, With<Brush>)>,
     mut visibility_query: Query<&mut Visibility>,
     palette: Res<BrushMaterialPalette>,
-    mut cached_add_material: Local<Option<Handle<StandardMaterial>>>,
-    mut cached_cut_material: Local<Option<Handle<StandardMaterial>>>,
+    mut cached_add_material: Local<Option<Handle<AuroraMaterial>>>,
+    mut cached_cut_material: Local<Option<Handle<AuroraMaterial>>>,
 
     mut cached_preview_key: Local<Option<(Vec3, Vec3, f32, Vec<Vec3>)>>,
 ) {
@@ -185,7 +186,7 @@ pub(crate) fn manage_draw_preview_mesh(
     // Mode-dependent material color
     let material = match active.mode {
         DrawMode::Add => cached_add_material.get_or_insert_with(|| {
-            materials.add(StandardMaterial {
+            materials.add(AuroraMaterial {
                 base_color: default_style::DRAW_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
@@ -196,7 +197,7 @@ pub(crate) fn manage_draw_preview_mesh(
             })
         }),
         DrawMode::Cut => cached_cut_material.get_or_insert_with(|| {
-            materials.add(StandardMaterial {
+            materials.add(AuroraMaterial {
                 base_color: default_style::CUT_PREVIEW_MESH,
                 alpha_mode: AlphaMode::Blend,
                 unlit: true,
@@ -220,7 +221,7 @@ pub(crate) fn manage_draw_preview_mesh(
     if active.mode == DrawMode::Add {
         commands.spawn((
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(material.clone()),
+            AuroraMaterial3d(material.clone()),
             Visibility::Inherited,
             Transform::default(),
             DrawPreviewMesh,
@@ -344,7 +345,7 @@ pub(crate) fn manage_draw_preview_mesh(
 
                     commands.spawn((
                         Mesh3d(meshes.add(mesh)),
-                        MeshMaterial3d(material),
+                        AuroraMaterial3d(material),
                         Visibility::Inherited,
                         Transform::default(),
                         CutResultPreviewMesh,

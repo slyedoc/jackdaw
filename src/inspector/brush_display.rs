@@ -16,6 +16,7 @@ use jackdaw_api::prelude::*;
 use jackdaw_feathers::{button::ButtonOperatorCall, tokens};
 
 use super::{BrushFaceField, BrushFaceFieldBinding, BrushFacePropsContainer};
+use bevy_aurora::material::AuroraMaterial;
 
 /// Initial text staged on a brush face text input container. The
 /// `Insert`-triggered `seed_brush_face_text` observer writes it into the
@@ -133,8 +134,8 @@ fn spawn_group(commands: &mut Commands, parent: Entity, caption: &str) -> Entity
 }
 
 fn resolve_material_label(
-    mat_handle: &Handle<StandardMaterial>,
-    materials: &Assets<StandardMaterial>,
+    mat_handle: &Handle<AuroraMaterial>,
+    materials: &Assets<AuroraMaterial>,
 ) -> String {
     if let Some(path) = mat_handle.path() {
         return path.to_string();
@@ -153,7 +154,7 @@ pub(super) fn spawn_brush_display(
     commands: &mut Commands,
     parent: Entity,
     brush: &crate::brush::Brush,
-    materials: &Assets<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
 ) {
     // Brushes always have populated topology in normal flow; the
     // plane-intersection fallback only fires for the degenerate
@@ -279,10 +280,10 @@ fn spawn_material_summary(
     commands: &mut Commands,
     parent: Entity,
     brush: &Brush,
-    materials: &Assets<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
 ) {
     // Collect unique materials with face counts
-    let mut material_counts: Vec<(Handle<StandardMaterial>, usize)> = Vec::new();
+    let mut material_counts: Vec<(Handle<AuroraMaterial>, usize)> = Vec::new();
     for face in &brush.faces {
         if let Some(entry) = material_counts
             .iter_mut()
@@ -416,7 +417,7 @@ pub(crate) fn update_brush_face_properties(
     brushes: Query<&Brush>,
     container_query: Query<(Entity, Option<&Children>), With<BrushFacePropsContainer>>,
     mut local_state: Local<BrushFacePropsState>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
 ) {
     // `iter().next()` rather than `single()`: during an inspector rebuild the
     // old container is despawned while the new one spawns, so there is a window

@@ -15,7 +15,7 @@ use bevy::asset::{AssetEvent, LoadState};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use jackdaw_terrain::render::{
-    SplatArrayHandles, SplatBuildError, TerrainRenderPlugin, TerrainSplatMaterial,
+    SplatArrayHandles, SplatBuildError, TerrainSplatMaterial,
     TextureSetImages, control_image_from_bytes, resolve_with, slope_image, splat_images,
     tint_image_from_bytes,
 };
@@ -29,9 +29,12 @@ use super::regions::{
 };
 use super::{TerrainDataStore, TerrainDirtyChunks};
 use crate::material_assets::MaterialRegistry;
+use bevy_aurora::material::AuroraMaterial;
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_plugins(TerrainRenderPlugin)
+    // TODO(aurora): TerrainRenderPlugin is MaterialPlugin<TerrainSplatMaterial>.
+    // AURORA.md item 2.
+    app
         .init_resource::<TerrainSplatMaterials>()
         .add_systems(
             Update,
@@ -204,7 +207,7 @@ fn resolve_terrain_materials(
     store: Res<TerrainDataStore>,
     registry: Res<MaterialRegistry>,
     index: Option<Res<crate::asset_index::AssetIndex>>,
-    standard: Res<Assets<StandardMaterial>>,
+    standard: Res<Assets<AuroraMaterial>>,
     assets: Res<AssetServer>,
     terrains: Query<&jackdaw_scene_types::Terrain>,
 ) {
@@ -676,7 +679,7 @@ fn write_control_block(bytes: &mut [u8], resolution: u32, rect: GridRect, block:
 ///
 /// The editor build runs the asset file watcher, so editing a material's PNG
 /// raises `Modified` here. A change to the material file itself needs nothing:
-/// `resolve_terrain_materials` re-reads the live `StandardMaterial`.
+/// `resolve_terrain_materials` re-reads the live `AuroraMaterial`.
 fn invalidate_on_asset_change(
     mut materials: ResMut<TerrainSplatMaterials>,
     mut image_events: MessageReader<AssetEvent<Image>>,
@@ -710,7 +713,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app
     }
 

@@ -13,6 +13,7 @@ use crate::draw_brush::DrawBrushState;
 use crate::selection::Selected;
 use jackdaw_geometry::{compute_brush_geometry_from_planes, compute_face_tangent_axes};
 use jackdaw_scene_types::BrushFaceData;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 pub(super) struct MeshPlugin;
 
@@ -23,19 +24,19 @@ impl Plugin for MeshPlugin {
 }
 
 pub fn setup_default_materials(
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     mut palette: ResMut<BrushMaterialPalette>,
     assets: Res<AssetServer>,
 ) {
     let defaults = default_style::BRUSH_PALETTE;
     for color in defaults {
-        palette.materials.push(materials.add(StandardMaterial {
+        palette.materials.push(materials.add(AuroraMaterial {
             base_color: color.with_alpha(1.0),
             ..default()
         }));
         palette
             .preview_materials
-            .push(materials.add(StandardMaterial {
+            .push(materials.add(AuroraMaterial {
                 base_color: color.with_alpha(0.75),
                 alpha_mode: AlphaMode::Blend,
                 ..default()
@@ -60,14 +61,14 @@ pub fn setup_default_materials(
     // Tile the 2x2 checker at 0.25 world-unit spacing (matching default grid)
     let uv_tile = Affine2::from_scale(Vec2::splat(2.0));
 
-    palette.default_material = materials.add(StandardMaterial {
+    palette.default_material = materials.add(AuroraMaterial {
         base_color: default_style::DEFAULT_MATERIAL_COLOR,
         base_color_texture: Some(grid_handle.clone()),
         alpha_mode: AlphaMode::Opaque,
         uv_transform: uv_tile,
         ..default()
     });
-    palette.default_selected_material = materials.add(StandardMaterial {
+    palette.default_selected_material = materials.add(AuroraMaterial {
         base_color: default_style::DEFAULT_MATERIAL_SELECTED_COLOR,
         base_color_texture: Some(grid_handle.clone()),
         alpha_mode: AlphaMode::Opaque,
@@ -77,7 +78,7 @@ pub fn setup_default_materials(
 
     // X-ray view: translucent and unlit so occluded geometry reads
     // through. Double-sided needs the cull mode cleared explicitly.
-    palette.x_ray_material = materials.add(StandardMaterial {
+    palette.x_ray_material = materials.add(AuroraMaterial {
         base_color: default_style::X_RAY_MATERIAL_COLOR,
         unlit: true,
         double_sided: true,
@@ -85,7 +86,7 @@ pub fn setup_default_materials(
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
-    palette.x_ray_selected_material = materials.add(StandardMaterial {
+    palette.x_ray_selected_material = materials.add(AuroraMaterial {
         base_color: default_style::X_RAY_MATERIAL_SELECTED_COLOR,
         unlit: true,
         double_sided: true,
@@ -402,7 +403,7 @@ pub fn regenerate_brush_meshes(
                         material: material.clone(),
                     },
                     Mesh3d(mesh_handle),
-                    MeshMaterial3d(material),
+                    AuroraMaterial3d(material),
                     Transform::default(),
                     ChildOf(entity),
                 ))
@@ -472,7 +473,7 @@ pub fn ensure_brush_chunk_materials(
     brushes: Query<(Entity, &BrushMeshCache, Has<BrushPreview>, Has<Selected>), With<super::Brush>>,
     mut chunk_mats: Query<(
         &super::BrushMeshChunk,
-        &mut MeshMaterial3d<StandardMaterial>,
+        &mut AuroraMaterial3d,
     )>,
     parents: Query<&ChildOf>,
     selected_query: Query<(), With<Selected>>,

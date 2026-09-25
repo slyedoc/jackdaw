@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
+bevy_aurora.workspace = true
 glam.workspace = true
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, optional = true, features = [
     "reflect_auto_register",

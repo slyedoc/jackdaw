@@ -8,6 +8,7 @@ use bevy::{
 
 use crate::types::Brush;
 use jackdaw_geometry::compute_brush_geometry_from_planes;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 pub struct MeshRebuildPlugin;
 
@@ -26,7 +27,7 @@ impl Plugin for MeshRebuildPlugin {
 }
 
 /// Runtime brush rebuild. Meshes a brush into one mesh + child entity per
-/// material chunk: faces are grouped by their `StandardMaterial` (from
+/// material chunk: faces are grouped by their `AuroraMaterial` (from
 /// `BrushFaceData.material`, typically a catalog `@Name` reference). Faces with
 /// an unset handle fall back to the embedded grid texture so brushes still
 /// render before any material is assigned.
@@ -53,7 +54,7 @@ pub fn remesh_changed_brushes(
     >,
     face_meshes: Query<(), With<Mesh3d>>,
     meshes: Option<ResMut<Assets<Mesh>>>,
-    materials: Option<ResMut<Assets<StandardMaterial>>>,
+    materials: Option<ResMut<Assets<AuroraMaterial>>>,
     assets: Res<AssetServer>,
 ) {
     // A headless runtime (a dedicated server) compiles with `render` for the
@@ -156,13 +157,13 @@ fn build_brush_meshes(
     stack: Option<&jackdaw_geometry::ModifierStack>,
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<AuroraMaterial>,
     assets: &AssetServer,
 ) {
     let (vertices, face_polygons, evaluated_faces) = evaluate_brush_geometry(brush, stack);
     let chunks = crate::build_brush_chunks(&vertices, &face_polygons, &evaluated_faces);
 
-    let mut fallback_material: Option<Handle<StandardMaterial>> = None;
+    let mut fallback_material: Option<Handle<AuroraMaterial>> = None;
     for chunk in chunks {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, chunk.positions);
@@ -183,7 +184,7 @@ fn build_brush_meshes(
         commands.spawn((
             crate::DerivedFaceMesh,
             Mesh3d(mesh_handle),
-            MeshMaterial3d(material),
+            AuroraMaterial3d(material),
             Transform::default(),
             ChildOf(entity),
         ));
@@ -194,9 +195,9 @@ fn build_brush_meshes(
 /// from the embedded grid texture. Cached by the caller's `get_or_insert_with`
 /// so it is created at most once per rebuild.
 fn grid_material(
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<AuroraMaterial>,
     assets: &AssetServer,
-) -> Handle<StandardMaterial> {
+) -> Handle<AuroraMaterial> {
     let grid = load_embedded_asset!(
         assets,
         "../assets/jd_grid.png",
@@ -210,7 +211,7 @@ fn grid_material(
             sampler.address_mode_w = ImageAddressMode::Repeat;
         }
     );
-    materials.add(StandardMaterial {
+    materials.add(AuroraMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(grid),
         alpha_mode: AlphaMode::Opaque,
@@ -225,7 +226,7 @@ mod tests {
     use bevy::app::App;
     use bevy::asset::AssetPlugin;
     use bevy::image::ImagePlugin;
-    use bevy::pbr::StandardMaterial;
+    use bevy::pbr::AuroraMaterial;
     use jackdaw_geometry::{
         BrushFaceData, BrushPlane, MeshMirror, Modifier, ModifierEntry, ModifierStack,
         compute_brush_topology, compute_face_tangent_axes,
@@ -237,7 +238,7 @@ mod tests {
         app.add_plugins(AssetPlugin::default());
         app.add_plugins(ImagePlugin::default());
         app.init_asset::<Mesh>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.add_plugins(MeshRebuildPlugin);
         app
     }
@@ -297,8 +298,8 @@ mod tests {
         // into its own chunk, and the old child must be cleared.
         let distinct = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         {
             let mut brush = app
                 .world_mut()

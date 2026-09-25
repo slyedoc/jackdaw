@@ -13,6 +13,7 @@ use jackdaw_api::prelude::*;
 
 use super::category_strip::ActiveInspectorCategory;
 use super::component_picker::InspectorAddComponentButton;
+use bevy_aurora::material::AuroraMaterial;
 
 /// Marker placed on the add-header host entity in the content column.
 /// `on_add_header_mount_added` installs layout; [`rebuild_add_header`]
@@ -256,7 +257,7 @@ fn spawn_material_header(world: &mut World, host: Entity) {
     }
 
     // Collect the material names and handles up front.
-    let entries: Vec<(String, Handle<StandardMaterial>)> = world
+    let entries: Vec<(String, Handle<AuroraMaterial>)> = world
         .get_resource::<MaterialRegistry>()
         .map(|reg| {
             reg.entries
@@ -340,8 +341,8 @@ fn spawn_material_header(world: &mut World, host: Entity) {
 /// material missing from the registry) lands on the "None" row, falling back
 /// to index 0 when the registry has no such row.
 fn material_combobox_selected_index(
-    entries: &[(String, Handle<StandardMaterial>)],
-    current: Option<&Handle<StandardMaterial>>,
+    entries: &[(String, Handle<AuroraMaterial>)],
+    current: Option<&Handle<AuroraMaterial>>,
 ) -> usize {
     match current {
         Some(handle) => entries.iter().position(|(_, h)| h == handle),
@@ -387,23 +388,23 @@ pub(crate) fn on_material_new_click(
 mod tests {
     use super::*;
 
-    // Mint distinct `StandardMaterial` handles the same way the editor does
+    // Mint distinct `AuroraMaterial` handles the same way the editor does
     // (against real asset storage); `Handle` has no public synthetic-id ctor.
     fn asset_app() -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app
     }
 
-    fn mint(app: &mut App) -> Handle<StandardMaterial> {
+    fn mint(app: &mut App) -> Handle<AuroraMaterial> {
         app.world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default())
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default())
     }
 
-    fn rows(handles: &[Handle<StandardMaterial>]) -> Vec<(String, Handle<StandardMaterial>)> {
+    fn rows(handles: &[Handle<AuroraMaterial>]) -> Vec<(String, Handle<AuroraMaterial>)> {
         handles
             .iter()
             .enumerate()
@@ -442,7 +443,7 @@ mod tests {
 
     #[test]
     fn empty_registry_is_index_zero() {
-        let entries: Vec<(String, Handle<StandardMaterial>)> = Vec::new();
+        let entries: Vec<(String, Handle<AuroraMaterial>)> = Vec::new();
         assert_eq!(material_combobox_selected_index(&entries, None), 0);
     }
 }

@@ -367,11 +367,17 @@ pub fn set_palette_asset(
 /// new name once, and every name again whenever the prefab cache changes, as
 /// it does when a prefab file is written.
 pub fn resolve_scatter_prefabs(
-    mut prefabs: ResMut<ScatterPrefabs>,
+    // TODO(aurora): `Option` because `ScatterPrefabs` is owned by `ScatterRenderPlugin`,
+    // which is off on this branch (AURORA.md item 2). `navmesh_bake` takes it the same way.
+    // Drop the `Option` when the terrain render port lands.
+    prefabs: Option<ResMut<ScatterPrefabs>>,
     mut cache: ResMut<crate::prefab::PrefabAstCache>,
     project: Option<Res<crate::project::ProjectRoot>>,
     mut seen_epoch: Local<Option<u64>>,
 ) {
+    let Some(mut prefabs) = prefabs else {
+        return;
+    };
     let refresh = *seen_epoch != Some(cache.epoch());
     let names: Vec<String> = if refresh {
         prefabs

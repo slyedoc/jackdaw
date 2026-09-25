@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
+bevy_aurora.workspace = true
 glam.workspace = true
 parry3d = "0.28"
 # Path dep with no default features so the bevy-gated `reflect` feature of

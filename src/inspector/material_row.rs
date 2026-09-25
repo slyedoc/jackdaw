@@ -15,6 +15,7 @@ use super::asset_row::{
     AssetFieldReader, AssetFieldTarget, AssetFieldWriter, AssetRowProps, spawn_asset_row,
 };
 use crate::worn_material::WornMaterial;
+use bevy_aurora::material::AuroraMaterial;
 
 /// Reflect type path of the component a mesh entity wears its material on.
 /// The inspector lists it whether or not the document authors it, so a mesh
@@ -53,7 +54,7 @@ pub(crate) fn spawn_material_asset_row(world: &mut World, source: Entity, body: 
             type_path: MESH_MATERIAL_TYPE_PATH.to_string(),
         },
         field_path: MATERIAL_FIELD.to_string(),
-        asset_type_path: StandardMaterial::type_path().to_string(),
+        asset_type_path: AuroraMaterial::type_path().to_string(),
         label: LABEL.to_string(),
         indent: 0,
     };
@@ -410,7 +411,7 @@ fn material_named(world: &World, path: &str) -> Option<WornMaterial> {
 /// it rather than leaving them editing the asset they opened on.
 pub(crate) fn follow_the_material_the_entity_wears(
     world: &mut World,
-    mut shown: Local<Option<(Entity, Option<AssetId<StandardMaterial>>)>>,
+    mut shown: Local<Option<(Entity, Option<AssetId<AuroraMaterial>>)>>,
 ) {
     let Some(source) = world
         .get_resource::<crate::selection::Selection>()

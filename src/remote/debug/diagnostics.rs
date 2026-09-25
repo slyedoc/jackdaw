@@ -10,7 +10,8 @@ use serde::Deserialize;
 use jackdaw_feathers::tokens;
 
 use super::super::ConnectionManager;
-use super::sparkline::{RingBuffer, SPARKLINE_WINDOW, SparklineMaterial};
+use super::sparkline::{RingBuffer, SPARKLINE_WINDOW, plot_points, sparkline_node};
+use bevy_aurora::ui_render::UiPolyline;
 
 /// One reply from the `jackdaw/diagnostics` BRP method. `fps` and
 /// `frame_time_ms` are null until the game has smoothed enough frames.
@@ -47,12 +48,27 @@ impl Default for DiagBuffers {
     }
 }
 
-/// Marker on a card's value `Text`, carrying the metric it shows and the
-/// handle of its sparkline material so the update system can plot into it.
+impl DiagBuffers {
+    fn for_metric(&self, metric: Metric) -> &RingBuffer {
+        match metric {
+            Metric::Fps => &self.fps,
+            Metric::FrameTime => &self.frame_time_ms,
+            Metric::EntityCount => &self.entity_count,
+        }
+    }
+}
+
+/// Marker on a card's value `Text`, carrying the metric it shows.
 #[derive(Component)]
 pub(crate) struct DiagCard {
     metric: Metric,
-    material: Handle<SparklineMaterial>,
+}
+
+/// Marker on a card's sparkline node, carrying the metric it plots. Separate from
+/// [`DiagCard`] because the plot needs its own `ComputedNode` to map samples into.
+#[derive(Component)]
+pub(crate) struct DiagPlot {
+    metric: Metric,
 }
 
 const FPS_COLOR: Color = tokens::TEXT_SUCCESS;
@@ -62,28 +78,13 @@ const ENTITY_COLOR: Color = tokens::TEXT_ACCENT;
 /// Height of a card's sparkline strip.
 const SPARKLINE_HEIGHT: f32 = 40.0;
 
-/// Mint one sparkline material per metric and spawn the panel as a child of the
-/// dock window. Called from the window's build closure, which owns the world.
+/// Spawn the panel as a child of the dock window.
 pub fn build_diagnostics_window(window: &mut ChildSpawner<'_>) {
-    let (fps, frame_time, entities) = {
-        let mut materials = window
-            .world_mut()
-            .resource_mut::<Assets<SparklineMaterial>>();
-        (
-            materials.add(SparklineMaterial::new(FPS_COLOR)),
-            materials.add(SparklineMaterial::new(FRAME_TIME_COLOR)),
-            materials.add(SparklineMaterial::new(ENTITY_COLOR)),
-        )
-    };
-    window.spawn(diagnostics_panel(fps, frame_time, entities));
+    window.spawn(diagnostics_panel());
 }
 
 /// Panel column: a header and one stat card per metric.
-fn diagnostics_panel(
-    fps: Handle<SparklineMaterial>,
-    frame_time: Handle<SparklineMaterial>,
-    entities: Handle<SparklineMaterial>,
-) -> impl Bundle {
+fn diagnostics_panel() -> impl Bundle {
     (
         Node {
             width: Val::Percent(100.0),
@@ -101,18 +102,18 @@ fn diagnostics_panel(
                 ..default()
             },
             children![
-                stat_card("FPS", Metric::Fps, fps),
-                stat_card("Frame Time", Metric::FrameTime, frame_time),
-                stat_card("Entities", Metric::EntityCount, entities),
+                stat_card("FPS", Metric::Fps, FPS_COLOR),
+                stat_card("Frame Time", Metric::FrameTime, FRAME_TIME_COLOR),
+                stat_card("Entities", Metric::EntityCount, ENTITY_COLOR),
             ],
         ),],
     )
 }
 
 /// A single stat card: label, value readout, and a sparkline strip. The value
-/// `Text` carries the `DiagCard` marker; the sparkline fill node renders the
-/// same material handle the marker stores.
-fn stat_card(label: &str, metric: Metric, material: Handle<SparklineMaterial>) -> impl Bundle {
+/// `Text` carries `DiagCard`; the strip's inner node carries `DiagPlot` and the
+/// `UiPolyline` the update system writes points into.
+fn stat_card(label: &str, metric: Metric, color: Color) -> impl Bundle {
     (
         Node {
             flex_direction: FlexDirection::Column,
@@ -141,10 +142,7 @@ fn stat_card(label: &str, metric: Metric, material: Handle<SparklineMaterial>) -
                     ..default()
                 },
                 TextColor(tokens::TEXT_PRIMARY),
-                DiagCard {
-                    metric,
-                    material: material.clone(),
-                },
+                DiagCard { metric },
             ),
             (
                 Node {
@@ -152,14 +150,7 @@ fn stat_card(label: &str, metric: Metric, material: Handle<SparklineMaterial>) -
                     height: Val::Px(SPARKLINE_HEIGHT),
                     ..default()
                 },
-                children![(
-                    Node {
-                        width: Val::Percent(100.0),
-                        height: Val::Percent(100.0),
-                        ..default()
-                    },
-                    MaterialNode(material),
-                )],
+                children![(sparkline_node(color), DiagPlot { metric })],
             ),
         ],
     )
@@ -175,8 +166,8 @@ pub fn connected(manager: Option<Res<ConnectionManager>>) -> bool {
 pub(crate) fn update_diagnostics_panel(
     sample: Option<Res<DiagnosticsSample>>,
     mut buffers: ResMut<DiagBuffers>,
-    mut materials: ResMut<Assets<SparklineMaterial>>,
     mut cards: Query<(&mut Text, &DiagCard)>,
+    mut plots: Query<(&DiagPlot, &ComputedNode, &mut UiPolyline)>,
 ) {
     let Some(sample) = sample else { return };
     if !sample.is_changed() {
@@ -192,27 +183,24 @@ pub(crate) fn update_diagnostics_panel(
     buffers.entity_count.push(sample.entity_count as f32);
 
     for (mut text, card) in &mut cards {
-        let (value, buffer) = match card.metric {
-            Metric::Fps => (
-                sample
-                    .fps
-                    .map(|v| format!("{v:.0}"))
-                    .unwrap_or_else(|| "-".to_string()),
-                &buffers.fps,
-            ),
-            Metric::FrameTime => (
-                sample
-                    .frame_time_ms
-                    .map(|v| format!("{v:.1} ms"))
-                    .unwrap_or_else(|| "-".to_string()),
-                &buffers.frame_time_ms,
-            ),
-            Metric::EntityCount => (with_thousands(sample.entity_count), &buffers.entity_count),
+        text.0 = match card.metric {
+            Metric::Fps => sample
+                .fps
+                .map(|v| format!("{v:.0}"))
+                .unwrap_or_else(|| "-".to_string()),
+            Metric::FrameTime => sample
+                .frame_time_ms
+                .map(|v| format!("{v:.1} ms"))
+                .unwrap_or_else(|| "-".to_string()),
+            Metric::EntityCount => with_thousands(sample.entity_count),
         };
-        text.0 = value;
-        if let Some(mut material) = materials.get_mut(&card.material) {
-            material.set_samples(buffer);
-        }
+    }
+
+    // The plot nodes are separate entities from the value text, so they get their own
+    // pass; `ComputedNode::size` is physical and `UiPolyline` reads logical pixels.
+    for (plot, node, mut polyline) in plots.iter_mut() {
+        let buffer = buffers.for_metric(plot.metric);
+        polyline.points = plot_points(buffer, node.size() * node.inverse_scale_factor());
     }
 }
 

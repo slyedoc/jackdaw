@@ -30,6 +30,7 @@ use crate::EditorEntity;
 use crate::default_style;
 use crate::scene_io::SceneFilePath;
 use crate::selection::Selection;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainNavmeshState>()
@@ -1379,8 +1380,8 @@ fn sync_navmesh_overlay(
     terrains: Query<&jackdaw_scene_types::Terrain>,
     store: Res<TerrainDataStore>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    existing: Query<(Entity, &MeshMaterial3d<StandardMaterial>), With<NavmeshOverlay>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
+    existing: Query<(Entity, &AuroraMaterial3d), With<NavmeshOverlay>>,
     mut built: Local<Option<OverlayBuild>>,
 ) {
     let baked = state.baked.as_ref().filter(|_| state.show_overlay);
@@ -1440,7 +1441,7 @@ fn sync_navmesh_overlay(
     };
     commands.spawn((
         Mesh3d(meshes.add(mesh)),
-        MeshMaterial3d(materials.add(StandardMaterial {
+        AuroraMaterial3d(materials.add(AuroraMaterial {
             base_color: color,
             unlit: true,
             double_sided: true,
@@ -1967,7 +1968,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Mesh>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_resource::<Selection>();
         app.init_resource::<TerrainDataStore>();
         app.init_resource::<TerrainNavmeshState>();
@@ -2603,7 +2604,7 @@ mod tests {
             .expect("the overlay sync runs");
         world.flush();
         assert!(
-            !world.is_resource_changed::<Assets<StandardMaterial>>(),
+            !world.is_resource_changed::<Assets<AuroraMaterial>>(),
             "a frame that changed nothing must not touch the material store, \
              whose every `get_mut` re-prepares the material on the GPU"
         );
@@ -2623,9 +2624,9 @@ mod tests {
         let _ = std::fs::remove_file(dir.join("zone.jdnav"));
     }
 
-    fn overlay_material(world: &mut World) -> Handle<StandardMaterial> {
+    fn overlay_material(world: &mut World) -> Handle<AuroraMaterial> {
         world
-            .query_filtered::<&MeshMaterial3d<StandardMaterial>, With<NavmeshOverlay>>()
+            .query_filtered::<&AuroraMaterial3d, With<NavmeshOverlay>>()
             .iter(world)
             .next()
             .expect("the overlay is drawn")
@@ -2636,7 +2637,7 @@ mod tests {
     fn overlay_color(world: &mut World) -> Color {
         let handle = overlay_material(world);
         world
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .expect("the overlay has a material")
             .base_color

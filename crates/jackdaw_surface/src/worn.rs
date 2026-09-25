@@ -10,6 +10,9 @@
 use crate::{FoliageMaterial, LayeredSurfaceMaterial, WaterMaterial};
 use bevy::asset::UntypedHandle;
 use bevy::prelude::*;
+// The `Standard` arm is the plain PBR material an entity wears; on this branch that is
+// aurora's. The three extended arms below still name the parked raster materials.
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Reflect type path of the component a mesh wears a standard material on.
 pub const STANDARD_MATERIAL_COMPONENT: &str =
@@ -18,7 +21,7 @@ pub const STANDARD_MATERIAL_COMPONENT: &str =
 /// The material a mesh entity wears, whichever kind holds it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WornMaterial {
-    Standard(Handle<StandardMaterial>),
+    Standard(Handle<AuroraMaterial>),
     Layered(Handle<LayeredSurfaceMaterial>),
     Foliage(Handle<FoliageMaterial>),
     Water(Handle<WaterMaterial>),
@@ -27,7 +30,7 @@ pub enum WornMaterial {
 impl WornMaterial {
     /// The material the entity is wearing, if it wears one.
     pub fn of(world: &World, entity: Entity) -> Option<Self> {
-        if let Some(standard) = world.get::<MeshMaterial3d<StandardMaterial>>(entity) {
+        if let Some(standard) = world.get::<AuroraMaterial3d>(entity) {
             return Some(Self::Standard(standard.0.clone()));
         }
         if let Some(layered) = world.get::<MeshMaterial3d<LayeredSurfaceMaterial>>(entity) {
@@ -43,7 +46,7 @@ impl WornMaterial {
 
     /// The material a handle holds, if it holds one of a kind a mesh can wear.
     pub fn of_handle(handle: UntypedHandle) -> Option<Self> {
-        if let Ok(standard) = handle.clone().try_typed::<StandardMaterial>() {
+        if let Ok(standard) = handle.clone().try_typed::<AuroraMaterial>() {
             return Some(Self::Standard(standard));
         }
         if let Ok(layered) = handle.clone().try_typed::<LayeredSurfaceMaterial>() {
@@ -60,12 +63,12 @@ impl WornMaterial {
         let Ok(mut node) = world.get_entity_mut(entity) else {
             return;
         };
-        node.remove::<MeshMaterial3d<StandardMaterial>>();
+        node.remove::<AuroraMaterial3d>();
         node.remove::<MeshMaterial3d<LayeredSurfaceMaterial>>();
         node.remove::<MeshMaterial3d<FoliageMaterial>>();
         node.remove::<MeshMaterial3d<WaterMaterial>>();
         match self {
-            Self::Standard(handle) => node.insert(MeshMaterial3d(handle.clone())),
+            Self::Standard(handle) => node.insert(AuroraMaterial3d(handle.clone())),
             Self::Layered(handle) => node.insert(MeshMaterial3d(handle.clone())),
             Self::Foliage(handle) => node.insert(MeshMaterial3d(handle.clone())),
             Self::Water(handle) => node.insert(MeshMaterial3d(handle.clone())),
@@ -94,7 +97,7 @@ impl WornMaterial {
 
     /// The standard material this wears, and nothing when it wears another
     /// kind. What the surfaces that only edit standard materials read.
-    pub fn standard(&self) -> Option<&Handle<StandardMaterial>> {
+    pub fn standard(&self) -> Option<&Handle<AuroraMaterial>> {
         match self {
             Self::Standard(handle) => Some(handle),
             Self::Layered(_) | Self::Foliage(_) | Self::Water(_) => None,
@@ -131,7 +134,7 @@ impl WornMaterial {
 /// in either direction.
 fn mark_for_respecialization(world: &mut World, entity: Entity) {
     if let Some(mut changed) =
-        world.get_resource_mut::<bevy::pbr::EntitiesNeedingSpecialization<StandardMaterial>>()
+        world.get_resource_mut::<bevy::pbr::EntitiesNeedingSpecialization<AuroraMaterial>>()
     {
         changed.changed.push(entity);
     }

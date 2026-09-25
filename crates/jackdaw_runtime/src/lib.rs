@@ -87,6 +87,7 @@ use jackdaw_bsn::{
     BsnApplyAssets, BsnPatch, BsnSceneAssets, BsnValue, SceneBsnAst, apply_component_patch,
     bsn_value_to_reflect, load_bsn_assets, parse_bsn_text,
 };
+use bevy_aurora::material::AuroraMaterial;
 
 pub use jackdaw_scene_types::{
     Brush, BrushFaceData, CustomProperties, DetailPresser, EditorCategory, EditorDescription,
@@ -724,7 +725,7 @@ fn spawn_scene_entities(
 ) -> Vec<Entity> {
     let registry = world.resource::<AppTypeRegistry>().clone();
 
-    // Load the linear-space textures a `StandardMaterial` references with
+    // Load the linear-space textures a `AuroraMaterial` references with
     // `is_srgb = false` before anything resolves their handles, so the
     // asset-server cache hands out the correctly-decoded image. Hold the
     // handles until the materials below take their own strong references.
@@ -1208,7 +1209,7 @@ fn preload_linear_textures(world: &mut World, ast: &SceneBsnAst) -> Vec<UntypedH
 /// same channel order, but float-filterable where the `Uint` side is not.
 ///
 /// Bevy decodes 16-bit grayscale PNGs as `R16Uint` and grayscale+alpha as
-/// `Rg16Uint`. A `StandardMaterial` slot demands a filterable float sampler,
+/// `Rg16Uint`. A `AuroraMaterial` slot demands a filterable float sampler,
 /// so binding either one fails the whole bind group.
 #[cfg(feature = "render")]
 fn filterable_twin(
@@ -1223,10 +1224,10 @@ fn filterable_twin(
     }
 }
 
-/// The images a `StandardMaterial` binds, over the slots every build has.
+/// The images a `AuroraMaterial` binds, over the slots every build has.
 #[cfg(feature = "render")]
 fn material_texture_ids(
-    material: &StandardMaterial,
+    material: &AuroraMaterial,
 ) -> impl Iterator<Item = bevy::asset::AssetId<Image>> {
     [
         material.base_color_texture.as_ref(),
@@ -1268,8 +1269,8 @@ impl Plugin for MaterialTextureFormatPlugin {
 #[cfg(feature = "render")]
 fn promote_material_texture_formats(
     mut image_events: MessageReader<AssetEvent<Image>>,
-    mut material_events: MessageReader<AssetEvent<StandardMaterial>>,
-    materials: Res<Assets<StandardMaterial>>,
+    mut material_events: MessageReader<AssetEvent<AuroraMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
     use bevy::asset::AssetId;
@@ -1680,9 +1681,9 @@ mod asset_file_tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
         app.init_resource::<JackdawCatalog>();
         app
     }
@@ -1884,7 +1885,7 @@ mod material_texture_format_tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.add_plugins(MaterialTextureFormatPlugin);
         app
     }
@@ -1923,8 +1924,8 @@ mod material_texture_format_tests {
         let gray_alpha = raw_image(&mut app, &[0x00, 0x80, 0x00, 0xff], TextureFormat::Rg16Uint);
         let _material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 occlusion_texture: Some(occlusion.clone()),
                 depth_map: Some(gray_alpha.clone()),
                 ..default()
@@ -1943,8 +1944,8 @@ mod material_texture_format_tests {
         let image = raw_image(&mut app, &[0x34, 0x12], TextureFormat::R16Uint);
         let _material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 depth_map: Some(image.clone()),
                 ..default()
             });
@@ -1981,8 +1982,8 @@ mod material_texture_format_tests {
 
         let _material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 normal_map_texture: Some(image.clone()),
                 ..default()
             });

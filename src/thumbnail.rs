@@ -49,6 +49,7 @@ use path_slash::PathExt as _;
 
 use crate::asset_index::AssetIndex;
 use crate::entity_ops::GltfSource;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Render layer the thumbnail stage owns exclusively. Layer 0 is the world,
 /// layer 1 is the material preview, and per-viewport grids start at layer 3
@@ -526,7 +527,7 @@ enum Stage {
     /// A prefab's models are being spawned by a queued command.
     Building,
     /// A material's sphere is up; waiting on the textures it draws with.
-    Dressing(Handle<StandardMaterial>),
+    Dressing(Handle<AuroraMaterial>),
     /// The subject is spawned; waiting for its meshes to exist so the bounds
     /// can be measured.
     Spawned,
@@ -562,7 +563,7 @@ fn drive_thumbnail_queue(
     mut images: ResMut<Assets<Image>>,
     assets: Res<AssetServer>,
     meshes: Res<Assets<Mesh>>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     shapes: Option<Res<crate::material_preview::PreviewShapeMeshes>>,
     index: Option<Res<AssetIndex>>,
     children_query: Query<&Children>,
@@ -716,7 +717,7 @@ fn start_job(
                     ThumbnailSubject,
                     crate::EditorEntity,
                     Mesh3d(shapes.sphere.clone()),
-                    MeshMaterial3d(material.clone()),
+                    AuroraMaterial3d(material.clone()),
                     Transform::IDENTITY,
                     Visibility::Visible,
                     RenderLayers::layer(THUMBNAIL_LAYER),
@@ -753,7 +754,7 @@ fn material_handle(
     thumbnails: &Thumbnails,
     index: Option<&AssetIndex>,
     path: &Path,
-) -> Option<Handle<StandardMaterial>> {
+) -> Option<Handle<AuroraMaterial>> {
     let index = index?;
     let relative = thumbnails
         .assets_dir
@@ -761,8 +762,8 @@ fn material_handle(
         .and_then(|root| path.strip_prefix(root).ok())
         .unwrap_or(path);
     let handle = index.get(relative)?.value.handle()?;
-    (handle.type_id() == std::any::TypeId::of::<StandardMaterial>())
-        .then(|| handle.clone().typed::<StandardMaterial>())
+    (handle.type_id() == std::any::TypeId::of::<AuroraMaterial>())
+        .then(|| handle.clone().typed::<AuroraMaterial>())
 }
 
 #[expect(
@@ -775,7 +776,7 @@ fn step_job(
     images: &mut Assets<Image>,
     assets: &AssetServer,
     meshes: &Assets<Mesh>,
-    materials: &Assets<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
     children_query: &Query<&Children>,
     mesh_query: &Query<(&Mesh3d, &GlobalTransform)>,
     model_query: &Query<&WorldAssetRoot>,
@@ -937,8 +938,8 @@ fn every_model_failed(
 /// is not photographed while it is still untextured.
 fn material_is_dressed(
     assets: &AssetServer,
-    materials: &Assets<StandardMaterial>,
-    handle: &Handle<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
+    handle: &Handle<AuroraMaterial>,
 ) -> bool {
     let Some(material) = materials.get(handle) else {
         return false;

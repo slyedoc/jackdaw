@@ -596,6 +596,9 @@ mod tests {
     use jackdaw_scene_types::PropertyValue;
 
     use super::*;
+    // Only the tests build materials here, so the import lives in the test module rather
+    // than at file scope where it would be unused.
+    use bevy_aurora::material::AuroraMaterial;
 
     /// Control words go in, the list is edited, and what each painted cell
     /// resolves to drawing comes out. Asserting on names alone would pass
@@ -624,7 +627,7 @@ mod tests {
             let mut app = App::new();
             app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
             app.init_asset::<Image>();
-            app.init_asset::<StandardMaterial>();
+            app.init_asset::<AuroraMaterial>();
             app.init_resource::<Selection>();
             app.init_resource::<TerrainDataStore>();
             app.init_resource::<TerrainMaterialPicker>();
@@ -637,8 +640,8 @@ mod tests {
                     let server = app.world().resource::<AssetServer>().clone();
                     let albedo = server.load::<Image>(format!("t/{name}.png"));
                     app.world_mut()
-                        .resource_mut::<Assets<StandardMaterial>>()
-                        .add(StandardMaterial {
+                        .resource_mut::<Assets<AuroraMaterial>>()
+                        .add(AuroraMaterial {
                             base_color_texture: Some(albedo),
                             ..default()
                         })
@@ -714,7 +717,7 @@ mod tests {
                 .materials(PATH)
                 .to_vec();
             let registry = world.resource::<MaterialRegistry>();
-            let materials = world.resource::<Assets<StandardMaterial>>();
+            let materials = world.resource::<Assets<AuroraMaterial>>();
             let resolved = jackdaw_terrain::render::resolve_with(
                 &slots,
                 |name| {
@@ -1037,11 +1040,11 @@ mod tests {
         world.init_resource::<TerrainPaintState>();
         world.init_resource::<CommandHistory>();
 
-        let mut assets = Assets::<StandardMaterial>::default();
+        let mut assets = Assets::<AuroraMaterial>::default();
         let mut registry = MaterialRegistry::default();
-        registry.add_saved("grass".into(), assets.add(StandardMaterial::default()));
-        registry.add_saved("rock".into(), assets.add(StandardMaterial::default()));
-        registry.add("detected".into(), assets.add(StandardMaterial::default()));
+        registry.add_saved("grass".into(), assets.add(AuroraMaterial::default()));
+        registry.add_saved("rock".into(), assets.add(AuroraMaterial::default()));
+        registry.add("detected".into(), assets.add(AuroraMaterial::default()));
         world.insert_resource(registry);
 
         let entity = world

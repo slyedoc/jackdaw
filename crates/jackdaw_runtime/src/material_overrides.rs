@@ -190,10 +190,10 @@ mod tests {
     fn model(app: &mut App, own: &Handle<StandardMaterial>) -> (Entity, Entity, Entity) {
         let world = app.world_mut();
         let rock = world
-            .spawn((GltfMaterialName("Rock".into()), MeshMaterial3d(own.clone())))
+            .spawn((GltfMaterialName("Rock".into()), AuroraMaterial3d(own.clone())))
             .id();
         let moss = world
-            .spawn((GltfMaterialName("Moss".into()), MeshMaterial3d(own.clone())))
+            .spawn((GltfMaterialName("Moss".into()), AuroraMaterial3d(own.clone())))
             .id();
         let root = world
             .spawn(Transform::default())
@@ -292,7 +292,7 @@ mod tests {
             .world_mut()
             .spawn((
                 GltfMaterialName("Surface".into()),
-                MeshMaterial3d(own),
+                AuroraMaterial3d(own),
                 ChildOf(root),
             ))
             .id();

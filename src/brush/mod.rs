@@ -16,6 +16,7 @@ pub mod topology_ops;
 use bevy::prelude::*;
 
 use crate::commands::EditorCommand;
+use bevy_aurora::material::AuroraMaterial;
 
 pub use self::csg::{
     brush_planes_to_world, brushes_intersect, clean_degenerate_faces, subtract_brush,
@@ -178,7 +179,7 @@ pub struct BrushMeshChunk {
     /// The material resolved at rebuild time (explicit face material,
     /// or the default/selected palette variant), kept so x-ray view
     /// can restore the exact pre-toggle material.
-    pub material: Handle<StandardMaterial>,
+    pub material: Handle<AuroraMaterial>,
 }
 
 /// Marker: brush is being actively modified and should render with transparent preview materials.
@@ -306,22 +307,22 @@ pub struct BrushFaceHover {
 /// Material palette for brush faces.
 #[derive(Resource, Default)]
 pub struct BrushMaterialPalette {
-    pub materials: Vec<Handle<StandardMaterial>>,
-    pub preview_materials: Vec<Handle<StandardMaterial>>,
+    pub materials: Vec<Handle<AuroraMaterial>>,
+    pub preview_materials: Vec<Handle<AuroraMaterial>>,
     /// Grid-textured default material at low alpha.
-    pub default_material: Handle<StandardMaterial>,
+    pub default_material: Handle<AuroraMaterial>,
     /// Grid-textured default material at high alpha.
-    pub default_selected_material: Handle<StandardMaterial>,
+    pub default_selected_material: Handle<AuroraMaterial>,
     /// Translucent unlit material applied to every chunk in x-ray view.
-    pub x_ray_material: Handle<StandardMaterial>,
+    pub x_ray_material: Handle<AuroraMaterial>,
     /// X-ray variant for selected / preview brushes.
-    pub x_ray_selected_material: Handle<StandardMaterial>,
+    pub x_ray_selected_material: Handle<AuroraMaterial>,
 }
 
 /// Remembers the last material applied via the texture/material browser, so new brushes inherit it.
 #[derive(Resource, Default)]
 pub struct LastUsedMaterial {
-    pub material: Option<Handle<StandardMaterial>>,
+    pub material: Option<Handle<AuroraMaterial>>,
 }
 
 pub struct SetBrush {
@@ -496,8 +497,12 @@ impl Plugin for BrushPlugin {
             .init_resource::<LastUsedMaterial>()
             .add_plugins(mesh::MeshPlugin)
             .add_plugins(preview::PreviewPlugin)
-            .add_plugins(MaterialPlugin::<gizmo_overlay::OccludedHandleMaterial>::default())
-            .add_plugins(MaterialPlugin::<gizmo_overlay::FrontEdgeMaterial>::default())
+            // TODO(aurora): the gizmo overlay's two materials are `AsBindGroup`, so their
+            // `MaterialPlugin`s are off (AURORA.md item 2). The asset collections still have
+            // to exist -- the overlay systems mint handles into them -- so register the
+            // assets without the draw. Aurora's gizmo_render may cover this outright.
+            .init_asset::<gizmo_overlay::OccludedHandleMaterial>()
+            .init_asset::<gizmo_overlay::FrontEdgeMaterial>()
             .add_systems(
                 OnEnter(crate::AppState::Editor),
                 (

@@ -46,6 +46,7 @@ use crate::inspector::prefab_field_dots::{PrefabInstanceCtx, inspector_type_path
 use crate::prefab::PrefabAstCache;
 use crate::type_metadata::{TypeChrome, TypeMetadata};
 use bevy::picking::hover::Hovered;
+use bevy_aurora::material::AuroraMaterial;
 
 /// What the inspector reads to place its target: the entity's parents, the
 /// prefab it instances, and whether it edits a definition asset rather than a
@@ -83,7 +84,7 @@ pub(crate) fn sync_inspector_to_selection(
     names: Query<&Name>,
     icon_font: Res<IconFont>,
     editor_font: Res<EditorFont>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     asts: SceneAsts,
     prefab_cache: Res<PrefabAstCache>,
     lineage: InspectorLineage,
@@ -330,7 +331,7 @@ pub(crate) fn build_inspector_displays(
     icon_font: &IconFont,
     editor_font: &EditorFont,
     _read_only: bool,
-    materials: &Assets<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
     authored_type_paths: &HashSet<String>,
     scene_ast: Option<&jackdaw_bsn::SceneBsnAst>,
     prefab_cache: Option<&PrefabAstCache>,
@@ -914,7 +915,7 @@ pub(crate) fn on_inspector_dirty(
     names: Query<&Name>,
     icon_font: Res<IconFont>,
     editor_font: Res<EditorFont>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     asts: SceneAsts,
     prefab_cache: Res<PrefabAstCache>,
     lineage: InspectorLineage,

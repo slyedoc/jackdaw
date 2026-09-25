@@ -7,6 +7,7 @@ use bevy::{
 };
 
 use crate::default_style;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 pub(super) struct MaterialPreviewPlugin;
 
@@ -77,7 +78,7 @@ pub struct PreviewCamera;
 
 #[derive(Resource)]
 pub struct MaterialPreviewState {
-    pub active_material: Option<Handle<StandardMaterial>>,
+    pub active_material: Option<Handle<AuroraMaterial>>,
     pub orbit_yaw: f32,
     pub orbit_pitch: f32,
     pub zoom_distance: f32,
@@ -103,7 +104,7 @@ const PREVIEW_LAYER: usize = 1;
 fn setup_material_preview_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut preview_state: ResMut<MaterialPreviewState>,
     assets: Res<AssetServer>,
@@ -138,13 +139,13 @@ fn setup_material_preview_scene(
         cube,
         plane,
     });
-    let mat = materials.add(StandardMaterial::default());
+    let mat = materials.add(AuroraMaterial::default());
 
     commands.spawn((
         PreviewSphere,
         crate::EditorEntity,
         Mesh3d(sphere),
-        MeshMaterial3d(mat),
+        AuroraMaterial3d(mat),
         Transform::default(),
         Visibility::Inherited,
         preview_layer.clone(),
@@ -214,7 +215,7 @@ fn update_preview_camera_transform(
 
 fn update_active_preview_material(
     preview_state: Res<MaterialPreviewState>,
-    mut sphere_q: Query<&mut MeshMaterial3d<StandardMaterial>, With<PreviewSphere>>,
+    mut sphere_q: Query<&mut AuroraMaterial3d, With<PreviewSphere>>,
     mut camera_q: Query<&mut Camera, With<PreviewCamera>>,
 ) {
     if !preview_state.is_changed() {

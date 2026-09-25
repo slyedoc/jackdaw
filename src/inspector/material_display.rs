@@ -1,4 +1,4 @@
-use bevy::{prelude::*, render::render_resource::Face};
+use bevy::prelude::*;
 use jackdaw_feathers::{
     icons::{EditorFontItalic, Icon, IconFont},
     slider_row::FieldKind,
@@ -9,6 +9,7 @@ use crate::material_ui::{
     ActionHeaderProps, DEPTH_BIAS_RANGE, UNIT_RANGE, fill_surface_rows, fill_texture_rows,
     spawn_action_header, spawn_checkbox_row, spawn_combobox_row, spawn_preview, spawn_scalar_row,
 };
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d, Face};
 
 /// The material cards shown in the Material inspector tab, in display order.
 /// Each maps to one card; the `material_card::` type-path prefix routes them
@@ -70,10 +71,10 @@ impl MaterialCardKind {
 pub(super) fn fill_textures_card(
     world: &mut World,
     body: Entity,
-    handle: Handle<StandardMaterial>,
+    handle: Handle<AuroraMaterial>,
 ) {
     let Some(m) = world
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
         .cloned()
     else {
@@ -88,9 +89,9 @@ pub(super) fn fill_textures_card(
 }
 
 /// Surface card body: the core PBR fields, all editable, applied live.
-pub(super) fn fill_surface_card(world: &mut World, body: Entity, handle: Handle<StandardMaterial>) {
+pub(super) fn fill_surface_card(world: &mut World, body: Entity, handle: Handle<AuroraMaterial>) {
     let Some(m) = world
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
         .cloned()
     else {
@@ -108,10 +109,10 @@ const MASK_THRESHOLD_DEFAULT: f64 = 0.5;
 pub(super) fn fill_settings_card(
     world: &mut World,
     body: Entity,
-    handle: Handle<StandardMaterial>,
+    handle: Handle<AuroraMaterial>,
 ) {
     let Some(m) = world
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
         .cloned()
     else {
@@ -143,7 +144,7 @@ pub(super) fn fill_settings_card(
         cull_idx,
         handle.clone(),
         |world, h, i| {
-            if let Some(mut m) = world.resource_mut::<Assets<StandardMaterial>>().get_mut(h) {
+            if let Some(mut m) = world.resource_mut::<Assets<AuroraMaterial>>().get_mut(h) {
                 m.cull_mode = match i {
                     1 => Some(Face::Front),
                     2 => Some(Face::Back),
@@ -209,7 +210,7 @@ pub(super) fn fill_settings_card(
         alpha_idx,
         handle.clone(),
         |world, h, i| {
-            if let Some(mut m) = world.resource_mut::<Assets<StandardMaterial>>().get_mut(h) {
+            if let Some(mut m) = world.resource_mut::<Assets<AuroraMaterial>>().get_mut(h) {
                 m.alpha_mode = match i {
                     1 => AlphaMode::Mask(0.5),
                     2 => AlphaMode::Blend,
@@ -309,24 +310,24 @@ pub(crate) fn fill_material_card_body(
     }
 }
 
-/// Resolve a `Handle<StandardMaterial>` for the given source entity.
+/// Resolve a `Handle<AuroraMaterial>` for the given source entity.
 /// For brush entities, delegates to the brush face resolution logic.
-/// For mesh entities, reads `MeshMaterial3d<StandardMaterial>` directly.
+/// For mesh entities, reads `AuroraMaterial3d` directly.
 pub(crate) fn resolve_material_handle(
     world: &World,
     source: Entity,
-) -> Option<Handle<StandardMaterial>> {
+) -> Option<Handle<AuroraMaterial>> {
     if world.get::<crate::brush::Brush>(source).is_some() {
         return super::material_card_routing::resolve_brush_material_handle(world, source);
     }
     world
-        .get::<MeshMaterial3d<StandardMaterial>>(source)
+        .get::<AuroraMaterial3d>(source)
         .map(|m| m.0.clone())
 }
 
 /// Preview card body: the action header, then the shared preview widget.
 /// Points the preview at the inspected material while mounted.
-pub(super) fn fill_preview_card(world: &mut World, body: Entity, handle: Handle<StandardMaterial>) {
+pub(super) fn fill_preview_card(world: &mut World, body: Entity, handle: Handle<AuroraMaterial>) {
     let image = {
         let mut state = world.resource_mut::<crate::material_preview::MaterialPreviewState>();
         state.active_material = Some(handle.clone());
@@ -397,6 +398,7 @@ mod surface_card_tests {
     use super::fill_surface_card;
     use crate::material_ui::{MaterialFieldBinding, MaterialFieldMarker};
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
 
     #[test]
     fn surface_card_spawns_rows() {
@@ -404,13 +406,13 @@ mod surface_card_tests {
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
         app.add_plugins(bevy::scene::ScenePlugin);
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Font>();
 
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
         let body = app.world_mut().spawn(Node::default()).id();
 
@@ -473,6 +475,7 @@ mod settings_card_tests {
         MaterialFieldMarker,
     };
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
 
     #[test]
     fn settings_card_spawns_rows() {
@@ -480,14 +483,14 @@ mod settings_card_tests {
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
         app.add_plugins(bevy::scene::ScenePlugin);
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Font>();
         app.init_asset::<Image>();
 
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
         let body = app.world_mut().spawn(Node::default()).id();
 
@@ -539,6 +542,7 @@ mod textures_card_tests {
     use super::fill_textures_card;
     use crate::material_ui::{MaterialCheckboxBinding, MaterialTextureSlotRow, TextureSlot};
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
     use jackdaw_feathers::icons::IconFont;
 
     #[test]
@@ -547,7 +551,7 @@ mod textures_card_tests {
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
         app.add_plugins(bevy::scene::ScenePlugin);
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Image>();
         app.init_asset::<Font>();
 
@@ -558,8 +562,8 @@ mod textures_card_tests {
 
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
         let body = app.world_mut().spawn(Node::default()).id();
 
@@ -595,13 +599,14 @@ mod preview_card_tests {
         MaterialPreviewView, PreviewShapeButton, refresh_preview_shape_buttons,
     };
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
 
     fn make_app() -> App {
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
         app.add_plugins(bevy::scene::ScenePlugin);
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Image>();
         app.init_asset::<Font>();
         app.init_resource::<MaterialPreviewState>();
@@ -614,8 +619,8 @@ mod preview_card_tests {
 
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
         let body = app.world_mut().spawn(Node::default()).id();
 
@@ -669,6 +674,7 @@ mod inject_material_cards_tests {
     use crate::inspector::{ComponentDisplayTypePath, InspectorCollapseState};
     use bevy::ecs::system::RunSystemOnce;
     use bevy::prelude::*;
+    use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
     use jackdaw_feathers::icons::{EditorFont, IconFont};
     use std::collections::HashSet;
 
@@ -677,7 +683,7 @@ mod inject_material_cards_tests {
         app.add_plugins(MinimalPlugins);
         app.add_plugins(bevy::asset::AssetPlugin::default());
         app.add_plugins(bevy::scene::ScenePlugin);
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Image>();
         app.init_asset::<Font>();
 
@@ -702,10 +708,10 @@ mod inject_material_cards_tests {
         // resolve_material_handle returns Some and all four body builders run.
         let mat_handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
-        let source = app.world_mut().spawn(MeshMaterial3d(mat_handle)).id();
+        let source = app.world_mut().spawn(AuroraMaterial3d(mat_handle)).id();
 
         let inspector = app.world_mut().spawn_empty().id();
 

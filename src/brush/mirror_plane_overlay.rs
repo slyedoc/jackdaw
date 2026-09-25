@@ -16,6 +16,9 @@ use crate::brush::Brush;
 use crate::selection::Selected;
 use crate::viewport::{MainViewportCamera, ViewportCursor};
 use crate::{JackdawDrawSystems, default_style};
+// NOT aliased to AuroraMaterial: this overlay wears `gizmo_overlay`'s
+// ExtendedMaterials, which are built on bevy's StandardMaterial and parked with
+// the rest of AURORA.md item 2.
 
 /// Gizmo group for the mirror plane preview grid.
 #[derive(Default, Reflect, GizmoConfigGroup)]

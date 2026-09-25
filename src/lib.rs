@@ -70,7 +70,6 @@ pub mod canvas_snap;
 pub mod core_extension;
 pub mod dock_ops;
 pub mod document_ops;
-pub mod editor_grid_depth_patch;
 pub mod ext_build;
 mod extension_lifecycle;
 pub mod extension_resolution;
@@ -191,6 +190,7 @@ use jackdaw_feathers::dialog::EditorDialog;
 pub use jackdaw_loader::DylibLoaderPlugin;
 use jackdaw_widgets::menu_bar::MenuAction;
 use selection::Selection;
+use bevy_aurora::material::AuroraMaterial;
 
 /// Everything needed to start using Jackdaw.
 pub mod prelude {
@@ -435,7 +435,17 @@ impl Plugin for EditorCorePlugin {
         ))
         .add_plugins(prefab::PrefabPlugin)
         .add_plugins(prefab::watcher::PrefabWatcherPlugin)
-        .add_plugins(jackdaw_surface::EnvironmentPlugin)
+        // TODO(aurora): these asset collections are normally created by the
+        // `MaterialPlugin`s that are off on this branch (AURORA.md item 2) -- and
+        // `Assets<AuroraMaterial>` by `PbrPlugin`, which goes with bevy's DefaultPlugins.
+        // The editor AUTHORS these materials: it reads, edits and saves them as scene data
+        // whether or not anything draws them, so the collections must exist or every system
+        // touching one fails parameter validation. Registering the asset without the plugin
+        // gives exactly that -- data, no draw.
+        .init_asset::<AuroraMaterial>()
+        .init_asset::<jackdaw_terrain::render::TerrainSplatMaterial>()
+        // TODO(aurora): EnvironmentPlugin owns SkyMaterial, an `AsBindGroup`. Aurora has
+        // its own sky/atmosphere (`sky.rs`, `atmosphere.rs`); AURORA.md item 2.
         .add_plugins(jackdaw_runtime::MaterialOverridesPlugin)
         .add_plugins(file_ops::FileOpsPlugin)
         .add_plugins(keybinds::KeybindsPlugin)

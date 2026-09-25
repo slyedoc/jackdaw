@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use jackdaw_feathers::button::{ButtonClickEvent, ButtonProps, ButtonVariant, button};
 use jackdaw_feathers::tokens;
 
-use super::graph::{self, GraphEdgeMaterial, GraphNodeSpec};
+use super::graph::{self, GraphNodeSpec};
 use super::schedules::SchedulesReply;
 use super::style;
 
@@ -133,7 +133,6 @@ pub(crate) fn rebuild_depgraph(
     reply: Option<Res<SchedulesReply>>,
     selected: Res<SelectedSchedule>,
     mut commands: Commands,
-    mut materials: ResMut<Assets<GraphEdgeMaterial>>,
     meta_containers: Query<Entity, With<DepgraphMeta>>,
     selector_containers: Query<Entity, With<DepgraphSelector>>,
     banner_containers: Query<Entity, With<DepgraphBanner>>,
@@ -228,7 +227,6 @@ pub(crate) fn rebuild_depgraph(
             info.ambiguities.iter().map(|a| (a.a, a.b)).collect();
         graph::spawn_graph(
             &mut commands,
-            &mut materials,
             container,
             &nodes,
             &info.edges,

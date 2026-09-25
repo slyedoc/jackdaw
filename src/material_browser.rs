@@ -29,6 +29,7 @@ use jackdaw_feathers::{
     tokens,
 };
 use path_slash::PathExt as _;
+use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 
 pub struct MaterialBrowserPlugin;
 
@@ -87,7 +88,7 @@ pub struct ApplyMaterialDefToFaces {
 
 #[derive(Event, Clone)]
 struct SelectMaterialPreview {
-    handle: Handle<StandardMaterial>,
+    handle: Handle<AuroraMaterial>,
 }
 
 #[derive(Component)]
@@ -208,7 +209,7 @@ fn detect_material_sets(assets: &Path) -> Vec<jackdaw_material::MaterialSet> {
 }
 
 /// Whether a file is a KTX2 cubemap or array, which cannot bind to a
-/// `StandardMaterial` slot. The bytes the answer is read from say nothing in
+/// `AuroraMaterial` slot. The bytes the answer is read from say nothing in
 /// any other format, so only a KTX2 file is asked.
 fn is_non_2d_ktx2(path: &Path) -> bool {
     path.extension()
@@ -216,12 +217,12 @@ fn is_non_2d_ktx2(path: &Path) -> bool {
         && crate::texture_files::is_ktx2_non_2d(path)
 }
 
-/// Bind a detected set's files to a fresh `StandardMaterial`.
+/// Bind a detected set's files to a fresh `AuroraMaterial`.
 fn material_from_set(
     set: &jackdaw_material::MaterialSet,
     asset_server: &AssetServer,
-    materials: &mut Assets<StandardMaterial>,
-) -> Handle<StandardMaterial> {
+    materials: &mut Assets<AuroraMaterial>,
+) -> Handle<AuroraMaterial> {
     use jackdaw_material::TextureRole;
 
     let base_color_texture = set
@@ -252,7 +253,7 @@ fn material_from_set(
         .map(|p| load_role_image(TextureRole::Depth, p, asset_server));
 
     let scalars = set.recommended_scalars();
-    materials.add(StandardMaterial {
+    materials.add(AuroraMaterial {
         base_color_texture,
         normal_map_texture,
         metallic_roughness_texture,
@@ -262,7 +263,7 @@ fn material_from_set(
         metallic: scalars.metallic,
         perceptual_roughness: scalars.perceptual_roughness,
         parallax_depth_scale: scalars.parallax_depth_scale,
-        parallax_mapping_method: bevy::pbr::ParallaxMappingMethod::Occlusion,
+        parallax_mapping_method: ParallaxMappingMethod::Occlusion,
         max_parallax_layer_count: scalars.max_parallax_layer_count,
         ..default()
     })
@@ -281,13 +282,13 @@ fn material_from_set(
 fn rebuild_material_registry(world: &mut World) {
     world.resource_mut::<MaterialRegistry>().entries.clear();
 
-    let mut saved: Vec<(String, Handle<StandardMaterial>)> = world
+    let mut saved: Vec<(String, Handle<AuroraMaterial>)> = world
         .resource::<crate::asset_index::AssetIndex>()
         .of_kind(crate::definition_assets::MATERIAL_KIND)
         .filter_map(|entry| {
             let handle = entry.value.handle()?;
-            (handle.type_id() == std::any::TypeId::of::<StandardMaterial>())
-                .then(|| (entry.name(), handle.clone().typed::<StandardMaterial>()))
+            (handle.type_id() == std::any::TypeId::of::<AuroraMaterial>())
+                .then(|| (entry.name(), handle.clone().typed::<AuroraMaterial>()))
         })
         .collect();
     let inline = world
@@ -300,13 +301,13 @@ fn rebuild_material_registry(world: &mut World) {
             .handles
             .iter()
             .filter(|(name, handle)| {
-                handle.type_id() == std::any::TypeId::of::<StandardMaterial>()
+                handle.type_id() == std::any::TypeId::of::<AuroraMaterial>()
                     && inline.contains(name.trim_start_matches(['@', '#']))
             })
             .map(|(name, handle)| {
                 (
                     name.trim_start_matches(['@', '#']).to_string(),
-                    handle.clone().typed::<StandardMaterial>(),
+                    handle.clone().typed::<AuroraMaterial>(),
                 )
             }),
     );
@@ -320,15 +321,15 @@ fn rebuild_material_registry(world: &mut World) {
 
     add_detected_sets(world);
 
-    let mut orphans: Vec<(String, Handle<StandardMaterial>)> = world
+    let mut orphans: Vec<(String, Handle<AuroraMaterial>)> = world
         .resource::<crate::asset_catalog::AssetCatalog>()
         .handles
         .iter()
-        .filter(|(_, handle)| handle.type_id() == std::any::TypeId::of::<StandardMaterial>())
+        .filter(|(_, handle)| handle.type_id() == std::any::TypeId::of::<AuroraMaterial>())
         .map(|(name, handle)| {
             (
                 name.trim_start_matches(['@', '#']).to_string(),
-                handle.clone().typed::<StandardMaterial>(),
+                handle.clone().typed::<AuroraMaterial>(),
             )
         })
         .collect();
@@ -350,7 +351,7 @@ fn rebuild_material_registry(world: &mut World) {
 /// List every texture set the project's assets hold that no material file
 /// already answers for.
 ///
-/// A detected set is unsaved: it lives in `Assets<StandardMaterial>` and in the
+/// A detected set is unsaved: it lives in `Assets<AuroraMaterial>` and in the
 /// shared catalog, so a face can reference it and a scene save embeds it, until
 /// `material.save` writes it a file. The handle a previous scan published under
 /// the same name is reused, so a rescan does not orphan the material on the
@@ -372,14 +373,14 @@ fn add_detected_sets(world: &mut World) {
             .resource::<crate::asset_catalog::AssetCatalog>()
             .handles
             .get(&catalog_name)
-            .filter(|handle| handle.type_id() == std::any::TypeId::of::<StandardMaterial>())
-            .map(|handle| handle.clone().typed::<StandardMaterial>());
+            .filter(|handle| handle.type_id() == std::any::TypeId::of::<AuroraMaterial>())
+            .map(|handle| handle.clone().typed::<AuroraMaterial>());
         let handle = match existing {
             Some(handle) => handle,
             None => {
                 let handle = {
                     let asset_server = world.resource::<AssetServer>().clone();
-                    let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+                    let mut materials = world.resource_mut::<Assets<AuroraMaterial>>();
                     material_from_set(&set, &asset_server, &mut materials)
                 };
                 world
@@ -629,7 +630,7 @@ fn handle_select_material_preview(
 /// under the pointer on every drag of the colour picker.
 #[derive(PartialEq, Clone, Debug, Default)]
 struct PreviewAreaBuild {
-    material: Option<AssetId<StandardMaterial>>,
+    material: Option<AssetId<AuroraMaterial>>,
     name: String,
     saved: bool,
     /// Which slots are bound. The rows differ by it (swatch, file name, and
@@ -645,7 +646,7 @@ fn update_preview_area(
     mut commands: Commands,
     preview_state: Res<MaterialPreviewState>,
     registry: Res<MaterialRegistry>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     collapse: Res<PanelCardCollapseState>,
     bar_query: Query<(Entity, Option<&Children>), With<MaterialActionBar>>,
     container_query: Query<(Entity, Option<&Children>), With<PreviewAreaContainer>>,
@@ -739,10 +740,10 @@ fn update_preview_area(
 ///
 /// Takes no camera state, so an orbit cannot tear down the observer driving it.
 fn preview_area_build(
-    active: Option<&Handle<StandardMaterial>>,
+    active: Option<&Handle<AuroraMaterial>>,
     name: &str,
     saved: bool,
-    material: Option<&StandardMaterial>,
+    material: Option<&AuroraMaterial>,
 ) -> PreviewAreaBuild {
     PreviewAreaBuild {
         material: active.map(Handle::id),
@@ -820,7 +821,7 @@ struct MaterialTileKey {
 fn tile_keys(
     registry: &MaterialRegistry,
     filter: &str,
-    materials: &Assets<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
 ) -> Vec<MaterialTileKey> {
     let filter_lower = filter.to_lowercase();
     registry
@@ -841,7 +842,7 @@ fn update_material_browser_ui(
     mut commands: Commands,
     registry: Res<MaterialRegistry>,
     state: Res<MaterialBrowserState>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     italic_font: Res<icons::EditorFontItalic>,
     grid_query: Query<(Entity, Option<&Children>), With<MaterialBrowserGrid>>,
     fresh_grid: Query<(), Added<MaterialBrowserGrid>>,
@@ -1049,12 +1050,12 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
 pub(crate) fn material_create(
     _: In<OperatorParameters>,
     mut registry: ResMut<MaterialRegistry>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     mut catalog: ResMut<crate::asset_catalog::AssetCatalog>,
     mut preview_state: ResMut<MaterialPreviewState>,
 ) -> OperatorResult {
     let name = registry.next_created_name();
-    let handle = materials.add(StandardMaterial::default());
+    let handle = materials.add(AuroraMaterial::default());
     catalog.insert(format!("@{name}"), handle.clone().untyped());
     registry.add(name, handle.clone());
     preview_state.active_material = Some(handle);
@@ -1188,7 +1189,7 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app
     }
 
@@ -1200,14 +1201,14 @@ mod tests {
             .expect("one set")
     }
 
-    fn built(app: &mut App, set: &jackdaw_material::MaterialSet) -> StandardMaterial {
+    fn built(app: &mut App, set: &jackdaw_material::MaterialSet) -> AuroraMaterial {
         let asset_server = app.world().resource::<AssetServer>().clone();
         let handle = {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             material_from_set(set, &asset_server, &mut materials)
         };
         app.world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .expect("built material")
             .clone()
@@ -1248,21 +1249,21 @@ mod tests {
         let mut app = browser_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
 
         let before = {
-            let materials = app.world().resource::<Assets<StandardMaterial>>();
+            let materials = app.world().resource::<Assets<AuroraMaterial>>();
             preview_area_build(Some(&handle), "rock", true, materials.get(&handle))
         };
         {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             let mut material = materials.get_mut(&handle).expect("material");
             material.base_color = Color::srgb(0.1, 0.2, 0.3);
             material.metallic = 0.75;
         }
         let after = {
-            let materials = app.world().resource::<Assets<StandardMaterial>>();
+            let materials = app.world().resource::<Assets<AuroraMaterial>>();
             preview_area_build(Some(&handle), "rock", true, materials.get(&handle))
         };
 
@@ -1279,26 +1280,26 @@ mod tests {
         let mut app = browser_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let image = app
             .world_mut()
             .resource_mut::<Assets<Image>>()
             .reserve_handle();
 
         let before = {
-            let materials = app.world().resource::<Assets<StandardMaterial>>();
+            let materials = app.world().resource::<Assets<AuroraMaterial>>();
             preview_area_build(Some(&handle), "rock", true, materials.get(&handle))
         };
         {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             materials
                 .get_mut(&handle)
                 .expect("material")
                 .base_color_texture = Some(image);
         }
         let after = {
-            let materials = app.world().resource::<Assets<StandardMaterial>>();
+            let materials = app.world().resource::<Assets<AuroraMaterial>>();
             preview_area_build(Some(&handle), "rock", true, materials.get(&handle))
         };
 
@@ -1311,9 +1312,9 @@ mod tests {
         let mut app = browser_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
-        let materials = app.world().resource::<Assets<StandardMaterial>>();
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
+        let materials = app.world().resource::<Assets<AuroraMaterial>>();
         assert_ne!(
             preview_area_build(Some(&handle), "rock", false, materials.get(&handle)),
             preview_area_build(Some(&handle), "rock", true, materials.get(&handle)),
@@ -1326,8 +1327,8 @@ mod tests {
         // A material file is read and reflected back rather than loaded through the asset
         // server, so the scan needs the reflection registrations.
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
-        app.register_type::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
+        app.register_type::<AuroraMaterial>();
         app.insert_resource(crate::project::ProjectRoot {
             root: tmp.path().to_path_buf(),
             config: crate::project::ProjectConfig::default(),
@@ -1344,7 +1345,7 @@ mod tests {
             .register(jackdaw_api::prelude::AssetKind::compiled(
                 crate::definition_assets::MATERIAL_KIND,
                 "Material",
-                StandardMaterial::type_path(),
+                AuroraMaterial::type_path(),
             ));
         (app, tmp)
     }
@@ -1435,8 +1436,8 @@ mod tests {
         let (mut app, tmp) = project_browser_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let elsewhere = tmp.path().join("assets/zones/hedgerow");
         std::fs::create_dir_all(&elsewhere).expect("the directory is made");
         crate::definition_assets::write_asset_file(
@@ -1495,8 +1496,8 @@ mod tests {
         let (mut app, tmp) = project_browser_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         crate::material_assets::write_material_file(app.world(), "slate", &handle).expect("write");
 
         crate::asset_index::rescan_asset_index(app.world_mut());

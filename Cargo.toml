@@ -1,4 +1,5 @@
 [package]
+build = "build.rs"
 name = "jackdaw"
 version.workspace = true
 edition = "2024"
@@ -78,6 +79,7 @@ exclude = ["crates/jackdaw_multiplayer_lightyear"]
 
 [dependencies]
 bevy = { workspace = true, features = ["system_font_discovery"] }
+bevy_aurora.workspace = true
 jackdaw_jsn.workspace = true
 jackdaw_bsn.workspace = true
 jackdaw_prefab.workspace = true
@@ -270,6 +272,7 @@ bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-fe
     "reflect_functions",
     "debug",
     "system_font_discovery",
+    "mesh_picking",
 ] }
 # `default-features = false` throughout: each of these crates defaults to a `render`
 # feature that turns on bevy/bevy_render, and cargo unifies features across the whole
@@ -290,7 +293,12 @@ jackdaw_feathers = { version = "0.19.0", path = "crates/jackdaw_feathers" }
 jackdaw_widgets = { version = "0.19.0", path = "crates/jackdaw_widgets" }
 jackdaw_widgets_runtime = { version = "0.19.0", path = "crates/jackdaw_widgets_runtime", default-features = false }
 jackdaw_commands = { version = "0.19.0", path = "crates/jackdaw_commands" }
-jackdaw_terrain = { version = "0.19.0", path = "crates/jackdaw_terrain", default-features = false, features = ["procgen"] }
+# TODO(aurora): `render` is the splat material and its shader, which the editor uses in
+# src/terrain/*. It goes when the terrain render port lands (AURORA.md item 2).
+jackdaw_terrain = { version = "0.19.0", path = "crates/jackdaw_terrain", default-features = false, features = [
+    "procgen",
+    "render",
+] }
 jackdaw_remote = { version = "0.19.0", path = "crates/jackdaw_remote" }
 jackdaw_snap = { version = "0.19.0", path = "crates/jackdaw_snap" }
 jackdaw_select = { version = "0.19.0", path = "crates/jackdaw_select" }
@@ -323,7 +331,11 @@ avian3d = { git = "https://github.com/avianphysics/avian", branch = "main", feat
 jackdaw_avian_integration = { version = "0.19.0", path = "crates/jackdaw_avian_integration" }
 jackdaw_multiplayer = { version = "0.19.0", path = "crates/jackdaw_multiplayer" }
 jackdaw_multiplayer_editor = { version = "0.19.0", path = "crates/jackdaw_multiplayer_editor" }
-jackdaw_runtime = { version = "0.19.0", path = "crates/jackdaw_runtime", default-features = false }
+# TODO(aurora): `render` pulls jackdaw_surface and the material plumbing the editor
+# uses (MaterialOverridesPlugin, material_of_reference). Goes with AURORA.md item 2.
+jackdaw_runtime = { version = "0.19.0", path = "crates/jackdaw_runtime", default-features = false, features = [
+    "render",
+] }
 jackdaw_panels = { version = "0.19.0", path = "crates/jackdaw_panels" }
 jackdaw_prefab = { version = "0.19.0", path = "crates/jackdaw_prefab" }
 jackdaw_api = { version = "0.19.0", path = "crates/jackdaw_api" }
@@ -341,10 +353,11 @@ rfd = "0.15"
 # Default features include `editor_integration`, whose crate depends on bevy_render.
 # `bevy_mesh` is what provides `TriMeshFromBevyMesh` (the navmesh bake reads Mesh3d);
 # `debug_plugin` is the gizmo overlay.
-bevy_rerecast = { version = "0.5.0", default-features = false, features = [
-    "bevy_mesh",
-    "debug_plugin",
-] }
+# `bevy_mesh` alone: it is what provides `TriMeshFromBevyMesh` (the navmesh bake reads
+# Mesh3d), and it is all jackdaw uses. `debug_plugin` draws the baked navmesh with a
+# `StandardMaterial` overlay, so it drags bevy_pbr and the whole wgpu stack in for a
+# feature this editor never calls. `editor_integration` (a default) does the same.
+bevy_rerecast = { version = "0.5.0", default-features = false, features = ["bevy_mesh"] }
 # The renderer. Named by its upstream url like every other fork here; the
 # `[patch]` section below swaps in the side-by-side checkout at ../../p/aurora.
 bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
@@ -513,8 +526,10 @@ avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 [patch.crates-io]
 avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 bevy_enhanced_input = { git = "https://github.com/slyedoc/bevy_enhanced_input", branch = "bevy-main" }
-bevy_rerecast = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
-bevy_rerecast_core = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
+# Path, not the branch: the `bevy_mesh` feature's dead `dep:bevy_render` is fixed in the
+# side-by-side checkout and not yet pushed. Point these back at the branch once it is.
+bevy_rerecast = { path = "../rerecast/crates/bevy_rerecast" }
+bevy_rerecast_core = { path = "../rerecast/crates/bevy_rerecast_core" }
 bevy_monitors = { git = "https://github.com/slyedoc/bevy_monitors", branch = "bevy-main" }
 
 [profile.dev]

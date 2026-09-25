@@ -71,9 +71,15 @@ impl Plugin for TerrainPlugin {
             )
             .add_observer(scatter_data::hide_drawn_scatter)
             .add_observer(detail::hide_drawn_detail)
+            // TODO(aurora): `ScatterRenderPlugin` normally creates this. The editor's
+            // `resolve_scatter_prefabs` answers stored scatter names with the prefabs they
+            // draw -- authoring work that stands on its own -- so the resource exists
+            // without the renderer. AURORA.md item 2; `init_resource` is idempotent, so the
+            // plugin can take it back unchanged.
+            .init_resource::<jackdaw_terrain::render::ScatterPrefabs>()
             .add_plugins((
-                jackdaw_terrain::render::ScatterRenderPlugin,
-                jackdaw_terrain::render::DetailRenderPlugin,
+                // TODO(aurora): Scatter/Detail render plugins call `add_render_command`
+                // against Opaque3d, which needs a RenderApp. AURORA.md item 2.
                 mesh::plugin,
                 sculpt::plugin,
                 paint::plugin,
@@ -650,6 +656,9 @@ pub(crate) mod pointer_harness {
             .init_resource::<ActiveViewport>()
             .init_resource::<UiScale>()
             .init_resource::<HoverMap>()
+            // The harness hand-rolls the picking resources instead of adding
+            // `PickingPlugin`; `PointerMap` is one the pointer lookups need.
+            .init_resource::<bevy::picking::pointer::PointerMap>()
             .init_resource::<ButtonInput<MouseButton>>();
 
         let terrain = terrain_of(resolution);

@@ -18,6 +18,7 @@ use crate::{
     material_browser::MaterialRegistry,
     selection::Selection,
 };
+use bevy_aurora::material::AuroraMaterial;
 
 /// The extensions the editor shows a picture for.
 const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "bmp", "tga", "webp", "ktx2"];
@@ -261,7 +262,7 @@ fn extract_array_layers(
 fn try_find_registry_material(
     path: &str,
     registry: &MaterialRegistry,
-) -> Option<Handle<StandardMaterial>> {
+) -> Option<Handle<AuroraMaterial>> {
     let re = jackdaw_material::pbr_filename_regex()?;
     let filename = Path::new(path).file_name()?.to_str()?;
     let caps = re.captures(filename)?;
@@ -332,7 +333,7 @@ pub fn apply_texture(
     mut brushes: Query<&mut Brush>,
     mut last_material: ResMut<LastUsedMaterial>,
     asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     registry: Res<MaterialRegistry>,
     children_query: Query<&Children>,
     mut commands: Commands,
@@ -350,7 +351,7 @@ pub fn apply_texture(
     } else {
         let asset_path = crate::entity_ops::to_asset_path(&path);
         let image: Handle<Image> = asset_server.load(asset_path);
-        materials.add(StandardMaterial {
+        materials.add(AuroraMaterial {
             base_color_texture: Some(image),
             ..default()
         })

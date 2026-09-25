@@ -53,6 +53,7 @@ use crate::material_ui::{
     spawn_action_header, spawn_preview, spawn_section,
 };
 use crate::selection::Selection;
+use bevy_aurora::material::AuroraMaterial;
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainGenerateState>()
@@ -325,7 +326,7 @@ struct TexturesTabRefs<'w> {
     picker: Res<'w, TerrainMaterialPicker>,
     registry: Res<'w, MaterialRegistry>,
     index: Option<Res<'w, crate::asset_index::AssetIndex>>,
-    materials: Res<'w, Assets<StandardMaterial>>,
+    materials: Res<'w, Assets<AuroraMaterial>>,
     italic_font: Res<'w, EditorFontItalic>,
     icon_font: Res<'w, IconFont>,
     preview: Res<'w, MaterialPreviewState>,
@@ -2663,7 +2664,7 @@ mod tests {
         // through `bsn!`, which resolves through the asset server.
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Image>();
         app.init_asset::<Font>();
         app.init_asset::<bevy::scene::ScenePatch>();
@@ -2929,10 +2930,10 @@ mod tests {
         let mut world = textures_tab_world();
         world.resource_mut::<TerrainMaterialPicker>().open = true;
         let (saved, unsaved) = {
-            let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = world.resource_mut::<Assets<AuroraMaterial>>();
             (
-                materials.add(StandardMaterial::default()),
-                materials.add(StandardMaterial::default()),
+                materials.add(AuroraMaterial::default()),
+                materials.add(AuroraMaterial::default()),
             )
         };
         {

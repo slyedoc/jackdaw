@@ -1,4 +1,4 @@
-//! Saved material assets: one reflected `StandardMaterial` per `.bsn` file.
+//! Saved material assets: one reflected `AuroraMaterial` per `.bsn` file.
 //!
 //! A material file can sit in any folder; [`crate::asset_index::AssetIndex`]
 //! finds it by reading what it holds. `materials/` is only where a save puts a
@@ -10,7 +10,7 @@
 //!
 //! A detected texture set and a freshly created material are *unsaved*: they
 //! live in the running editor's
-//! `Assets<StandardMaterial>` and in the shared
+//! `Assets<AuroraMaterial>` and in the shared
 //! [`crate::asset_catalog::AssetCatalog`] (so `@Name` references resolve and
 //! scene saves emit them), but no file holds them. `material.save` writes the
 //! file and promotes the entry, and a detected set is reproducible from the
@@ -34,11 +34,17 @@ use jackdaw_bsn::{BsnPatch, BsnValue, CatalogAssetRef, SceneBsnAst};
 use crate::asset_catalog::AssetCatalog;
 use crate::prelude::*;
 use crate::project::ProjectRoot;
+use bevy_aurora::material::AuroraMaterial;
 
 /// Directory under `assets/` holding saved material files.
 pub const MATERIALS_DIR: &str = "materials";
 
-const STANDARD_MATERIAL: &str = "bevy_pbr::pbr_material::StandardMaterial";
+// The type path a saved material file carries. Now aurora's: the editor authors
+// `AuroraMaterial`, so that is what `material_to_bsn` writes and what the loader must
+// look up. Files written before the port still say
+// `bevy_pbr::pbr_material::StandardMaterial` -- see `scene_io::stamp`'s migration table,
+// which is where that rename belongs rather than here.
+const STANDARD_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial";
 
 /// Material texture slots holding linear (non-color) data. These must be
 /// loaded with `is_srgb = false` before anything else resolves their paths,
@@ -66,7 +72,7 @@ pub struct MaterialRegistry {
 
 pub struct MaterialRegistryEntry {
     pub name: String,
-    pub handle: Handle<StandardMaterial>,
+    pub handle: Handle<AuroraMaterial>,
     /// Whether a file backs this entry. An unsaved entry is usable while the
     /// editor runs, and travels inline in the scenes that use it.
     pub saved: bool,
@@ -77,7 +83,7 @@ impl MaterialRegistry {
         self.entries.iter().find(|e| e.name == name)
     }
 
-    pub fn name_of(&self, handle: &Handle<StandardMaterial>) -> Option<&str> {
+    pub fn name_of(&self, handle: &Handle<AuroraMaterial>) -> Option<&str> {
         self.entries
             .iter()
             .find(|e| e.handle == *handle)
@@ -89,7 +95,7 @@ impl MaterialRegistry {
     }
 
     /// Add an unsaved entry (a detected set or a freshly created material).
-    pub fn add(&mut self, name: String, handle: Handle<StandardMaterial>) {
+    pub fn add(&mut self, name: String, handle: Handle<AuroraMaterial>) {
         self.entries.push(MaterialRegistryEntry {
             name,
             handle,
@@ -99,7 +105,7 @@ impl MaterialRegistry {
 
     /// Add an entry backed by a material file (or by an inline catalog entry
     /// awaiting migration).
-    pub fn add_saved(&mut self, name: String, handle: Handle<StandardMaterial>) {
+    pub fn add_saved(&mut self, name: String, handle: Handle<AuroraMaterial>) {
         self.entries.push(MaterialRegistryEntry {
             name,
             handle,
@@ -165,14 +171,14 @@ pub fn material_of_reference(
     index: Option<&crate::asset_index::AssetIndex>,
     registry: &MaterialRegistry,
     reference: &str,
-) -> Option<Handle<StandardMaterial>> {
+) -> Option<Handle<AuroraMaterial>> {
     if reference.is_empty() {
         return None;
     }
     if let Some(handle) = index
         .and_then(|index| material_file_of(index, reference))
         .and_then(|entry| entry.value.handle())
-        && let Ok(typed) = handle.clone().try_typed::<StandardMaterial>()
+        && let Ok(typed) = handle.clone().try_typed::<AuroraMaterial>()
     {
         return Some(typed);
     }
@@ -242,7 +248,7 @@ pub fn material_file_name(name: &str) -> String {
 pub fn material_save_path(
     world: &World,
     name: &str,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
     chosen: Option<&Path>,
 ) -> Option<PathBuf> {
     let project = world.get_resource::<ProjectRoot>()?;
@@ -272,7 +278,7 @@ pub fn material_to_bsn(world: &World, name: &str, asset_id: UntypedAssetId) -> S
         world,
         &[CatalogAssetRef {
             name: sanitize_material_name(name),
-            type_id: std::any::TypeId::of::<StandardMaterial>(),
+            type_id: std::any::TypeId::of::<AuroraMaterial>(),
             asset_id,
         }],
     )
@@ -283,7 +289,7 @@ pub fn material_to_bsn(world: &World, name: &str, asset_id: UntypedAssetId) -> S
 pub fn write_material_file(
     world: &World,
     name: &str,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
 ) -> std::io::Result<PathBuf> {
     write_material_file_at(world, name, handle, None)
 }
@@ -293,7 +299,7 @@ pub fn write_material_file(
 pub fn write_material_file_at(
     world: &World,
     name: &str,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
     chosen: Option<&Path>,
 ) -> std::io::Result<PathBuf> {
     let path = material_save_path(world, name, handle, chosen)
@@ -347,7 +353,7 @@ pub fn load_surface_file(world: &mut World, path: &Path, type_path: &str) -> Opt
     handle
 }
 
-/// Build a `StandardMaterial` from `.bsn` text, rehydrating its texture slots
+/// Build a `AuroraMaterial` from `.bsn` text, rehydrating its texture slots
 /// through the asset server.
 pub fn load_material_bsn(world: &mut World, text: &str) -> Option<UntypedHandle> {
     load_surface_bsn(world, text, STANDARD_MATERIAL)
@@ -453,10 +459,10 @@ fn collect_linear_paths(data: &jackdaw_bsn::BsnStructData, paths: &mut Vec<Strin
 /// An edit to a material that has a file of its own belongs in that file; one
 /// to a material with none stays in memory until `material.save` files it.
 #[derive(Resource, Default)]
-pub struct EditedMaterials(Vec<Handle<StandardMaterial>>);
+pub struct EditedMaterials(Vec<Handle<AuroraMaterial>>);
 
 impl EditedMaterials {
-    pub fn edited(&mut self, handle: &Handle<StandardMaterial>) {
+    pub fn edited(&mut self, handle: &Handle<AuroraMaterial>) {
         if !self.0.contains(handle) {
             self.0.push(handle.clone());
         }
@@ -516,8 +522,8 @@ pub fn ephemeral_material_ids(world: &World) -> std::collections::HashSet<Untype
 
 /// The image a material browses as: its base colour texture.
 pub fn material_thumbnail(
-    materials: &Assets<StandardMaterial>,
-    handle: &Handle<StandardMaterial>,
+    materials: &Assets<AuroraMaterial>,
+    handle: &Handle<AuroraMaterial>,
 ) -> Option<Handle<Image>> {
     materials
         .get(handle)
@@ -657,9 +663,9 @@ pub(crate) fn plugin(app: &mut App) {
     // the built game agree on it.
     app.add_plugins((
         jackdaw_runtime::MaterialTextureFormatPlugin,
-        jackdaw_surface::LayeredSurfacePlugin,
-        jackdaw_surface::FoliagePlugin,
-        jackdaw_surface::WaterPlugin,
+        // TODO(aurora): LayeredSurfacePlugin / FoliagePlugin / WaterPlugin are
+        // `AsBindGroup` materials and need a RenderApp. AURORA.md item 2 -- they come back
+        // as AuroraMaterial. Until then a scene's surfaces render with no material.
     ))
     .init_resource::<PendingMaterialDelete>()
     .init_resource::<EditedMaterials>()
@@ -788,7 +794,7 @@ pub fn save_previewed_material_to(world: &mut World, file: &Path) {
 /// display names cannot race for one file stem.
 fn name_owner(
     registry: &MaterialRegistry,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
     name: &str,
 ) -> Option<String> {
     registry
@@ -805,7 +811,7 @@ fn name_owner(
 /// their material between the rename and their next save.
 fn write_and_promote(
     world: &mut World,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
     current: Option<&str>,
     name: &str,
     chosen: Option<&Path>,
@@ -854,7 +860,7 @@ fn write_and_promote(
 
 /// Record a material file the editor just wrote, so the index holds it under
 /// the handle that was saved rather than reading a second copy back.
-fn index_material_file(world: &mut World, file: &Path, handle: &Handle<StandardMaterial>) {
+fn index_material_file(world: &mut World, file: &Path, handle: &Handle<AuroraMaterial>) {
     let Some(kind) = world
         .get_resource::<jackdaw_api::prelude::AssetKinds>()
         .and_then(|kinds| kinds.by_kind(crate::definition_assets::MATERIAL_KIND))
@@ -1057,10 +1063,10 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
-        app.register_type::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
+        app.register_type::<AuroraMaterial>();
         app
     }
 
@@ -1084,16 +1090,16 @@ mod tests {
             .map(|p| p.path().to_slash_lossy().into_owned())
     }
 
-    fn round_trip(app: &mut App, material: StandardMaterial) -> StandardMaterial {
+    fn round_trip(app: &mut App, material: AuroraMaterial) -> AuroraMaterial {
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .add(material);
         let text = material_to_bsn(app.world(), "probe", handle.id().untyped());
         let loaded = load_material_bsn(app.world_mut(), &text).expect("material reloads");
         app.world()
-            .resource::<Assets<StandardMaterial>>()
-            .get(&loaded.typed::<StandardMaterial>())
+            .resource::<Assets<AuroraMaterial>>()
+            .get(&loaded.typed::<AuroraMaterial>())
             .expect("loaded material")
             .clone()
     }
@@ -1101,7 +1107,7 @@ mod tests {
     #[test]
     fn all_six_texture_slots_and_scalars_survive_a_round_trip() {
         let mut app = material_app();
-        let source = StandardMaterial {
+        let source = AuroraMaterial {
             base_color_texture: Some(textured(&mut app, "t/base.png", true)),
             normal_map_texture: Some(textured(&mut app, "t/normal.png", false)),
             metallic_roughness_texture: Some(textured(&mut app, "t/rough.png", false)),
@@ -1119,7 +1125,7 @@ mod tests {
         let text = {
             let handle = app
                 .world_mut()
-                .resource_mut::<Assets<StandardMaterial>>()
+                .resource_mut::<Assets<AuroraMaterial>>()
                 .add(source.clone());
             material_to_bsn(app.world(), "probe", handle.id().untyped())
         };
@@ -1176,7 +1182,7 @@ mod tests {
         let mut app = material_app();
         let loaded = round_trip(
             &mut app,
-            StandardMaterial {
+            AuroraMaterial {
                 perceptual_roughness: 0.4,
                 ..default()
             },
@@ -1190,13 +1196,13 @@ mod tests {
     #[test]
     fn a_missing_texture_file_loads_without_panicking_and_keeps_its_path() {
         let mut app = material_app();
-        let text = "#probe\nbevy_pbr::pbr_material::StandardMaterial {\n\
+        let text = "#probe\nbevy_aurora::material::AuroraMaterial {\n\
                     base_color_texture: \"t/does_not_exist.png\",\n}\n";
         let handle = load_material_bsn(app.world_mut(), text).expect("material still loads");
         let loaded = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
-            .get(&handle.typed::<StandardMaterial>())
+            .resource::<Assets<AuroraMaterial>>()
+            .get(&handle.typed::<AuroraMaterial>())
             .expect("loaded material")
             .clone();
         assert_eq!(
@@ -1255,17 +1261,17 @@ mod tests {
     }
 
     /// The handle the index holds a material under.
-    fn filed_handle(app: &App, name: &str) -> Handle<StandardMaterial> {
+    fn filed_handle(app: &App, name: &str) -> Handle<AuroraMaterial> {
         app.world()
             .resource::<crate::asset_index::AssetIndex>()
             .material_named(name)
             .and_then(|entry| entry.value.handle().cloned())
             .expect("the index holds the material")
-            .typed::<StandardMaterial>()
+            .typed::<AuroraMaterial>()
     }
 
     /// Queue an edit to `handle` and let the writeback run.
-    fn edit_and_write(app: &mut App, handle: &Handle<StandardMaterial>) {
+    fn edit_and_write(app: &mut App, handle: &Handle<AuroraMaterial>) {
         app.world_mut()
             .get_resource_or_init::<EditedMaterials>()
             .edited(handle);
@@ -1286,8 +1292,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("bramble".into(), handle.clone());
@@ -1326,8 +1332,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("bramble".into(), handle.clone());
@@ -1354,8 +1360,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("bramble".into(), handle.clone());
@@ -1377,8 +1383,8 @@ mod tests {
         let handle = {
             let base = textured(&mut app, "t/grass_basecolor.png", true);
             app.world_mut()
-                .resource_mut::<Assets<StandardMaterial>>()
-                .add(StandardMaterial {
+                .resource_mut::<Assets<AuroraMaterial>>()
+                .add(AuroraMaterial {
                     base_color_texture: Some(base),
                     ..default()
                 })
@@ -1414,10 +1420,10 @@ mod tests {
     fn saving_over_another_materials_name_is_refused() {
         let (mut app, tmp) = project_app();
         let (detected, fresh) = {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             (
-                materials.add(StandardMaterial::default()),
-                materials.add(StandardMaterial::default()),
+                materials.add(AuroraMaterial::default()),
+                materials.add(AuroraMaterial::default()),
             )
         };
         {
@@ -1449,10 +1455,10 @@ mod tests {
     fn a_queued_save_re_checks_the_name_it_was_cleared_for() {
         let (mut app, _tmp) = project_app();
         let (first, second) = {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             (
-                materials.add(StandardMaterial::default()),
-                materials.add(StandardMaterial::default()),
+                materials.add(AuroraMaterial::default()),
+                materials.add(AuroraMaterial::default()),
             )
         };
         {
@@ -1486,8 +1492,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("grass".into(), handle.clone());
@@ -1532,8 +1538,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add_saved("my material".into(), handle.clone());
@@ -1550,10 +1556,10 @@ mod tests {
     fn ephemeral_ids_name_exactly_the_unsaved_materials() {
         let (mut app, _tmp) = project_app();
         let (unsaved, saved) = {
-            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            let mut materials = app.world_mut().resource_mut::<Assets<AuroraMaterial>>();
             (
-                materials.add(StandardMaterial::default()),
-                materials.add(StandardMaterial::default()),
+                materials.add(AuroraMaterial::default()),
+                materials.add(AuroraMaterial::default()),
             )
         };
         {
@@ -1575,8 +1581,8 @@ mod tests {
         let handle = {
             let normal = textured(&mut app, "t/rock_normal.png", false);
             app.world_mut()
-                .resource_mut::<Assets<StandardMaterial>>()
-                .add(StandardMaterial {
+                .resource_mut::<Assets<AuroraMaterial>>()
+                .add(AuroraMaterial {
                     normal_map_texture: Some(normal),
                     perceptual_roughness: 0.31,
                     ..default()
@@ -1589,7 +1595,7 @@ mod tests {
         let reloaded = filed_handle(&app, "rock");
         let material = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&reloaded)
             .expect("reloaded material")
             .clone();
@@ -1606,8 +1612,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("unfiled".into(), handle.clone());
@@ -1624,8 +1630,8 @@ mod tests {
         let (mut app, _tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 perceptual_roughness: 0.42,
                 ..default()
             });
@@ -1643,10 +1649,10 @@ mod tests {
             .get("@slate")
             .expect("catalog entry")
             .clone()
-            .typed::<StandardMaterial>();
+            .typed::<AuroraMaterial>();
         let roughness = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&loaded)
             .expect("loaded material")
             .perceptual_roughness;
@@ -1667,8 +1673,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let catalog = tmp.path().join("assets/catalog.bsn");
         std::fs::create_dir_all(catalog.parent().expect("the assets directory"))
             .expect("the directory is made");
@@ -1694,8 +1700,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 perceptual_roughness: 0.17,
                 ..default()
             });
@@ -1729,8 +1735,8 @@ mod tests {
         let (mut app, tmp) = project_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         write_material_file(app.world(), name, &handle).expect("write");
         crate::asset_index::rescan_asset_index(app.world_mut());
         app.world_mut()
@@ -1781,7 +1787,7 @@ mod tests {
             .get("@slate")
             .expect("catalog entry")
             .clone()
-            .typed::<StandardMaterial>();
+            .typed::<AuroraMaterial>();
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("slate".to_string(), handle.clone());
@@ -1809,8 +1815,8 @@ mod tests {
         app.init_resource::<PendingMaterialDelete>();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("grass".into(), handle.clone());
@@ -1910,8 +1916,8 @@ mod tests {
         app.init_resource::<PendingMaterialDelete>();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         app.world_mut()
             .resource_mut::<MaterialRegistry>()
             .add("detected".into(), handle);
@@ -1938,11 +1944,11 @@ mod tests {
 
     #[test]
     fn saved_entries_skip_the_none_placeholder_and_unsaved_materials() {
-        let mut assets = Assets::<StandardMaterial>::default();
+        let mut assets = Assets::<AuroraMaterial>::default();
         let mut registry = MaterialRegistry::default();
         registry.ensure_none_entry();
-        registry.add("detected".into(), assets.add(StandardMaterial::default()));
-        registry.add_saved("promoted".into(), assets.add(StandardMaterial::default()));
+        registry.add("detected".into(), assets.add(AuroraMaterial::default()));
+        registry.add_saved("promoted".into(), assets.add(AuroraMaterial::default()));
         let names: Vec<&str> = registry.saved_entries().map(|e| e.name.as_str()).collect();
         assert_eq!(names, vec!["promoted"]);
     }
@@ -1988,8 +1994,8 @@ mod tests {
             ));
         let _material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 depth_map: Some(image.clone()),
                 ..default()
             });

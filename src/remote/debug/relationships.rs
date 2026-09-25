@@ -16,7 +16,7 @@ use serde::Deserialize;
 use jackdaw_feathers::tokens;
 use jackdaw_remote::scene_snapshot::RemoteEntity;
 
-use super::graph::{self, GraphEdgeMaterial, GraphNodeSpec};
+use super::graph::{self, GraphNodeSpec};
 use super::style;
 
 /// How a node's `ChildOf` state classifies it for coloring: `Root` has no
@@ -184,7 +184,6 @@ pub fn relationships_panel_content() -> impl Bundle {
 pub(crate) fn rebuild_relationships(
     reply: Option<Res<RelationshipsReply>>,
     mut commands: Commands,
-    mut materials: ResMut<Assets<GraphEdgeMaterial>>,
     meta_containers: Query<Entity, With<RelMeta>>,
     canvas_containers: Query<Entity, With<RelCanvas>>,
     new_ui: Query<(), Or<(Added<RelMeta>, Added<RelCanvas>)>>,
@@ -223,7 +222,6 @@ pub(crate) fn rebuild_relationships(
         let node_colors: Vec<Color> = nodes.iter().map(|n| node_background(n.kind)).collect();
         graph::spawn_graph_positioned(
             &mut commands,
-            &mut materials,
             container,
             &node_specs,
             &positions,

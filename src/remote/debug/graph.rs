@@ -14,10 +14,8 @@
 use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
-use bevy::reflect::TypePath;
-use bevy::render::render_resource::*;
-use bevy::shader::ShaderRef;
 use bevy::ui::UiGlobalTransform;
+use bevy_aurora::ui_render::UiPolyline;
 
 use jackdaw_feathers::tokens;
 
@@ -153,58 +151,12 @@ pub fn force_layout(node_count: usize, edges: &[(usize, usize)], iterations: usi
 
 // --------------------------- Edge material ---------------------------
 
-const SHADER_GRAPH_EDGE_PATH: &str = "embedded://jackdaw/remote/debug/shaders/graph_edge.wgsl";
+/// Stroke width of an ordering edge, and of one flagged ambiguous.
+const EDGE_THICKNESS: f32 = 1.5;
+const AMBIGUOUS_EDGE_THICKNESS: f32 = 2.5;
 
-/// GPU material for one graph edge wire: a copy of
-/// `jackdaw_node_graph::materials::ConnectionMaterial`. Not reused directly:
-/// `embedded_asset!` derives its registered path from the crate the macro is
-/// invoked in, so `ConnectionMaterial`'s hardcoded shader path only resolves
-/// if `jackdaw_node_graph::NodeGraphPlugin` (with its own node-editing
-/// systems/resources) is added; copying the material + shader here keeps
-/// this debug plugin self-contained, matching `sparkline.rs`'s precedent for
-/// a bespoke `UiMaterial` in this module.
-#[derive(AsBindGroup, Asset, TypePath, Debug, Clone)]
-pub struct GraphEdgeMaterial {
-    #[uniform(0)]
-    pub p0: Vec2,
-    #[uniform(0)]
-    pub p1: Vec2,
-    #[uniform(0)]
-    pub p2: Vec2,
-    #[uniform(0)]
-    pub p3: Vec2,
-    #[uniform(0)]
-    pub color: Vec4,
-    #[uniform(0)]
-    pub width: f32,
-    #[uniform(0)]
-    pub feather: f32,
-}
-
-impl Default for GraphEdgeMaterial {
-    fn default() -> Self {
-        Self {
-            p0: Vec2::ZERO,
-            p1: Vec2::ZERO,
-            p2: Vec2::ZERO,
-            p3: Vec2::ZERO,
-            color: Vec4::new(0.6, 0.6, 0.7, 0.7),
-            width: 1.5,
-            feather: 1.0,
-        }
-    }
-}
-
-impl UiMaterial for GraphEdgeMaterial {
-    fn fragment_shader() -> ShaderRef {
-        SHADER_GRAPH_EDGE_PATH.into()
-    }
-}
-
-fn color_to_vec4(color: Color) -> Vec4 {
-    let c = color.to_linear();
-    Vec4::new(c.red, c.green, c.blue, c.alpha)
-}
+/// How many segments each edge's cubic is sampled into.
+const EDGE_SEGMENTS: usize = 24;
 
 // --------------------------- Spawn ---------------------------
 
@@ -252,7 +204,6 @@ const NODE_W: f32 = 190.0;
 /// [`MAX_EDGES`] total. Returns the scroll container entity.
 pub fn spawn_graph(
     commands: &mut Commands,
-    materials: &mut Assets<GraphEdgeMaterial>,
     parent: Entity,
     nodes: &[GraphNodeSpec],
     edges: &[(usize, usize)],
@@ -271,7 +222,6 @@ pub fn spawn_graph(
     let node_colors = vec![tokens::COMPONENT_CARD_BG; nodes.len()];
     spawn_graph_positioned(
         commands,
-        materials,
         parent,
         nodes,
         &positions,
@@ -296,7 +246,6 @@ pub fn spawn_graph(
 )]
 pub fn spawn_graph_positioned(
     commands: &mut Commands,
-    materials: &mut Assets<GraphEdgeMaterial>,
     parent: Entity,
     nodes: &[GraphNodeSpec],
     positions: &[Vec2],
@@ -382,30 +331,22 @@ pub fn spawn_graph_positioned(
         ));
     }
 
-    let ordering_color = color_to_vec4(tokens::BORDER_STRONG.with_alpha(0.8));
-    let ambiguity_color = color_to_vec4(Color::Srgba(tokens::DESTRUCTIVE_RED));
+    let ordering_color = tokens::BORDER_STRONG.with_alpha(0.8);
+    let ambiguity_color = Color::Srgba(tokens::DESTRUCTIVE_RED);
 
     let mut drawn = 0usize;
     for &(from, to) in edges {
         if drawn >= MAX_EDGES {
             break;
         }
-        spawn_edge(
-            commands,
-            materials,
-            content,
-            from,
-            to,
-            false,
-            ordering_color,
-        );
+        spawn_edge(commands, content, from, to, false, ordering_color);
         drawn += 1;
     }
     for &(a, b) in ambiguities {
         if drawn >= MAX_EDGES {
             break;
         }
-        spawn_edge(commands, materials, content, a, b, true, ambiguity_color);
+        spawn_edge(commands, content, a, b, true, ambiguity_color);
         drawn += 1;
     }
 
@@ -414,18 +355,12 @@ pub fn spawn_graph_positioned(
 
 fn spawn_edge(
     commands: &mut Commands,
-    materials: &mut Assets<GraphEdgeMaterial>,
     parent: Entity,
     from: usize,
     to: usize,
     ambiguous: bool,
-    color: Vec4,
+    color: Color,
 ) {
-    let material = materials.add(GraphEdgeMaterial {
-        color,
-        width: if ambiguous { 2.5 } else { 1.5 },
-        ..default()
-    });
     commands.spawn((
         GraphEdgeLink {
             from,
@@ -440,7 +375,17 @@ fn spawn_edge(
             height: Val::Percent(100.0),
             ..default()
         },
-        MaterialNode(material),
+        // Points are filled in by `sync_graph_edges` once layout has run.
+        UiPolyline {
+            points: Vec::new(),
+            thickness: if ambiguous {
+                AMBIGUOUS_EDGE_THICKNESS
+            } else {
+                EDGE_THICKNESS
+            },
+            color,
+            closed: false,
+        },
         Pickable::IGNORE,
         ChildOf(parent),
     ));
@@ -460,8 +405,7 @@ fn spawn_edge(
 /// node box's `UiGlobalTransform` center gives coordinates in the material's
 /// own local pixel space.
 pub fn sync_graph_edges(
-    mut materials: ResMut<Assets<GraphEdgeMaterial>>,
-    edge_links: Query<(&GraphEdgeLink, &MaterialNode<GraphEdgeMaterial>)>,
+    mut edge_links: Query<(&GraphEdgeLink, &mut UiPolyline)>,
     boxes: Query<(&GraphNodeBox, &UiGlobalTransform)>,
     content_roots: Query<(&ComputedNode, &UiGlobalTransform), With<GraphCanvasContent>>,
 ) {
@@ -470,6 +414,8 @@ pub fn sync_graph_edges(
     };
     let (_, _, content_center) = content_transform.to_scale_angle_translation();
     let content_top_left = content_center - content_computed.size() * 0.5;
+    // Transforms above are physical pixels; `UiPolyline` reads logical ones.
+    let inverse_scale = content_computed.inverse_scale_factor();
 
     let mut centers: HashMap<usize, Vec2> = HashMap::new();
     for (node_box, transform) in boxes.iter() {
@@ -477,27 +423,26 @@ pub fn sync_graph_edges(
         centers.insert(node_box.index, translation);
     }
 
-    for (link, material_handle) in edge_links.iter() {
+    for (link, mut polyline) in edge_links.iter_mut() {
         let (Some(&from_screen), Some(&to_screen)) =
             (centers.get(&link.from), centers.get(&link.to))
         else {
             continue;
         };
 
-        let from_local = from_screen - content_top_left;
-        let to_local = to_screen - content_top_left;
+        let from_local = (from_screen - content_top_left) * inverse_scale;
+        let to_local = (to_screen - content_top_left) * inverse_scale;
 
+        // Horizontal handles half the x-distance long: the same S-curve
+        // `jackdaw_node_graph` draws between two pins.
         let dx = (to_local.x - from_local.x).abs().max(40.0);
-        let p1 = from_local + Vec2::new(dx * 0.5, 0.0);
-        let p2 = to_local - Vec2::new(dx * 0.5, 0.0);
-
-        let Some(mut material) = materials.get_mut(&material_handle.0) else {
-            continue;
-        };
-        material.p0 = from_local;
-        material.p1 = p1;
-        material.p2 = p2;
-        material.p3 = to_local;
+        polyline.points = UiPolyline::bezier(
+            from_local,
+            from_local + Vec2::new(dx * 0.5, 0.0),
+            to_local - Vec2::new(dx * 0.5, 0.0),
+            to_local,
+            EDGE_SEGMENTS,
+        );
     }
 }
 

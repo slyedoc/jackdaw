@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use bevy::asset::{UntypedAssetId, UntypedHandle};
 use bevy::prelude::*;
 use jackdaw_jsn::format::JsnCatalog;
+use bevy_aurora::material::AuroraMaterial;
 
 /// Project-level asset catalog for cross-scene deduplication.
 ///
@@ -64,10 +65,10 @@ fn report_catalog_entries(world: &mut World, count: usize) {
     );
 }
 
-/// Whether a catalog entry is a `StandardMaterial`, and so belongs in a file
+/// Whether a catalog entry is a `AuroraMaterial`, and so belongs in a file
 /// of its own rather than in the catalog file.
 fn is_material(handle: &UntypedHandle) -> bool {
-    handle.type_id() == std::any::TypeId::of::<StandardMaterial>()
+    handle.type_id() == std::any::TypeId::of::<AuroraMaterial>()
 }
 
 /// Whether catalog text carries no entries: only comments and whitespace. Such
@@ -214,10 +215,10 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Mesh>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
         app.register_asset_reflect::<Mesh>();
         app.insert_resource(ProjectRoot {
             root: tmp.path().to_path_buf(),
@@ -240,7 +241,7 @@ mod tests {
     fn nothing_the_editor_does_writes_the_catalog_file() {
         let (mut app, tmp) = catalog_app();
         let path = catalog_file(&tmp);
-        let held = "#slate\nbevy_pbr::pbr_material::StandardMaterial {}\n";
+        let held = "#slate\nbevy_aurora::material::AuroraMaterial {}\n";
         std::fs::write(&path, held).expect("write");
 
         load_catalog(app.world_mut());
@@ -261,7 +262,7 @@ mod tests {
         let (mut app, tmp) = catalog_app();
         std::fs::write(
             catalog_file(&tmp),
-            "#slate\nbevy_pbr::pbr_material::StandardMaterial {}\n",
+            "#slate\nbevy_aurora::material::AuroraMaterial {}\n",
         )
         .expect("write");
 

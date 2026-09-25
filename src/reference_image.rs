@@ -7,6 +7,7 @@ use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
 use path_slash::PathExt as _;
 
 use crate::selection::Selection;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 /// A 2D reference picture in the scene. Serialized with the scene so
 /// front/side boards survive sessions. `locked` makes viewport clicks
@@ -161,7 +162,7 @@ fn poll_reference_image_pick(world: &mut World) {
 fn reference_material(
     reference: &ReferenceImage,
     texture: Option<Handle<Image>>,
-) -> StandardMaterial {
+) -> AuroraMaterial {
     // Flat placeholder tint when no texture is available, so an empty
     // or broken path still shows a visible, selectable plane.
     let base_color = if texture.is_some() {
@@ -169,7 +170,7 @@ fn reference_material(
     } else {
         Color::srgba(0.5, 0.5, 0.55, reference.opacity)
     };
-    StandardMaterial {
+    AuroraMaterial {
         base_color,
         base_color_texture: texture,
         unlit: true,
@@ -189,7 +190,7 @@ fn reference_material(
 pub fn maintain_reference_images(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     images: Res<Assets<Image>>,
     quad: Res<ReferenceImageQuad>,
     mut refs: Query<(
@@ -197,7 +198,7 @@ pub fn maintain_reference_images(
         Ref<ReferenceImage>,
         Option<&mut ReferenceImageRuntime>,
         Has<Mesh3d>,
-        Option<&MeshMaterial3d<StandardMaterial>>,
+        Option<&AuroraMaterial3d>,
         &mut Transform,
     )>,
 ) {
@@ -257,10 +258,10 @@ pub fn maintain_reference_images(
 fn reload_reference_render(
     commands: &mut Commands,
     asset_server: &AssetServer,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<AuroraMaterial>,
     entity: Entity,
     reference: &ReferenceImage,
-    material: Option<&MeshMaterial3d<StandardMaterial>>,
+    material: Option<&AuroraMaterial3d>,
 ) {
     let texture = if reference.path.is_empty() {
         // Once per change, not per frame: the runtime insert
@@ -278,7 +279,7 @@ fn reload_reference_render(
         }
     } else {
         let handle = materials.add(new_material);
-        commands.entity(entity).insert(MeshMaterial3d(handle));
+        commands.entity(entity).insert(AuroraMaterial3d(handle));
     }
     commands.entity(entity).insert(ReferenceImageRuntime {
         loaded_path: reference.path.clone(),
@@ -294,11 +295,11 @@ fn reload_reference_render(
 fn poll_reference_aspect(
     asset_server: &AssetServer,
     images: &Assets<Image>,
-    materials: &mut Assets<StandardMaterial>,
+    materials: &mut Assets<AuroraMaterial>,
     entity: Entity,
     reference: &ReferenceImage,
     runtime: &mut ReferenceImageRuntime,
-    material: Option<&MeshMaterial3d<StandardMaterial>>,
+    material: Option<&AuroraMaterial3d>,
     transform: &mut Transform,
 ) {
     let Some(image_handle) = runtime.image.clone() else {

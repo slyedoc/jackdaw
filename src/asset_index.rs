@@ -30,6 +30,7 @@ use path_slash::PathExt as _;
 use crate::asset_files::{AssetFileKind, AssetKindCache, walk_document_files};
 use crate::definition_assets::MATERIAL_KIND;
 use crate::project::ProjectRoot;
+use bevy_aurora::material::AuroraMaterial;
 
 /// What the editor loaded out of an asset file.
 #[derive(Clone, Debug)]
@@ -433,7 +434,7 @@ fn material_handle_in_use(world: &World, path: &Path) -> Option<UntypedHandle> {
         .and_then(|catalog| catalog.handles.get(&format!("@{name}")).cloned());
     let handle = listed
         .or(named)
-        .filter(|handle| handle.type_id() == std::any::TypeId::of::<StandardMaterial>())?;
+        .filter(|handle| handle.type_id() == std::any::TypeId::of::<AuroraMaterial>())?;
     let claimed = world
         .get_resource::<AssetIndex>()
         .is_some_and(|index| index.by_handle(&handle).is_some());
@@ -1011,10 +1012,10 @@ mod tests {
             bevy::asset::AssetPlugin::default(),
         ));
         app.init_asset::<Image>();
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.register_asset_reflect::<Image>();
-        app.register_asset_reflect::<StandardMaterial>();
-        app.register_type::<StandardMaterial>();
+        app.register_asset_reflect::<AuroraMaterial>();
+        app.register_type::<AuroraMaterial>();
         app.insert_resource(ProjectRoot {
             root: root.to_path_buf(),
             config: crate::project::ProjectConfig::default(),
@@ -1029,7 +1030,7 @@ mod tests {
             .register(AssetKind::compiled(
                 MATERIAL_KIND,
                 "Material",
-                <StandardMaterial as bevy::reflect::TypePath>::type_path(),
+                <AuroraMaterial as bevy::reflect::TypePath>::type_path(),
             ));
         app
     }
@@ -1042,7 +1043,7 @@ mod tests {
         jackdaw_bsn::write_document_text(&path, text).expect("the file is written");
     }
 
-    const GRASS: &str = "#grass\nbevy_pbr::pbr_material::StandardMaterial {}\n";
+    const GRASS: &str = "#grass\nbevy_aurora::material::AuroraMaterial {}\n";
 
     /// The runtime counts a name over every document its walk saw, and so does
     /// this: a scene sharing a stem with an asset makes the name ambiguous in

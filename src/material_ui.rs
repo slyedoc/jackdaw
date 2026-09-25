@@ -37,6 +37,7 @@ use jackdaw_feathers::{
 };
 
 use crate::material_preview::{MaterialPreviewState, PreviewShape};
+use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 
 pub(crate) fn plugin(app: &mut App) {
     app.add_observer(on_material_checkbox_commit)
@@ -65,7 +66,7 @@ pub(crate) fn plugin(app: &mut App) {
 // Texture slots
 // ---------------------------------------------------------------------------
 
-/// A texture slot on `StandardMaterial`, in the order surfaces show them.
+/// A texture slot on `AuroraMaterial`, in the order surfaces show them.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum TextureSlot {
     BaseColorTexture,
@@ -117,7 +118,7 @@ impl TextureSlot {
         )
     }
 
-    pub(crate) fn get_from(self, mat: &StandardMaterial) -> Option<Handle<Image>> {
+    pub(crate) fn get_from(self, mat: &AuroraMaterial) -> Option<Handle<Image>> {
         match self {
             TextureSlot::BaseColorTexture => mat.base_color_texture.clone(),
             TextureSlot::NormalMapTexture => mat.normal_map_texture.clone(),
@@ -128,7 +129,7 @@ impl TextureSlot {
         }
     }
 
-    pub(crate) fn set_on(self, mat: &mut StandardMaterial, handle: Option<Handle<Image>>) {
+    pub(crate) fn set_on(self, mat: &mut AuroraMaterial, handle: Option<Handle<Image>>) {
         match self {
             TextureSlot::BaseColorTexture => mat.base_color_texture = handle,
             TextureSlot::NormalMapTexture => mat.normal_map_texture = handle,
@@ -152,7 +153,7 @@ impl TextureSlot {
                     if mat.max_parallax_layer_count == 0.0 {
                         mat.max_parallax_layer_count = 32.0;
                     }
-                    mat.parallax_mapping_method = bevy::pbr::ParallaxMappingMethod::Occlusion;
+                    mat.parallax_mapping_method = ParallaxMappingMethod::Occlusion;
                 } else {
                     mat.parallax_depth_scale = 0.0;
                     mat.max_parallax_layer_count = 0.0;
@@ -182,7 +183,7 @@ pub(crate) fn spawn_texture_slot_row(
     parent: Entity,
     slot: TextureSlot,
     current: Option<Handle<Image>>,
-    handle: Handle<StandardMaterial>,
+    handle: Handle<AuroraMaterial>,
     icon_font: &Handle<Font>,
 ) -> Entity {
     use crate::inspector::asset_row::{
@@ -234,7 +235,7 @@ pub(crate) fn spawn_texture_slot_row(
 /// Bind one texture slot of a material to a file, or to nothing, as one undo
 /// entry.
 struct SetTextureSlot {
-    material: Handle<StandardMaterial>,
+    material: Handle<AuroraMaterial>,
     slot: TextureSlot,
     old_path: String,
     new_path: String,
@@ -257,12 +258,12 @@ impl crate::commands::EditorCommand for SetTextureSlot {
 /// Write a texture slot and push the entry undo walks back over.
 fn commit_texture_slot(
     world: &mut World,
-    material: &Handle<StandardMaterial>,
+    material: &Handle<AuroraMaterial>,
     slot: TextureSlot,
     path: &str,
 ) -> bool {
     let old_path = world
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(material)
         .and_then(|value| slot.get_from(value))
         .and_then(|image| {
@@ -289,7 +290,7 @@ fn commit_texture_slot(
 /// the material. An empty path leaves the slot bound to nothing.
 fn bind_texture_slot(
     world: &mut World,
-    material: &Handle<StandardMaterial>,
+    material: &Handle<AuroraMaterial>,
     slot: TextureSlot,
     path: &str,
 ) -> bool {
@@ -307,7 +308,7 @@ fn bind_texture_slot(
         }
     });
     {
-        let mut materials = world.resource_mut::<Assets<StandardMaterial>>();
+        let mut materials = world.resource_mut::<Assets<AuroraMaterial>>();
         let Some(mut value) = materials.get_mut(material) else {
             return false;
         };
@@ -332,9 +333,9 @@ fn bind_texture_slot(
 /// coming back round.
 #[derive(Component)]
 pub(crate) struct MaterialFieldBinding {
-    pub(crate) material_handle: Handle<StandardMaterial>,
-    pub(crate) read_fn: fn(&StandardMaterial) -> f64,
-    pub(crate) apply_fn: fn(&mut StandardMaterial, f64),
+    pub(crate) material_handle: Handle<AuroraMaterial>,
+    pub(crate) read_fn: fn(&AuroraMaterial) -> f64,
+    pub(crate) apply_fn: fn(&mut AuroraMaterial, f64),
     pub(crate) shown: f64,
     /// Whether this row's slider was being dragged as of the last frame.
     ///
@@ -344,7 +345,7 @@ pub(crate) struct MaterialFieldBinding {
     pub(crate) dragging: bool,
 }
 
-/// Range for the `StandardMaterial` fields that are normalised 0-1 fractions: metallic,
+/// Range for the `AuroraMaterial` fields that are normalised 0-1 fractions: metallic,
 /// roughness, reflectance, and the alpha-mask cutoff.
 pub(crate) const UNIT_RANGE: Range<f32> = 0.0..1.0;
 
@@ -363,7 +364,7 @@ const PARALLAX_LAYERS_RANGE: Range<f32> = 0.0..64.0;
 /// front of its surface, co-planar geometry is pushed behind it.
 pub(crate) const DEPTH_BIAS_RANGE: Range<f32> = -10.0..10.0;
 
-/// A labeled [`jackdaw_feathers::slider_row`] bound to one `StandardMaterial` field. The
+/// A labeled [`jackdaw_feathers::slider_row`] bound to one `AuroraMaterial` field. The
 /// value shown is read through `read_fn`, so seeding and refreshing cannot drift apart.
 ///
 /// `range` bounds what this widget can produce; `apply_fn` applies whatever hard bounds the
@@ -375,10 +376,10 @@ pub(crate) fn spawn_scalar_row(
     indent: u8,
     range: Range<f32>,
     kind: FieldKind,
-    material: &StandardMaterial,
-    material_handle: Handle<StandardMaterial>,
-    read_fn: fn(&StandardMaterial) -> f64,
-    apply_fn: fn(&mut StandardMaterial, f64),
+    material: &AuroraMaterial,
+    material_handle: Handle<AuroraMaterial>,
+    read_fn: fn(&AuroraMaterial) -> f64,
+    apply_fn: fn(&mut AuroraMaterial, f64),
 ) -> Entity {
     let value = read_fn(material);
     spawn_slider_row(
@@ -408,7 +409,7 @@ pub(crate) fn spawn_scalar_row(
 pub(crate) fn on_material_slider_commit(
     event: On<ValueChange<f32>>,
     mut bindings: Query<&mut MaterialFieldBinding>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     edited: Option<ResMut<crate::material_assets::EditedMaterials>>,
     mut commands: Commands,
 ) {
@@ -437,15 +438,15 @@ pub(crate) fn on_material_slider_commit(
 /// The asset is read immutably: `Assets::get_mut` raises `Modified` again and this system
 /// would feed itself.
 fn refresh_material_rows(
-    mut events: MessageReader<AssetEvent<StandardMaterial>>,
-    materials: Res<Assets<StandardMaterial>>,
+    mut events: MessageReader<AssetEvent<AuroraMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     focus: Res<InputFocus>,
     mut fields: Query<(Entity, &mut MaterialFieldBinding, Option<&SliderDragState>)>,
     faces: Query<(&ColorRowFace, &MaterialColorBinding)>,
     child_of: Query<&ChildOf>,
     mut commands: Commands,
 ) {
-    let modified: Vec<AssetId<StandardMaterial>> = events
+    let modified: Vec<AssetId<AuroraMaterial>> = events
         .read()
         .filter_map(|event| match event {
             AssetEvent::Modified { id } => Some(*id),
@@ -531,7 +532,7 @@ fn flush_material_slider_drag(
 /// Schedule the edited material's file to be rewritten.
 fn material_edited(
     edited: Option<ResMut<crate::material_assets::EditedMaterials>>,
-    handle: &Handle<StandardMaterial>,
+    handle: &Handle<AuroraMaterial>,
 ) {
     if let Some(mut edited) = edited {
         edited.edited(handle);
@@ -545,19 +546,19 @@ fn material_edited(
 /// Links a material checkbox to its asset and the field it writes.
 #[derive(Component)]
 pub(crate) struct MaterialCheckboxBinding {
-    pub(crate) material_handle: Handle<StandardMaterial>,
-    pub(crate) apply_fn: fn(&mut StandardMaterial, bool),
+    pub(crate) material_handle: Handle<AuroraMaterial>,
+    pub(crate) apply_fn: fn(&mut AuroraMaterial, bool),
 }
 
-/// A labeled checkbox row bound to one `StandardMaterial` bool field.
+/// A labeled checkbox row bound to one `AuroraMaterial` bool field.
 pub(crate) fn spawn_checkbox_row(
     commands: &mut Commands,
     parent: Entity,
     label: &str,
     indent: u8,
     value: bool,
-    handle: Handle<StandardMaterial>,
-    write: fn(&mut StandardMaterial, bool),
+    handle: Handle<AuroraMaterial>,
+    write: fn(&mut AuroraMaterial, bool),
 ) -> Entity {
     let field = spawn_field_row(commands, parent, FieldRowProps::new(label).indented(indent));
     let mut cb = commands.spawn_scene(bsn! { @FeathersCheckbox });
@@ -581,7 +582,7 @@ pub(crate) fn spawn_checkbox_row(
 pub(crate) fn on_material_checkbox_commit(
     event: On<ValueChange<bool>>,
     bindings: Query<&MaterialCheckboxBinding>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     edited: Option<ResMut<crate::material_assets::EditedMaterials>>,
     mut commands: Commands,
 ) {
@@ -613,15 +614,15 @@ struct ColorRowFace {
 /// it.
 #[derive(Component)]
 struct MaterialColorBinding {
-    material_handle: Handle<StandardMaterial>,
-    read_fn: fn(&StandardMaterial) -> [f32; 4],
+    material_handle: Handle<AuroraMaterial>,
+    read_fn: fn(&AuroraMaterial) -> [f32; 4],
 }
 
 /// The container the collapsed picker hides in.
 #[derive(Component)]
 struct ColorPickerBody;
 
-/// A labeled colour row bound to a `StandardMaterial` colour field.
+/// A labeled colour row bound to a `AuroraMaterial` colour field.
 ///
 /// Closed it is a one-row-high field row of label, swatch and hex; clicking the swatch opens
 /// the 200px picker under it.
@@ -631,10 +632,10 @@ pub(crate) fn spawn_color_row(
     commands: &mut Commands,
     parent: Entity,
     label: &str,
-    material: &StandardMaterial,
-    handle: Handle<StandardMaterial>,
-    read: fn(&StandardMaterial) -> [f32; 4],
-    write: fn(&mut StandardMaterial, [f32; 4]),
+    material: &AuroraMaterial,
+    handle: Handle<AuroraMaterial>,
+    read: fn(&AuroraMaterial) -> [f32; 4],
+    write: fn(&mut AuroraMaterial, [f32; 4]),
 ) -> Entity {
     let rgba = read(material);
     let field = spawn_field_row(commands, parent, FieldRowProps::new(label));
@@ -701,7 +702,7 @@ pub(crate) fn spawn_color_row(
         0.0,
         move |world, rgba, _is_final| {
             if let Some(mut material) = world
-                .resource_mut::<Assets<StandardMaterial>>()
+                .resource_mut::<Assets<AuroraMaterial>>()
                 .get_mut(&write_handle)
             {
                 write(&mut material, rgba);
@@ -807,8 +808,8 @@ pub(crate) fn spawn_combobox_row(
     label: &str,
     options: Vec<&'static str>,
     selected: usize,
-    handle: Handle<StandardMaterial>,
-    on_select: fn(&mut World, &Handle<StandardMaterial>, usize),
+    handle: Handle<AuroraMaterial>,
+    on_select: fn(&mut World, &Handle<AuroraMaterial>, usize),
 ) -> Entity {
     let field = spawn_field_row(commands, parent, FieldRowProps::new(label));
     let current_caption = options.get(selected).copied().unwrap_or("").to_string();
@@ -1279,8 +1280,8 @@ pub(crate) fn preview_zoom_from_scroll(
 pub(crate) fn fill_texture_rows(
     commands: &mut Commands,
     body: Entity,
-    material: &StandardMaterial,
-    handle: &Handle<StandardMaterial>,
+    material: &AuroraMaterial,
+    handle: &Handle<AuroraMaterial>,
     icon_font: &Handle<Font>,
 ) {
     for slot in TextureSlot::ALL {
@@ -1335,19 +1336,19 @@ pub(crate) fn fill_texture_rows(
     }
 }
 
-/// `emissive` is the one colour field on `StandardMaterial` held as linear rather than sRGB.
+/// `emissive` is the one colour field on `AuroraMaterial` held as linear rather than sRGB.
 /// Colour rows edit sRGB, so this pair converts at the binding.
-fn base_color_srgb(material: &StandardMaterial) -> [f32; 4] {
+fn base_color_srgb(material: &AuroraMaterial) -> [f32; 4] {
     let c = material.base_color.to_srgba();
     [c.red, c.green, c.blue, c.alpha]
 }
 
-fn emissive_srgb(material: &StandardMaterial) -> [f32; 4] {
+fn emissive_srgb(material: &AuroraMaterial) -> [f32; 4] {
     let e = Color::LinearRgba(material.emissive).to_srgba();
     [e.red, e.green, e.blue, e.alpha]
 }
 
-fn set_emissive_srgb(material: &mut StandardMaterial, c: [f32; 4]) {
+fn set_emissive_srgb(material: &mut AuroraMaterial, c: [f32; 4]) {
     material.emissive = Color::srgba(c[0], c[1], c[2], c[3]).to_linear();
 }
 
@@ -1355,8 +1356,8 @@ fn set_emissive_srgb(material: &mut StandardMaterial, c: [f32; 4]) {
 pub(crate) fn fill_surface_rows(
     commands: &mut Commands,
     body: Entity,
-    material: &StandardMaterial,
-    handle: &Handle<StandardMaterial>,
+    material: &AuroraMaterial,
+    handle: &Handle<AuroraMaterial>,
 ) {
     spawn_color_row(
         commands,
@@ -1433,7 +1434,7 @@ mod tests {
     /// Binding a height map has to leave the parallax scalars usable rather than at zero.
     #[test]
     fn binding_a_height_map_turns_parallax_on_and_clearing_it_turns_it_off() {
-        let mut material = StandardMaterial::default();
+        let mut material = AuroraMaterial::default();
         TextureSlot::DepthMap.set_on(&mut material, Some(Handle::default()));
         assert!(material.parallax_depth_scale > 0.0);
         assert!(material.max_parallax_layer_count > 0.0);
@@ -1464,7 +1465,7 @@ mod tests {
 
     #[test]
     fn emissive_reads_back_the_srgb_it_was_given() {
-        let mut material = StandardMaterial::default();
+        let mut material = AuroraMaterial::default();
         let wanted = [0.25, 0.5, 0.75, 1.0];
         set_emissive_srgb(&mut material, wanted);
 
@@ -1476,7 +1477,7 @@ mod tests {
 
     #[test]
     fn emissive_is_stored_linear_under_the_srgb_the_row_shows() {
-        let mut material = StandardMaterial::default();
+        let mut material = AuroraMaterial::default();
         set_emissive_srgb(&mut material, [0.5, 0.5, 0.5, 1.0]);
         assert!(
             material.emissive.red < 0.45,
@@ -1508,10 +1509,10 @@ mod scalar_seed_tests {
             bevy::asset::AssetPlugin::default(),
             bevy::scene::ScenePlugin,
         ));
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_asset::<Font>();
 
-        let material = StandardMaterial {
+        let material = AuroraMaterial {
             metallic: 0.25,
             perceptual_roughness: 0.9,
             reflectance: 0.5,
@@ -1520,12 +1521,12 @@ mod scalar_seed_tests {
         };
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .add(material.clone());
 
         let body = app.world_mut().spawn(Node::default()).id();
         let id = app.world_mut().register_system(
-            move |mut commands: Commands, materials: Res<Assets<StandardMaterial>>| {
+            move |mut commands: Commands, materials: Res<Assets<AuroraMaterial>>| {
                 let material = materials.get(&handle).expect("material").clone();
                 fill_surface_rows(&mut commands, body, &material, &handle);
             },
@@ -1564,7 +1565,7 @@ mod scalar_commit_tests {
     fn commit_app() -> App {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_resource::<crate::material_assets::EditedMaterials>();
         app.add_observer(on_material_slider_commit);
         app
@@ -1584,7 +1585,7 @@ mod scalar_commit_tests {
     }
 
     /// A slider entity carrying the binding a spawned row would have.
-    fn bound_slider(app: &mut App, handle: Handle<StandardMaterial>) -> Entity {
+    fn bound_slider(app: &mut App, handle: Handle<AuroraMaterial>) -> Entity {
         app.world_mut()
             .spawn((
                 MaterialFieldBinding {
@@ -1613,15 +1614,15 @@ mod scalar_commit_tests {
         let mut app = commit_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle.clone());
 
         drag_to(&mut app, slider, 0.75, true);
 
         let material = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .unwrap();
         assert!((material.metallic - 0.75).abs() < 1e-5);
@@ -1644,8 +1645,8 @@ mod scalar_commit_tests {
         let mut app = commit_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle);
 
         drag_to(&mut app, slider, 0.75, true);
@@ -1660,15 +1661,15 @@ mod scalar_commit_tests {
         let mut app = commit_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle.clone());
 
         drag_to(&mut app, slider, 0.4, false);
 
         let metallic = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .unwrap()
             .metallic;
@@ -1682,8 +1683,8 @@ mod scalar_commit_tests {
         let mut app = commit_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle.clone());
 
         for value in [0.3f32, 0.4, 0.5] {
@@ -1696,7 +1697,7 @@ mod scalar_commit_tests {
         );
         let metallic = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .unwrap()
             .metallic;
@@ -1711,8 +1712,8 @@ mod scalar_commit_tests {
         let mut app = commit_app();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle);
 
         drag_to(&mut app, slider, 0.4, false);
@@ -1730,8 +1731,8 @@ mod scalar_commit_tests {
         app.add_systems(Update, flush_material_slider_drag);
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let slider = bound_slider(&mut app, handle);
         app.world_mut()
             .entity_mut(slider)
@@ -1776,23 +1777,23 @@ mod refresh_tests {
     fn refresh_app() -> App {
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
-        app.init_asset::<StandardMaterial>();
+        app.init_asset::<AuroraMaterial>();
         app.init_resource::<InputFocus>();
         app.add_systems(PostUpdate, refresh_material_rows.after(AssetEventSystems));
         app
     }
 
-    fn metallic_material(app: &mut App, metallic: f32) -> Handle<StandardMaterial> {
+    fn metallic_material(app: &mut App, metallic: f32) -> Handle<AuroraMaterial> {
         app.world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial {
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial {
                 metallic,
                 ..Default::default()
             })
     }
 
     /// A slider carrying the binding a spawned row would have.
-    fn scalar_row(app: &mut App, handle: Handle<StandardMaterial>, shown: f64) -> Entity {
+    fn scalar_row(app: &mut App, handle: Handle<AuroraMaterial>, shown: f64) -> Entity {
         app.world_mut()
             .spawn((
                 MaterialFieldBinding {
@@ -1819,7 +1820,7 @@ mod refresh_tests {
     }
 
     /// A colour row entity with the swatch and hex it repaints.
-    fn color_row(app: &mut App, handle: Handle<StandardMaterial>) -> (Entity, Entity) {
+    fn color_row(app: &mut App, handle: Handle<AuroraMaterial>) -> (Entity, Entity) {
         let swatch = app
             .world_mut()
             .spawn(BackgroundColor(Color::srgb(0.0, 0.0, 0.0)))
@@ -1836,9 +1837,9 @@ mod refresh_tests {
     }
 
     /// Edit the material as another surface would.
-    fn write_metallic(app: &mut App, handle: &Handle<StandardMaterial>, value: f32) {
+    fn write_metallic(app: &mut App, handle: &Handle<AuroraMaterial>, value: f32) {
         app.world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .get_mut(handle)
             .expect("material")
             .metallic = value;
@@ -1869,7 +1870,7 @@ mod refresh_tests {
         let (swatch, hex) = color_row(&mut app, handle.clone());
 
         app.world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .get_mut(&handle)
             .expect("material")
             .base_color = Color::srgb(1.0, 0.0, 0.5);
@@ -1950,7 +1951,7 @@ mod refresh_tests {
         );
         let metallic = app
             .world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .expect("material")
             .metallic;
@@ -2005,6 +2006,7 @@ mod texture_slot_tests {
     use crate::inspector::asset_row::AssetFieldRow;
     use bevy::ecs::system::RunSystemOnce;
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
 
     /// The texture slots of a material are asset rows, so the material card and
     /// the terrain panel's slot editor both show a path, a picker and a drop
@@ -2015,13 +2017,13 @@ mod texture_slot_tests {
         app.add_plugins(MinimalPlugins)
             .add_plugins(bevy::asset::AssetPlugin::default())
             .add_plugins(bevy::scene::ScenePlugin)
-            .init_asset::<StandardMaterial>()
+            .init_asset::<AuroraMaterial>()
             .init_asset::<Image>()
             .init_asset::<Font>();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let body = app.world_mut().spawn_empty().id();
 
         let material = handle.clone();
@@ -2030,7 +2032,7 @@ mod texture_slot_tests {
                 fill_texture_rows(
                     &mut commands,
                     body,
-                    &StandardMaterial::default(),
+                    &AuroraMaterial::default(),
                     &material,
                     &Handle::default(),
                 );
@@ -2074,18 +2076,18 @@ mod texture_slot_tests {
         app.add_plugins(MinimalPlugins)
             .add_plugins(bevy::asset::AssetPlugin::default())
             .add_plugins(bevy::scene::ScenePlugin)
-            .init_asset::<StandardMaterial>()
+            .init_asset::<AuroraMaterial>()
             .init_asset::<Image>()
             .init_asset::<Font>()
-            .register_type::<StandardMaterial>()
-            .register_asset_reflect::<StandardMaterial>()
+            .register_type::<AuroraMaterial>()
+            .register_asset_reflect::<AuroraMaterial>()
             .init_resource::<crate::asset_catalog::AssetCatalog>()
             .init_resource::<crate::material_preview::MaterialPreviewState>()
             .init_resource::<jackdaw_commands::CommandHistory>();
         let handle = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let body = app.world_mut().spawn_empty().id();
         let material = handle.clone();
         app.world_mut()
@@ -2093,7 +2095,7 @@ mod texture_slot_tests {
                 fill_texture_rows(
                     &mut commands,
                     body,
-                    &StandardMaterial::default(),
+                    &AuroraMaterial::default(),
                     &material,
                     &Handle::default(),
                 );

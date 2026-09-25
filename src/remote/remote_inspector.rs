@@ -20,6 +20,7 @@ use super::entity_browser::{
     RemoteEntityProxy, RemoteProxyIndex, RemoteSceneCache, RemoteSelection,
 };
 use crate::inspector::{ComponentDisplay, InspectorGroupSection, component_display};
+use bevy_aurora::material::AuroraMaterial;
 
 /// Marker for the remote inspector panel (distinct from `Inspector` to avoid `Single<>` conflict).
 #[derive(Component)]
@@ -210,7 +211,7 @@ pub(crate) fn build_remote_inspector_displays(
     editor_font: Res<EditorFont>,
     inspector_query: Query<(Entity, &RemoteInspectorNeedsRebuild), With<RemoteInspector>>,
     entity_query: Query<(&Archetype, EntityRef)>,
-    materials: Res<Assets<StandardMaterial>>,
+    materials: Res<Assets<AuroraMaterial>>,
     collapse_state: Res<crate::inspector::InspectorCollapseState>,
     type_metadata: Res<crate::type_metadata::TypeMetadata>,
     project_types: Res<crate::project_types::ProjectTypes>,
