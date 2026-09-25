@@ -1,7 +1,7 @@
 //! Connection wire rendering.
 //!
 //! Each `Connection` component has a sibling UI node carrying a
-//! [`ConnectionMaterial`]. The material node is sized to 100% of the
+//! [`UiPolyline`]. That node is sized to 100% of the
 //! viewport and parented directly under it; **not** under the canvas
 //! world; so it never needs to resize in response to node drags. This
 //! avoids a one-frame lag between writing `Node::width/height` in
@@ -21,12 +21,12 @@
 use bevy::ecs::relationship::Relationship;
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
+use bevy_aurora::ui_render::UiPolyline;
 use std::collections::HashSet;
 
 use crate::canvas::GraphCanvasViewport;
 use crate::gesture::{ConnectionAnchor, GraphGesture, SnapHit};
 use crate::graph::{Connection, GraphNode, TerminalDirection};
-use crate::materials::ConnectionMaterial;
 use crate::node_widget::GraphTerminalView;
 use crate::registry::NodeTypeRegistry;
 use crate::sync::CanvasWorldIndex;
@@ -67,16 +67,38 @@ pub struct TerminalAnchor {
 const SNAP_RADIUS_PX: f32 = 40.0;
 
 /// Full-opacity wire color.
-const WIRE_COLOR: Vec4 = Vec4::new(0.6, 0.6, 0.7, 1.0);
+const WIRE_COLOR: Color = Color::linear_rgba(0.6, 0.6, 0.7, 1.0);
 /// Dimmed wire color applied when a connection has a [`PendingRemove`]
 /// marker (right+hover on one of its endpoints).
-const WIRE_COLOR_PENDING_REMOVE: Vec4 = Vec4::new(0.95, 0.35, 0.35, 0.45);
+const WIRE_COLOR_PENDING_REMOVE: Color = Color::linear_rgba(0.95, 0.35, 0.35, 0.45);
+
+const WIRE_THICKNESS: f32 = 2.0;
+const GHOST_THICKNESS: f32 = 2.5;
+
+/// Enough that the curve reads as smooth at the zoom levels the canvas allows; the
+/// sampling is uniform in `t`, which is close enough to uniform in arc length for a
+/// wire whose control handles are on the curve's own scale.
+const WIRE_SEGMENTS: usize = 32;
+
+/// The familiar node-graph S-wire: a cubic with horizontal handles half the x-distance
+/// long, sampled into the segments `UiPolyline` draws. Both endpoints are logical pixels
+/// from the viewport's top-left.
+fn wire_points(source: Vec2, target: Vec2) -> Vec<Vec2> {
+    let dx = (target.x - source.x).abs().max(40.0);
+    UiPolyline::bezier(
+        source,
+        source + Vec2::new(dx * 0.5, 0.0),
+        target - Vec2::new(dx * 0.5, 0.0),
+        target,
+        WIRE_SEGMENTS,
+    )
+}
 /// Ghost color when the drag is free (no snap target yet). Warm
 /// translucent gray signals "free-floating end".
-const GHOST_COLOR_FREE: Vec4 = Vec4::new(0.85, 0.85, 0.9, 0.7);
+const GHOST_COLOR_FREE: Color = Color::linear_rgba(0.85, 0.85, 0.9, 0.7);
 /// Ghost color once snapped to a compatible input. Bright cyan-green that
 /// reads as "yes, releasing here will create a connection".
-const GHOST_COLOR_SNAPPED: Vec4 = Vec4::new(0.3, 0.95, 0.7, 1.0);
+const GHOST_COLOR_SNAPPED: Color = Color::linear_rgba(0.3, 0.95, 0.7, 1.0);
 
 /// Recompute every `ConnectionView`'s material uniforms.
 ///
@@ -95,8 +117,7 @@ const GHOST_COLOR_SNAPPED: Vec4 = Vec4::new(0.3, 0.95, 0.7, 1.0);
 ///   width/height, position 0,0), so its local frame matches the viewport
 ///   frame exactly.
 pub fn update_connection_endpoints(
-    mut materials: ResMut<Assets<ConnectionMaterial>>,
-    connection_nodes: Query<(&ConnectionView, &MaterialNode<ConnectionMaterial>)>,
+    mut connection_nodes: Query<(&ConnectionView, &mut UiPolyline)>,
     connections: Query<&Connection>,
     pending_remove: Query<(), With<PendingRemove>>,
     terminals: Query<(&GraphTerminalView, &UiGlobalTransform)>,
@@ -109,8 +130,9 @@ pub fn update_connection_endpoints(
     let (_scale, _angle, viewport_center) = viewport_transform.to_scale_angle_translation();
     let viewport_size = viewport_computed.size();
     let viewport_top_left = viewport_center - viewport_size * 0.5;
+    let inverse_scale = viewport_computed.inverse_scale_factor();
 
-    for (view, material_handle) in connection_nodes.iter() {
+    for (view, mut polyline) in connection_nodes.iter_mut() {
         let Ok(connection) = connections.get(view.connection) else {
             continue;
         };
@@ -132,28 +154,18 @@ pub fn update_connection_endpoints(
             continue;
         };
 
-        // Terminal centers -> wire-local pixels (origin at viewport top-left).
-        let source_local = source_screen - viewport_top_left;
-        let target_local = target_screen - viewport_top_left;
+        // Terminal centers -> wire-local LOGICAL pixels from the viewport's top-left,
+        // which is the frame `UiPolyline` speaks (the transforms above are physical).
+        let source_local = (source_screen - viewport_top_left) * inverse_scale;
+        let target_local = (target_screen - viewport_top_left) * inverse_scale;
 
-        // Cubic Bezier control points: horizontal handles whose length is
-        // half the x-distance. Gives the familiar node-graph S-wire.
-        let dx = (target_local.x - source_local.x).abs().max(40.0);
-        let p1 = source_local + Vec2::new(dx * 0.5, 0.0);
-        let p2 = target_local - Vec2::new(dx * 0.5, 0.0);
-
-        let Some(mut material) = materials.get_mut(&material_handle.0) else {
-            continue;
-        };
-        material.p0 = source_local;
-        material.p1 = p1;
-        material.p2 = p2;
-        material.p3 = target_local;
-        material.color = if pending_remove.contains(view.connection) {
+        polyline.points = wire_points(source_local, target_local);
+        polyline.color = if pending_remove.contains(view.connection) {
             WIRE_COLOR_PENDING_REMOVE
         } else {
             WIRE_COLOR
         };
+        polyline.thickness = WIRE_THICKNESS;
     }
 }
 
@@ -165,14 +177,13 @@ pub fn update_connection_endpoints(
 /// [`update_connection_endpoints`].
 pub fn update_ghost_wire(
     mut gesture: ResMut<GraphGesture>,
-    mut materials: ResMut<Assets<ConnectionMaterial>>,
     terminal_transforms: Query<(&GraphTerminalView, &UiGlobalTransform)>,
     graph_nodes: Query<&GraphNode>,
     registry: Res<NodeTypeRegistry>,
     viewports: Query<(&ComputedNode, &UiGlobalTransform), With<GraphCanvasViewport>>,
     index: Res<CanvasWorldIndex>,
     node_parents: Query<&ChildOf, With<GraphNode>>,
-    ghost_query: Query<(Entity, &MaterialNode<ConnectionMaterial>), With<GhostConnection>>,
+    mut ghost_query: Query<(Entity, &mut UiPolyline), With<GhostConnection>>,
     mut commands: Commands,
 ) {
     // If we're not in a connect-drag, make sure no ghost wire is lying
@@ -275,12 +286,9 @@ pub fn update_ghost_wire(
     let viewport_size = viewport_computed.size();
     let viewport_top_left = viewport_center - viewport_size * 0.5;
 
-    let source_local = source_screen - viewport_top_left;
-    let target_local = target_screen - viewport_top_left;
-
-    let dx = (target_local.x - source_local.x).abs().max(40.0);
-    let p1 = source_local + Vec2::new(dx * 0.5, 0.0);
-    let p2 = target_local - Vec2::new(dx * 0.5, 0.0);
+    let inverse_scale = viewport_computed.inverse_scale_factor();
+    let source_local = (source_screen - viewport_top_left) * inverse_scale;
+    let target_local = (target_screen - viewport_top_left) * inverse_scale;
 
     let color = if best.is_some() {
         GHOST_COLOR_SNAPPED
@@ -288,15 +296,10 @@ pub fn update_ghost_wire(
         GHOST_COLOR_FREE
     };
 
-    if let Some((_entity, material_handle)) = ghost_query.iter().next() {
-        // Ghost already exists; just update its material.
-        if let Some(mut material) = materials.get_mut(&material_handle.0) {
-            material.p0 = source_local;
-            material.p1 = p1;
-            material.p2 = p2;
-            material.p3 = target_local;
-            material.color = color;
-        }
+    if let Some((_entity, mut polyline)) = ghost_query.iter_mut().next() {
+        // Ghost already exists; just restate its curve.
+        polyline.points = wire_points(source_local, target_local);
+        polyline.color = color;
     } else {
         // Ghost doesn't exist yet; spawn it parented to the viewport.
         // Look up the owning graph from the source node's ChildOf, then
@@ -309,16 +312,6 @@ pub fn update_ghost_wire(
             return;
         };
 
-        let material = materials.add(ConnectionMaterial {
-            p0: source_local,
-            p1,
-            p2,
-            p3: target_local,
-            color,
-            width: 2.5,
-            feather: 1.0,
-        });
-
         commands
             .spawn((
                 GhostConnection,
@@ -330,7 +323,12 @@ pub fn update_ghost_wire(
                     height: Val::Percent(100.0),
                     ..default()
                 },
-                MaterialNode(material),
+                UiPolyline {
+                    points: wire_points(source_local, target_local),
+                    thickness: GHOST_THICKNESS,
+                    color,
+                    closed: false,
+                },
                 Pickable::IGNORE,
             ))
             .insert(ChildOf(viewport_entity));

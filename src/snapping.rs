@@ -1,8 +1,9 @@
 use bevy::{
-    dev_tools::infinite_grid::{InfiniteGrid, InfiniteGridSettings},
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
 };
+
+use crate::infinite_grid::{InfiniteGrid, InfiniteGridSettings};
 use jackdaw_api::op::{Operator, OperatorCommandsExt as _};
 
 use crate::default_style;

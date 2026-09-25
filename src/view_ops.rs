@@ -11,7 +11,9 @@
 //!   panel the cursor is in.
 
 use bevy::camera::primitives::Aabb;
-use bevy::{dev_tools::infinite_grid::InfiniteGrid, prelude::*};
+use bevy::prelude::*;
+
+use crate::infinite_grid::InfiniteGrid;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::keymap::PresetInput;
 

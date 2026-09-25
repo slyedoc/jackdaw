@@ -13,12 +13,12 @@
 
 use bevy::ecs::relationship::Relationship;
 use bevy::prelude::*;
+use bevy_aurora::ui_render::UiPolyline;
 use std::collections::HashMap;
 
 use crate::canvas::{GraphCanvasViewport, GraphCanvasWorld};
 use crate::connection::ConnectionView;
 use crate::graph::{Connection, GraphNode};
-use crate::materials::ConnectionMaterial;
 use crate::node_widget::{GraphNodeView, node};
 use crate::registry::NodeTypeRegistry;
 
@@ -167,14 +167,9 @@ pub fn spawn_connection_ui_for_new(
     all_connections: Query<(Entity, &ChildOf), With<Connection>>,
     existing: Query<&ConnectionView>,
     index: Res<CanvasWorldIndex>,
-    mut materials: ResMut<Assets<ConnectionMaterial>>,
     mut commands: Commands,
 ) {
-    let spawn_wire = |conn_entity: Entity,
-                      viewport_entity: Entity,
-                      materials: &mut Assets<ConnectionMaterial>,
-                      commands: &mut Commands| {
-        let material = materials.add(ConnectionMaterial::default());
+    let spawn_wire = |conn_entity: Entity, viewport_entity: Entity, commands: &mut Commands| {
         commands
             .spawn((
                 Node {
@@ -185,7 +180,9 @@ pub fn spawn_connection_ui_for_new(
                     height: Val::Percent(100.0),
                     ..default()
                 },
-                MaterialNode(material),
+                // Points are filled in by `update_connection_endpoints` on the next
+                // PostUpdate; an empty polyline draws nothing until then.
+                UiPolyline::default(),
                 ConnectionView {
                     connection: conn_entity,
                 },
@@ -206,7 +203,7 @@ pub fn spawn_connection_ui_for_new(
         let Some(&viewport_entity) = index.graph_to_viewport.get(&graph) else {
             continue;
         };
-        spawn_wire(conn_entity, viewport_entity, &mut materials, &mut commands);
+        spawn_wire(conn_entity, viewport_entity, &mut commands);
     }
 
     // Path B: a new canvas viewport just appeared; backfill wires for
@@ -223,7 +220,7 @@ pub fn spawn_connection_ui_for_new(
             if existing.iter().any(|v| v.connection == conn_entity) {
                 continue;
             }
-            spawn_wire(conn_entity, viewport_entity, &mut materials, &mut commands);
+            spawn_wire(conn_entity, viewport_entity, &mut commands);
         }
     }
 }

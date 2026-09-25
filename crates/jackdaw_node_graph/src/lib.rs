@@ -8,8 +8,9 @@
 //! # Architecture
 //! - Graph data lives as ECS entities with reflected components so it
 //!   round-trips through the editor's JSN AST serializer.
-//! - Canvas rendering uses a `UiMaterial` + WGSL shader for GPU-accelerated
-//!   anti-aliased Bezier wires (Inigo Quilez quadratic SDF decomposition).
+//! - Connection wires are `bevy_aurora::ui_render::UiPolyline`s: the cubic is
+//!   sampled into segments and aurora draws each as a rounded quad, batched
+//!   into the same pipeline as the rest of the UI.
 //! - Interaction is driven by a [`GraphGesture`] state machine that consumes
 //!   pointer events via observers and pushes `EditorCommand`s onto the shared
 //!   `CommandHistory` for undo/redo.
@@ -21,7 +22,6 @@ pub mod connection;
 pub mod gesture;
 pub mod graph;
 pub mod interaction;
-pub mod materials;
 pub mod node_widget;
 pub mod registry;
 pub mod selection;
@@ -38,13 +38,10 @@ pub use graph::{
     Connection, GraphCanvasView, GraphNode, GraphNodeSelected, NodeGraph, Terminal,
     TerminalDirection,
 };
-pub use materials::ConnectionMaterial;
 pub use node_widget::{GraphNodeBody, GraphNodeView, body_label, node};
 pub use registry::{NodeTypeDescriptor, NodeTypeRegistry, TerminalDescriptor};
 pub use selection::GraphSelection;
 pub use sync::CanvasWorldIndex;
-
-use bevy::asset::embedded_asset;
 use bevy::prelude::*;
 use jackdaw_commands::CommandHistory;
 
@@ -53,9 +50,6 @@ pub struct NodeGraphPlugin;
 
 impl Plugin for NodeGraphPlugin {
     fn build(&self, app: &mut App) {
-        // Embed the connection SDF shader.
-        embedded_asset!(app, "shaders/connection.wgsl");
-
         // Reflect types so they round-trip through the JSN AST.
         app.register_type::<NodeGraph>()
             .register_type::<GraphCanvasView>()
@@ -70,9 +64,6 @@ impl Plugin for NodeGraphPlugin {
             .init_resource::<GraphGesture>()
             .init_resource::<CanvasWorldIndex>()
             .init_resource::<CommandHistory>();
-
-        // Connection rendering pipeline (UiMaterial + SDF shader).
-        app.add_plugins(UiMaterialPlugin::<ConnectionMaterial>::default());
 
         // Per-frame systems.
         app.add_systems(

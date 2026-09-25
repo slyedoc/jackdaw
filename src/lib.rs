@@ -43,6 +43,7 @@ pub mod game_panel;
 pub mod gizmo_ops;
 pub mod gizmos;
 pub mod grid_ops;
+pub mod infinite_grid;
 pub mod hierarchy;
 pub mod history_ops;
 pub mod input_contexts;

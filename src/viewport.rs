@@ -3,7 +3,6 @@ use bevy::{
     asset::{embedded_asset, load_embedded_asset},
     camera::{RenderTarget, visibility::RenderLayers},
     core_pipeline::oit::OrderIndependentTransparencySettings,
-    dev_tools::infinite_grid::{InfiniteGrid, InfiniteGridPlugin},
     gizmos::{GizmoAsset, retained::Gizmo},
     image::ImageSampler,
     prelude::*,
@@ -12,6 +11,8 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowFocused},
 };
 use jackdaw_api::prelude::*;
+
+use crate::infinite_grid::{InfiniteGrid, InfiniteGridPlugin};
 use jackdaw_api_internal::keymap::PresetInput;
 use jackdaw_camera::{JackdawCameraPlugin, JackdawCameraSettings};
 use path_slash::PathExt as _;

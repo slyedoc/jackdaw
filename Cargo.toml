@@ -221,20 +221,62 @@ fontique = { version = "0.11", default-features = false, features = [
 version = "0.19.0"
 
 [workspace.dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", features = [
-    "bevy_feathers",
-    "bevy_scene",
-    "bevy_dev_tools",
+# No default features: the defaults pull bevy_render and with it the whole wgpu
+# stack, which aurora replaces. Everything below is render-free at this revision.
+# `bevy_feathers_core` is feathers WITHOUT its two UiMaterials -- see aurora's
+# ui_render, which rasterizes the bevy_ui tree on Vulkan instead.
+# `bevy_dev_tools` is deliberately absent: it depends on bevy_render/bevy_pbr
+# unconditionally, so the infinite grid and the fps overlay need aurora-side homes.
+bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
+    # aurora's baseline -- keep in step with zero's list.
+    "default_app",
+    "default_platform",
+    "common_api",
+    "std",
+    "multi_threaded",
+    "bevy_winit",
+    "x11",
+    "wayland",
+    "scene",
     "serialize",
-    "debug",
+    "bevy_animation",
+    "bevy_camera",
+    "bevy_ui",
+    "bevy_ui_widgets",
+    "ui_picking",
+    "bevy_input_focus",
+    "bevy_feathers_core",
+    "bevy_camera_controller",
+    "free_camera",
+    "bevy_light",
+    "bevy_mesh",
+    "bevy_mikktspace",
+    "bevy_image",
+    "bevy_color",
+    "png",
+    "ktx2",
+    "zstd_rust",
+    "default_font",
+    # the editor's own
+    "bevy_gltf",
+    "gltf_animation",
+    "bevy_gizmos",
+    "bevy_audio",
     "bevy_remote",
+    "bevy_world_serialization",
     "file_watcher",
+    "reflect_auto_register",
     "reflect_documentation",
     "reflect_functions",
+    "debug",
+    "system_font_discovery",
 ] }
-jackdaw_jsn = { version = "0.19.0", path = "crates/jackdaw_jsn" }
-jackdaw_geometry = { version = "0.19.0", path = "crates/jackdaw_geometry" }
-jackdaw_scene_types = { version = "0.19.0", path = "crates/jackdaw_scene_types" }
+# `default-features = false` throughout: each of these crates defaults to a `render`
+# feature that turns on bevy/bevy_render, and cargo unifies features across the whole
+# workspace -- one of them left on puts wgpu back in every binary here.
+jackdaw_jsn = { version = "0.19.0", path = "crates/jackdaw_jsn", default-features = false }
+jackdaw_geometry = { version = "0.19.0", path = "crates/jackdaw_geometry", default-features = false }
+jackdaw_scene_types = { version = "0.19.0", path = "crates/jackdaw_scene_types", default-features = false }
 jackdaw_schema = { version = "0.19.0", path = "crates/jackdaw_schema" }
 jackdaw_project_build = { version = "0.19.0", path = "crates/jackdaw_project_build" }
 jackdaw_bsn = { version = "0.19.0", path = "crates/jackdaw_bsn" }
@@ -248,7 +290,7 @@ jackdaw_feathers = { version = "0.19.0", path = "crates/jackdaw_feathers" }
 jackdaw_widgets = { version = "0.19.0", path = "crates/jackdaw_widgets" }
 jackdaw_widgets_runtime = { version = "0.19.0", path = "crates/jackdaw_widgets_runtime", default-features = false }
 jackdaw_commands = { version = "0.19.0", path = "crates/jackdaw_commands" }
-jackdaw_terrain = { version = "0.19.0", path = "crates/jackdaw_terrain" }
+jackdaw_terrain = { version = "0.19.0", path = "crates/jackdaw_terrain", default-features = false, features = ["procgen"] }
 jackdaw_remote = { version = "0.19.0", path = "crates/jackdaw_remote" }
 jackdaw_snap = { version = "0.19.0", path = "crates/jackdaw_snap" }
 jackdaw_select = { version = "0.19.0", path = "crates/jackdaw_select" }
@@ -281,7 +323,7 @@ avian3d = { git = "https://github.com/avianphysics/avian", branch = "main", feat
 jackdaw_avian_integration = { version = "0.19.0", path = "crates/jackdaw_avian_integration" }
 jackdaw_multiplayer = { version = "0.19.0", path = "crates/jackdaw_multiplayer" }
 jackdaw_multiplayer_editor = { version = "0.19.0", path = "crates/jackdaw_multiplayer_editor" }
-jackdaw_runtime = { version = "0.19.0", path = "crates/jackdaw_runtime" }
+jackdaw_runtime = { version = "0.19.0", path = "crates/jackdaw_runtime", default-features = false }
 jackdaw_panels = { version = "0.19.0", path = "crates/jackdaw_panels" }
 jackdaw_prefab = { version = "0.19.0", path = "crates/jackdaw_prefab" }
 jackdaw_api = { version = "0.19.0", path = "crates/jackdaw_api" }
@@ -296,7 +338,16 @@ jackdaw_cli_internal = { version = "0.19.0", path = "crates/jackdaw_cli" }
 jackdaw_env = { version = "0.19.0", path = "crates/jackdaw_env" }
 bevy_enhanced_input = "0.26"
 rfd = "0.15"
-bevy_rerecast = { version = "0.5.0", default-features = true }
+# Default features include `editor_integration`, whose crate depends on bevy_render.
+# `bevy_mesh` is what provides `TriMeshFromBevyMesh` (the navmesh bake reads Mesh3d);
+# `debug_plugin` is the gizmo overlay.
+bevy_rerecast = { version = "0.5.0", default-features = false, features = [
+    "bevy_mesh",
+    "debug_plugin",
+] }
+# The renderer. Named by its upstream url like every other fork here; the
+# `[patch]` section below swaps in the side-by-side checkout at ../../p/aurora.
+bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 ehttp = { version = "0.5", default-features = false, features = [
     "native-async",
     "json",
@@ -451,6 +502,9 @@ bevy_utils = { path = "../bevy/crates/bevy_utils" }
 bevy_window = { path = "../bevy/crates/bevy_window" }
 bevy_winit = { path = "../bevy/crates/bevy_winit" }
 bevy_world_serialization = { path = "../bevy/crates/bevy_world_serialization" }
+
+[patch."https://github.com/slyedoc/aurora.git"]
+bevy_aurora = { path = "../../p/aurora" }
 
 [patch."https://github.com/avianphysics/avian"]
 avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }

@@ -22,13 +22,16 @@ bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-fe
 [features]
 default = []
 # The feathers styling surface: the theme markers an authored widget carries
-# and the hover state its button styling reads. `bevy_feathers` depends on
-# `bevy_render` outright, so this stays optional and a headless game keeps a
-# render-free build.
+# and the hover state its button styling reads. Stays optional so a headless
+# game keeps a smaller build.
+# `bevy_feathers_core`, NOT `bevy_feathers`: the latter adds the two UiMaterials
+# (the alpha checkerboard and the colour plane gradient) and with them
+# bevy_render. Cargo unifies features workspace-wide, so naming the render half
+# here would put wgpu back in the editor no matter what the root manifest says.
 # `bevy_scene` comes with it: the widgets built out of more than one entity
 # are spawned from the feathers scene components, and `spawn_scene` is what
 # spawns one.
-feathers = ["bevy/bevy_feathers", "bevy/bevy_picking", "bevy/bevy_scene"]
+feathers = ["bevy/bevy_feathers_core", "bevy/bevy_picking", "bevy/bevy_scene"]
 
 [lints]
 workspace = true
