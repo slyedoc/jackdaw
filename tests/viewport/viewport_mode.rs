@@ -869,13 +869,13 @@ fn segments_for(app: &mut App, panel: Entity, mode: ViewportMode) -> Vec<Entity>
     found
 }
 
-/// Click a segment the way a user does: the `Pointer<Click>` its inline
+/// Click a segment the way a user does: the `PointerClick` its inline
 /// observer is watching for.
 fn click(app: &mut App, segment: Entity) {
     use bevy::camera::{NormalizedRenderTarget, RenderTarget};
     use bevy::picking::{
         backend::HitData,
-        events::{Click, Pointer},
+        events::{Pointer, PointerClick},
         pointer::{Location, PointerButton, PointerId},
     };
     use bevy::window::WindowRef;
@@ -948,7 +948,7 @@ fn clicking_a_segment_moves_only_the_panel_it_names() {
     );
 }
 
-/// The observer reads the disabled flag itself, because a `Pointer<Click>`
+/// The observer reads the disabled flag itself, because a `PointerClick`
 /// reaches an entity whatever its interaction state.
 #[test]
 fn a_disabled_segment_does_not_switch_the_mode() {

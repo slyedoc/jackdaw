@@ -15,7 +15,7 @@ use bevy::{
     picking::{
         PickingSystems,
         hover::HoverMap,
-        pointer::{Location, PointerId, PointerInput, PointerLocation, PointerPress},
+        pointer::{Location, PointerId, PointerInput, PointerLocation, PointerPressState},
     },
     prelude::*,
     render::render_resource::{Extent3d, TextureDimension, TextureUsages},
@@ -578,7 +578,7 @@ fn forward_pointer_into_stage(
     hosts: Query<&Viewport2dPanelHost>,
     stages: Query<(&ComputedNode, &UiGlobalTransform), With<Scene2dViewport>>,
     targets: Query<&RenderTarget, With<Viewport2dCamera>>,
-    mut pointers: Query<(&PointerId, &mut PointerLocation, &PointerPress)>,
+    mut pointers: Query<(&PointerId, &mut PointerLocation, &PointerPressState)>,
     mut inputs: MessageReader<PointerInput>,
 ) {
     // Only the editor's real pointers, which are the ones on a window. Filtering
@@ -1701,10 +1701,10 @@ fn viewport_2d_header(host: Entity) -> impl Bundle {
             column_gap: px(tokens::TOOLBAR_GAP),
             border: UiRect::all(px(1)),
             border_radius: BorderRadius {
-                top_left: px(tokens::TOOLBAR_RADIUS),
-                top_right: px(tokens::TOOLBAR_RADIUS),
-                bottom_left: px(0),
-                bottom_right: px(0),
+                top_left: px(tokens::TOOLBAR_RADIUS).into(),
+                top_right: px(tokens::TOOLBAR_RADIUS).into(),
+                bottom_left: px(0).into(),
+                bottom_right: px(0).into(),
             },
             flex_shrink: 0.0,
             ..default()
@@ -1902,7 +1902,7 @@ fn viewport_2d_grid_step(
         ),
         jackdaw_feathers::tooltip::Tooltip::title(tooltip),
         observe(
-            move |_: On<Pointer<Click>>, mut hosts: Query<&mut Viewport2dPanelHost>| {
+            move |_: On<PointerClick>, mut hosts: Query<&mut Viewport2dPanelHost>| {
                 if let Ok(mut panel) = hosts.get_mut(host) {
                     let grid = stepped_ui_grid(panel.view.grid, steps);
                     if grid != panel.view.grid {
@@ -2514,7 +2514,7 @@ fn update_viewport_2d_mode_bar(
 /// entity goes away. The stage node is a descendant of the panel, so it is torn
 /// down with it.
 pub(crate) fn on_viewport_2d_panel_despawn(
-    trigger: On<Despawn, Viewport2dPanelHost>,
+    trigger: On<Despawn<Viewport2dPanelHost>>,
     hosts: Query<&Viewport2dPanelHost>,
     mut commands: Commands,
 ) {

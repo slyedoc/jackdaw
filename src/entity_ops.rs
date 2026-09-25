@@ -174,7 +174,7 @@ impl PendingModelRoots {
 /// A queued model holds the glTF it names, and the footer and the wait for an
 /// idle editor both count what is queued; an entry nothing will use any more
 /// would hold an asset nothing renders and a wait nothing can end.
-fn forget_model_root(remove: On<Remove, GltfSource>, mut pending: ResMut<PendingModelRoots>) {
+fn forget_model_root(remove: On<Remove<GltfSource>>, mut pending: ResMut<PendingModelRoots>) {
     pending.forget(remove.entity);
 }
 
@@ -203,7 +203,7 @@ pub(crate) fn forget_model_roots<'a>(
 /// document, so deriving it here is what brings the model back on each of
 /// those paths without the handle ever being written to the document.
 fn derive_world_asset_root(
-    insert: On<Insert, GltfSource>,
+    insert: On<Insert<GltfSource>>,
     sources: Query<&GltfSource>,
     existing: Query<&WorldAssetRoot>,
     asset_server: Res<AssetServer>,

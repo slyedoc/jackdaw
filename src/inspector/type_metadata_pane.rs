@@ -1,7 +1,7 @@
 //! Type-settings sub-pane toggled from an inspector card header.
 
 use bevy::feathers::controls::{ButtonVariant, FeathersToolButton};
-use bevy::feathers::cursor::EntityCursor;
+use bevy::picking::cursor::EntityCursor;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
@@ -339,7 +339,7 @@ fn on_type_metadata_commit(
 }
 
 fn on_preview_box_click(
-    click: On<Pointer<Click>>,
+    click: On<PointerClick>,
     previews: Query<&TypeMetadataPreview>,
     child_of: Query<&ChildOf>,
     mut commands: Commands,

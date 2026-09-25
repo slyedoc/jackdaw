@@ -1,4 +1,6 @@
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
+use bevy::ui::interaction_states::Pressed;
 use jackdaw_feathers::{icons::IconFont, tokens};
 use lucide_icons::Icon;
 
@@ -104,7 +106,6 @@ pub fn spawn_tab_bar_world(
     if let Some(ref font_handle) = icon_font {
         world.spawn((
             DockTabAddButton { area_entity },
-            Interaction::default(),
             Node {
                 width: Val::Px(15.0),
                 height: Val::Px(15.0),
@@ -126,7 +127,6 @@ pub fn spawn_tab_bar_world(
 
         world.spawn((
             DockTabGrip,
-            Interaction::default(),
             Node {
                 width: Val::Px(15.0),
                 height: Val::Px(15.0),
@@ -190,7 +190,6 @@ fn spawn_tab(
                 window_id: window_id.to_string(),
                 tab_id,
             },
-            Interaction::default(),
             Node {
                 flex_direction: FlexDirection::Row,
                 justify_content: JustifyContent::Center,
@@ -234,7 +233,6 @@ fn spawn_tab(
                 window_id: window_id.to_string(),
                 tab_id,
             },
-            Interaction::default(),
             Node {
                 width: Val::Px(14.0),
                 height: Val::Px(14.0),
@@ -264,16 +262,12 @@ fn spawn_tab(
 pub struct DockTabCloseIcon;
 
 fn handle_dock_tab_clicks(
-    tab_query: Query<(&DockTab, &Interaction, &ChildOf), Changed<Interaction>>,
+    tab_query: Query<(&DockTab, &ChildOf), Added<Pressed>>,
     parent_query: Query<&ChildOf>,
     bindings: Query<&LeafBinding>,
     mut tree: ResMut<DockTree>,
 ) {
-    for (tab, interaction, tab_child_of) in tab_query.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
+    for (tab, tab_child_of) in tab_query.iter() {
         // Walk: tab -> tab_row -> tab_bar -> area
         let tab_row = tab_child_of.parent();
         let Ok(row_parent) = parent_query.get(tab_row) else {
@@ -294,16 +288,15 @@ fn handle_dock_tab_clicks(
 }
 
 fn show_close_on_hover(
-    tabs: Query<(Entity, &Interaction, &Children), (Changed<Interaction>, With<DockTab>)>,
+    tabs: Query<(Entity, &Hovered, Has<Pressed>, &Children), With<DockTab>>,
     drag_state: Option<Res<crate::drag::DockDragState>>,
     close_buttons: Query<&Children, With<crate::area::DockTabCloseButton>>,
     mut icon_colors: Query<&mut TextColor, With<DockTabCloseIcon>>,
 ) {
     let hide = drag_state.is_none_or(|s| matches!(*s, crate::drag::DockDragState::Dragging { .. }));
 
-    for (_tab_entity, interaction, children) in tabs.iter() {
-        let show =
-            (*interaction == Interaction::Hovered || *interaction == Interaction::Pressed) && !hide;
+    for (_tab_entity, hovered, pressed, children) in tabs.iter() {
+        let show = (hovered.0 || pressed) && !hide;
         let alpha = if show { 1.0 } else { 0.0 };
         for child in children.iter() {
             let Ok(close_children) = close_buttons.get(child) else {

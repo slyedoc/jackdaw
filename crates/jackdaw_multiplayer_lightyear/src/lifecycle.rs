@@ -155,7 +155,7 @@ impl Plugin for ServerLifecyclePlugin {
 /// marker so it can replicate state to that client. Mirrors lightyear's documented
 /// `handle_new_client` pattern. The sender carries no per-link config; send timing
 /// is governed globally by lightyear's replication tick.
-fn on_link_add(add: On<Add, LinkOf>, mut commands: Commands) {
+fn on_link_add(add: On<Add<LinkOf>>, mut commands: Commands) {
     commands.entity(add.entity).insert(ReplicationSender);
 }
 
@@ -163,7 +163,7 @@ fn on_link_add(add: On<Add, LinkOf>, mut commands: Commands) {
 /// and, unless `SpawnPolicy::Manual`, auto-spawn the player entity with the full
 /// networking bundle and join it to its zone room.
 fn on_client_connected(
-    add: On<Add, Connected>,
+    add: On<Add<Connected>>,
     connections: Query<(), With<ClientOf>>,
     policy: Res<SpawnPolicy>,
     spawns: Query<(&SpawnPoint, &GlobalTransform)>,
@@ -203,7 +203,7 @@ fn on_client_connected(
 /// inserts `Disconnected` on the `ClientOf` entity immediately before despawning it
 /// (specifically to let observers run), so the entity id is still valid to emit.
 fn on_client_disconnected(
-    add: On<Add, Disconnected>,
+    add: On<Add<Disconnected>>,
     connections: Query<(), With<ClientOf>>,
     mut commands: Commands,
 ) {

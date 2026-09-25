@@ -1,5 +1,6 @@
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
+use bevy::ui::interaction_states::Pressed;
 use jackdaw_feathers::tokens;
 
 use crate::reconcile::LeafBinding;
@@ -67,7 +68,6 @@ pub fn spawn_icon_sidebar_world(
                     window_id: window_id.clone(),
                     tab_id: *tab_id,
                 },
-                Interaction::default(),
                 Node {
                     width: Val::Px(29.0),
                     height: Val::Px(30.0),
@@ -110,16 +110,12 @@ pub fn spawn_icon_sidebar_world(
 }
 
 pub fn handle_sidebar_icon_clicks(
-    icon_query: Query<(&DockSidebarIcon, &Interaction, &ChildOf), Changed<Interaction>>,
+    icon_query: Query<(&DockSidebarIcon, &ChildOf), Added<Pressed>>,
     parent_query: Query<&ChildOf>,
     bindings: Query<&LeafBinding>,
     mut tree: ResMut<DockTree>,
 ) {
-    for (icon, interaction, icon_parent) in icon_query.iter() {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
+    for (icon, icon_parent) in icon_query.iter() {
         // Walk: icon -> icon_group -> sidebar -> area
         let icon_group = icon_parent.parent();
         let Ok(group_parent) = parent_query.get(icon_group) else {
@@ -143,7 +139,7 @@ pub fn handle_sidebar_icon_clicks(
 /// leaf. Sidebar icons don't have a visible X button, so this is the
 /// equivalent of clicking X on a tab.
 pub fn on_sidebar_icon_right_click(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     icons: Query<&DockSidebarIcon>,
     mut tree: ResMut<DockTree>,
 ) {

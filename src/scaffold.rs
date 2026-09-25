@@ -1472,6 +1472,10 @@ fn substitute_placeholders(
             jackdaw_project_build::project_manifest::pins_toml().trim_end(),
         )
         .replace("{{bevy_version}}", jackdaw_project_build::BEVY_VERSION)
+        .replace(
+            "{{ecosystem_deps}}",
+            jackdaw_project_build::ecosystem_deps().trim_end(),
+        )
         .replace("{{jackdaw_version}}", JACKDAW_DEP_REQ)
         .replace(
             "{{jackdaw_runtime_dep}}",

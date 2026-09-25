@@ -1,6 +1,6 @@
 use bevy::{
     ecs::{query::QueryFilter, spawn::SpawnableList},
-    feathers::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor},
+    picking::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor},
     prelude::*,
     window::SystemCursorIcon,
 };
@@ -58,10 +58,10 @@ impl Plugin for SplitPanelPlugin {
             .add_observer(on_handle_added)
             .add_observer(on_handle_drag_start)
             .add_observer(on_handle_drag_end)
-            .add_observer(set_background_on_with::<Pointer<Over>, With<PanelHandle>>(
+            .add_observer(set_background_on_with::<PointerOver, With<PanelHandle>>(
                 HANDLE_HOVER_COLOR,
             ))
-            .add_observer(set_background_on_with::<Pointer<Out>, With<PanelHandle>>(
+            .add_observer(set_background_on_with::<PointerOut, With<PanelHandle>>(
                 Color::NONE,
             ))
             .add_observer(handle_panel_drag)
@@ -70,7 +70,7 @@ impl Plugin for SplitPanelPlugin {
 }
 
 fn on_panel_added(
-    trigger: On<Add, Panel>,
+    trigger: On<Add<Panel>>,
     child_of: Query<&ChildOf>,
     mut queries: ParamSet<(
         Query<(&Node, &Children), With<PanelGroup>>,
@@ -119,6 +119,7 @@ fn recalculate_group(
     let panels_ro = queries.p1();
     let total: f32 = panels_ro
         .iter_many(&child_entities)
+        .flatten()
         .filter(|(node, _)| node.display != Display::None)
         .map(|(_, panel)| panel.ratio)
         .sum();
@@ -129,7 +130,13 @@ fn recalculate_group(
 
     let mut panels = queries.p1();
     let mut iterator = panels.iter_many_mut(&child_entities);
-    while let Some((mut node, panel)) = iterator.fetch_next() {
+    // `while let Some(Ok(..))` would STOP at the first non-matching child rather than skip
+    // it, and these children are panels interleaved with drag handles -- which is every
+    // panel after the first handle never getting its size.
+    while let Some(next) = iterator.fetch_next() {
+        let Ok((mut node, panel)) = next else {
+            continue;
+        };
         if node.display == Display::None {
             continue;
         }
@@ -148,7 +155,7 @@ fn recalculate_group(
 }
 
 fn on_handle_added(
-    trigger: On<Add, PanelHandle>,
+    trigger: On<Add<PanelHandle>>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<&Node>,
     mut commands: Commands,
@@ -169,7 +176,7 @@ fn on_handle_added(
 }
 
 fn on_handle_drag_start(
-    trigger: On<Pointer<DragStart>>,
+    trigger: On<PointerDragStart>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<&Node>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -190,7 +197,7 @@ fn on_handle_drag_start(
 }
 
 fn on_handle_drag_end(
-    trigger: On<Pointer<DragEnd>>,
+    trigger: On<PointerDragEnd>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<&Node>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -211,7 +218,7 @@ fn on_handle_drag_end(
 }
 
 fn handle_panel_drag(
-    mut drag: On<Pointer<Drag>>,
+    mut drag: On<PointerDrag>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     groups: Query<(&PanelGroup, &Node, &ComputedNode, &Children)>,
     bindings: Query<&crate::reconcile::NodeBinding>,
@@ -246,7 +253,11 @@ fn handle_panel_drag(
         return;
     }
 
-    let total_ratio: f32 = panels.iter_many(children.iter()).map(|p| p.ratio).sum();
+    let total_ratio: f32 = panels
+        .iter_many(children.iter())
+        .flatten()
+        .map(|p| p.ratio)
+        .sum();
 
     let delta_ratio = (delta_px / total_px) * total_ratio;
 

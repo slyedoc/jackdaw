@@ -229,11 +229,16 @@ impl Plugin for AuthoredWidgetPlugin {
             .add_observer(authored_slider_self_update);
         app.add_systems(
             PostUpdate,
+            // `authored_text_self_update` reads `Changed<EditableText>` to mirror what was
+            // typed, so it has to follow `apply_text_edits`. bevy now runs that set AFTER
+            // `Layout` (viewport syncing needs the computed layout), which makes the old
+            // `.before(Layout)` unsatisfiable -- it closed a cycle through the whole UI
+            // schedule. Following it costs authored text a frame to lay out, which is the
+            // same trade bevy took moving `update_editable_text_layout` into `PostLayout`.
             (authored_text_self_update, authored_text_follows_value)
                 .chain()
                 .in_set(AuthoredTextSystems)
-                .after(EditableTextSystems)
-                .before(bevy::ui::UiSystems::Layout),
+                .after(EditableTextSystems),
         );
         app.add_systems(
             PostUpdate,
@@ -277,7 +282,7 @@ impl Plugin for AuthoredWidgetPlugin {
         if app
             .world()
             .get_resource::<UiTheme>()
-            .is_none_or(|theme| theme.0.color.is_empty())
+            .is_none_or(|theme| theme.0.token_assignments.is_empty())
         {
             app.insert_resource(UiTheme(create_dark_theme()));
         }
@@ -325,8 +330,8 @@ pub fn register_widget_defaults(app: &mut App) {
 
     #[cfg(feature = "feathers")]
     {
-        use bevy::feathers::cursor::EntityCursor;
         use bevy::feathers::theme::ThemedText;
+        use bevy::picking::cursor::EntityCursor;
 
         app.register_type::<ThemedText>()
             .register_type_data::<ThemedText, ReflectDefault>();
@@ -478,7 +483,7 @@ fn authored_radio_self_update(
         return;
     };
     let chosen = change.value;
-    let members: Vec<Entity> = radios.iter_many(children).collect();
+    let members: Vec<Entity> = radios.iter_many(children).flatten().collect();
     commands.queue(move |world: &mut World| {
         for radio in members {
             set_checked(world, radio, radio == chosen);
@@ -1360,7 +1365,14 @@ mod tests {
         use bevy::feathers::tokens;
 
         let mut theirs = ThemeProps::default();
-        theirs.color.insert(tokens::BUTTON_BG, Color::WHITE);
+        let semantic =
+            bevy::feathers::theme::SemanticToken::new(smol_str::SmolStr::new(
+                tokens::BUTTON_BG.to_string(),
+            ));
+        theirs
+            .token_assignments
+            .insert(tokens::BUTTON_BG, semantic.clone());
+        theirs.semantic_base.insert(semantic, Color::WHITE);
 
         let mut app = App::new();
         app.insert_resource(UiTheme(theirs));

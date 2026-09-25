@@ -494,7 +494,7 @@ fn spawn_overlay(commands: &mut Commands, font: &Handle<Font>) {
         .id();
     commands
         .entity(retry)
-        .observe(|_: On<Pointer<Click>>, mut setup: ResMut<SdkSetup>| {
+        .observe(|_: On<PointerClick>, mut setup: ResMut<SdkSetup>| {
             setup.retry = true;
         });
 }

@@ -3,6 +3,7 @@
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::text::{FontSize, LineHeight};
+use bevy::ui::interaction_states::Pressed;
 use bevy::window::PrimaryWindow;
 
 use crate::{CaptionTheme, WindowChromeEntity, WindowChromeTheme};
@@ -188,7 +189,6 @@ fn caption_button_bundle(
     (
         kind,
         WindowChromeEntity,
-        Interaction::default(),
         Hovered::default(),
         Node {
             width: px(button_width),
@@ -219,7 +219,7 @@ pub(crate) fn sync_caption_chrome(
     mut buttons: Query<
         (
             &CaptionButton,
-            &Interaction,
+            Has<Pressed>,
             &Hovered,
             &mut BackgroundColor,
             &Children,
@@ -234,9 +234,8 @@ pub(crate) fn sync_caption_chrome(
         .ok()
         .is_some_and(crate::primary_window_is_maximized);
 
-    for (kind, interaction, hovered, mut background, children) in buttons.iter_mut() {
-        let highlighted =
-            hovered.0 || matches!(*interaction, Interaction::Hovered | Interaction::Pressed);
+    for (kind, pressed, hovered, mut background, children) in buttons.iter_mut() {
+        let highlighted = hovered.0 || pressed;
         let (background_color, foreground_color) =
             caption_colors(*kind, highlighted, &theme.caption);
         background.0 = background_color;

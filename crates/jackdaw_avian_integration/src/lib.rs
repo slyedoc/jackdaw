@@ -75,7 +75,7 @@ fn build_brush_colliders(
 
 /// Remove the built `Collider` when its source `AvianCollider` is removed, so a
 /// physics-off toggle or undo does not leave a stale collider behind.
-fn remove_collider_with_avian_collider(trigger: On<Remove, AvianCollider>, mut commands: Commands) {
+fn remove_collider_with_avian_collider(trigger: On<Remove<AvianCollider>>, mut commands: Commands) {
     let entity = trigger.event_target();
     if let Ok(mut ec) = commands.get_entity(entity) {
         ec.try_remove::<Collider>();
@@ -277,7 +277,7 @@ fn draw_collider_gizmos<S: Component>(
 
         let position = Position::from(tf);
         let rotation = Rotation::from(tf);
-        gizmos.draw_collider(collider, position, rotation, color);
+        gizmos.draw_collider(collider, position.0, rotation, color);
     }
 }
 

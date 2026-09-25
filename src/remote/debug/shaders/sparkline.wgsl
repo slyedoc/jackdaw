@@ -5,7 +5,20 @@
 // samples are packed four per vec4 (std140-friendly): sample `i` lives at
 // `samples[i / 4][i % 4]`.
 
-#import bevy_ui::ui_vertex_output::UiVertexOutput
+// bevy migrated its shaders to WESL: an import is `import a::b::C;` and only a `.wesl`
+// file is preprocessed, so a `#import` here reaches the WGSL parser verbatim and fails on
+// the `#`. This shader reads only `uv` and `size`, so the struct is inlined rather than
+// pulling in the module machinery. Keep it matching what ui_material's vertex stage writes.
+struct UiVertexOutput {
+    @location(0) uv: vec2<f32>,
+    // The size of the borders in UV space. Order is Left, Right, Top, Bottom.
+    @location(1) border_widths: vec4<f32>,
+    // Border radius in pixels, per corner: top left, top right, bottom right, bottom left.
+    @location(2) border_radius_x: vec4<f32>,
+    @location(3) border_radius_y: vec4<f32>,
+    @location(4) @interpolate(flat) size: vec2<f32>,
+    @builtin(position) position: vec4<f32>,
+};
 
 struct SparklineUniforms {
     samples: array<vec4<f32>, 16>,

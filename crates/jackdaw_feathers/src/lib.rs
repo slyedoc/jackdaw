@@ -41,6 +41,19 @@ pub struct EditorFeathersPlugin;
 
 impl Plugin for EditorFeathersPlugin {
     fn build(&self, app: &mut bevy::app::App) {
+        // These widgets are built on bevy's feathers: its core plugin registers the
+        // embedded font source and seeds `UiTheme`, and several of the systems below take
+        // that theme by `Res`. The editor guards for this because a loaded game may have
+        // added either half already; do the same here so anything else using these widgets
+        // (the crate's own examples, a standalone tool) is not left to know that.
+        use bevy::feathers::FeathersCorePlugin;
+        use bevy::input_focus::tab_navigation::TabNavigationPlugin;
+        if !app.is_plugin_added::<TabNavigationPlugin>() {
+            app.add_plugins(TabNavigationPlugin);
+        }
+        if !app.is_plugin_added::<FeathersCorePlugin>() {
+            app.add_plugins(FeathersCorePlugin);
+        }
         app.add_plugins((
             jackdaw_widgets::EditorWidgetsPlugins,
             split_panel::SplitPanelPlugin,

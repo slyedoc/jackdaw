@@ -624,14 +624,14 @@ pub fn spawn_material_tile(commands: &mut Commands, parent: Entity, tile: Materi
 
     let selected = tile.selected;
     commands.entity(cell).observe(
-        move |hover: On<Pointer<Over>>, mut borders: Query<&mut BorderColor>| {
+        move |hover: On<PointerOver>, mut borders: Query<&mut BorderColor>| {
             if let Ok(mut border) = borders.get_mut(hover.event_target()) {
                 *border = BorderColor::all(tokens::SELECTED_BORDER);
             }
         },
     );
     commands.entity(cell).observe(
-        move |out: On<Pointer<Out>>, mut borders: Query<&mut BorderColor>| {
+        move |out: On<PointerOut>, mut borders: Query<&mut BorderColor>| {
             if let Ok(mut border) = borders.get_mut(out.event_target()) {
                 *border = BorderColor::all(if selected {
                     tokens::ACCENT_BLUE
@@ -975,7 +975,7 @@ pub fn material_delete(
 /// returns. The operator refuses while another dialog is open, so the next
 /// dialog to appear is this one.
 fn on_delete_dialog_opened(
-    event: On<Add, jackdaw_feathers::dialog::EditorDialog>,
+    event: On<Add<jackdaw_feathers::dialog::EditorDialog>>,
     mut pending: ResMut<PendingMaterialDelete>,
 ) {
     if pending.name.is_some() && pending.dialog.is_none() {
@@ -989,7 +989,7 @@ fn on_delete_dialog_opened(
 /// action event. A confirmation despawns it too, but triggers the action event
 /// first, which takes the name before this runs.
 fn on_delete_dialog_closed(
-    event: On<Remove, jackdaw_feathers::dialog::EditorDialog>,
+    event: On<Remove<jackdaw_feathers::dialog::EditorDialog>>,
     mut pending: ResMut<PendingMaterialDelete>,
 ) {
     if pending.dialog == Some(event.entity) {

@@ -34,20 +34,29 @@ rustflags = ["-Zshare-generics=no"]
 # info a local debugger reads.
 #
 # Opting out takes two variables, because the linker and the flag pointing it
-# at wild are set separately and each is overridden on its own:
+# at mold are set separately and each is overridden on its own:
 #
 #   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=cc  replaces `clang` below
 #   CARGO_BUILD_RUSTFLAGS=                           replaces this `rustflags`
 #                                                    list whole
 #
 # A machine with no clang needs the first: clearing `CARGO_BUILD_RUSTFLAGS`
-# alone drops `--ld-path=wild` but still runs clang, so the link still fails
-# with `linker 'clang' not found`. A machine with clang but no wild needs the
-# second, for `unable to find library -lwild`. Either way the variables are
-# the opt-out, rather than editing this file.
+# alone drops `-fuse-ld` but still runs clang, so the link still fails with
+# `linker 'clang' not found`. A machine with clang but no mold needs the
+# second, for `cannot find /usr/bin/mold`. Either way the variables are the
+# opt-out, rather than editing this file.
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
-rustflags = ["-Clink-arg=--ld-path=wild"]
+rustflags = [
+  # mold here; upstream's wild is left commented rather than deleted.
+  # "-Clink-arg=--ld-path=wild",
+  "-Clink-arg=-fuse-ld=/usr/bin/mold",
+  # Nightly. `-Zthreads=0` parallelises the rustc FRONTEND across cores; it is what
+  # keeps a many-core machine busy now that `[profile.release] codegen-units = 1`
+  # (which serialised backend codegen for every crate) is gone from Cargo.toml.
+  "-Zshare-generics=y",
+  "-Zthreads=0",
+]
 
 [build]
 # The default `dylib` feature links the editor against the SDK dylib.

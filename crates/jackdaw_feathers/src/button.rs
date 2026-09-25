@@ -2,6 +2,7 @@ use bevy::feathers::constants::size::CHECKBOX_SIZE;
 use bevy::feathers::controls::{
     ButtonVariant as FeathersButtonVariant, FeathersButton, FeathersCheckbox, FeathersToolButton,
 };
+use bevy::feathers::theme::SemanticToken;
 use bevy::feathers::theme::{ThemeBackgroundColor, ThemeToken, ThemedText, UiTheme};
 use bevy::input_focus::tab_navigation::TabIndex;
 use bevy::picking::hover::Hovered;
@@ -10,6 +11,7 @@ use bevy::ui::{Checked, InteractionDisabled};
 use bevy::ui_widgets::Activate;
 use jackdaw_scene_types::PropertyValue;
 use lucide_icons::Icon;
+use smol_str::SmolStr;
 use std::borrow::Cow;
 
 use crate::icons::EditorFont;
@@ -173,7 +175,9 @@ fn register_button_theme_tokens(theme: Option<ResMut<UiTheme>>) {
         return;
     };
     let mut set = |token: ThemeToken, color: Srgba| {
-        theme.0.color.insert(token, color.into());
+        let semantic = SemanticToken::new(SmolStr::new(token.to_string()));
+        theme.0.token_assignments.insert(token, semantic.clone());
+        theme.0.semantic_base.insert(semantic, color.into());
     };
     set(BUTTON_DESTRUCTIVE_BG, DESTRUCTIVE_RED);
     set(BUTTON_DESTRUCTIVE_BG_HOVER, DESTRUCTIVE_RED_HOVER);

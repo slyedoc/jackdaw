@@ -34,7 +34,7 @@ pub mod prelude {
     // Linked rather than inlined: inlining copies the whole of bevy's
     // prelude into this crate's docs.
     #[doc(no_inline)]
-    pub use bevy::prelude::{Cancel, Press, Release, *};
+    pub use bevy::prelude::{PointerCancel, PointerPress, PointerRelease, *};
     pub use jackdaw_api::prelude::*;
 }
 

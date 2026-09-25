@@ -75,7 +75,10 @@ pub fn spawn(world: &mut World, parent: Entity, props: ScrollingLogProps) -> Ent
                 width: Val::Percent(100.0),
                 max_height: props.max_height,
                 margin: props.margin,
-                overflow: Overflow::scroll_y(),
+                overflow: Overflow {
+                    x: OverflowAxis::Clip,
+                    y: OverflowAxis::Scroll,
+                },
                 padding: UiRect::all(Val::Px(8.0)),
                 display: initial_display,
                 ..Default::default()
@@ -97,6 +100,10 @@ pub fn spawn(world: &mut World, parent: Entity, props: ScrollingLogProps) -> Ent
     ));
     container
 }
+
+/// Far past any real log height, but small enough that layout arithmetic around it stays
+/// finite.
+const PIN_TO_BOTTOM: f32 = 1.0e7;
 
 pub fn refresh_scrolling_logs(
     mut logs: Query<
@@ -122,9 +129,11 @@ pub fn refresh_scrolling_logs(
             };
             if text.0 != log.content {
                 text.0 = log.content.clone();
-                // Bevy clamps to the layout-computed extent next
-                // frame, so f32::MAX pins to bottom.
-                scroll.y = f32::MAX;
+                // Layout clamps this to the real extent next frame, so any value past
+                // the content height pins to the bottom. It has to stay FINITE: the
+                // clamp happens after `content - viewport`, and `f32::MAX` there yields
+                // an infinity that propagates through the whole layout instead.
+                scroll.y = PIN_TO_BOTTOM;
             }
         }
     }

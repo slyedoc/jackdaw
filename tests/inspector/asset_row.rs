@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use bevy::camera::{NormalizedRenderTarget, RenderTarget};
 use bevy::picking::backend::HitData;
-use bevy::picking::events::{DragDrop, Pointer};
+use bevy::picking::events::{Pointer, PointerDragDrop};
 use bevy::picking::pointer::{Location, PointerButton, PointerId};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowRef};
@@ -324,7 +324,7 @@ fn clicking_the_file_a_row_shows_opens_the_list_to_choose_from() {
             target,
             position: Vec2::ZERO,
         },
-        bevy::picking::events::Click {
+        bevy::picking::events::PointerClick {
             button: PointerButton::Primary,
             hit: HitData::new(value, 0.0, None, None),
             duration: std::time::Duration::ZERO,

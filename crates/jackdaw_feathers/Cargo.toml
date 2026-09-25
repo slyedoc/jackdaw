@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 include = ["Cargo.toml", "LICENSE*", "fonts/**/*", "src/**/*"]
 
 [dependencies]
+smol_str = { version = "0.2", default-features = false }
 bevy.workspace = true
 bevy_monitors.workspace = true
 jackdaw_fuzzy.workspace = true

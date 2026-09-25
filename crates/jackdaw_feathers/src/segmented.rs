@@ -108,6 +108,7 @@ pub fn set_segment_checked(commands: &mut Commands, segment: Entity, checked: bo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::ui::interaction_states::Pressed;
 
     #[test]
     fn a_bar_is_a_radio_group_and_its_segments_are_radio_buttons() {
@@ -117,7 +118,7 @@ mod tests {
 
         assert!(world.get::<RadioGroup>(bar).is_some());
         assert!(world.get::<RadioButton>(one).is_some());
-        assert!(world.get::<Interaction>(one).is_none());
+        assert!(world.get::<Pressed>(one).is_none());
     }
 
     #[test]

@@ -628,23 +628,23 @@ fn build_node_card(
         ("column gap", "column_gap", node.column_gap),
         (
             "radius top left",
-            "border_radius.top_left",
-            node.border_radius.top_left,
+            "border_radius.top_left.x",
+            node.border_radius.top_left.x,
         ),
         (
             "radius top right",
-            "border_radius.top_right",
-            node.border_radius.top_right,
+            "border_radius.top_right.x",
+            node.border_radius.top_right.x,
         ),
         (
             "radius bottom right",
-            "border_radius.bottom_right",
-            node.border_radius.bottom_right,
+            "border_radius.bottom_right.x",
+            node.border_radius.bottom_right.x,
         ),
         (
             "radius bottom left",
-            "border_radius.bottom_left",
-            node.border_radius.bottom_left,
+            "border_radius.bottom_left.x",
+            node.border_radius.bottom_left.x,
         ),
     ] {
         spawn_val_field(

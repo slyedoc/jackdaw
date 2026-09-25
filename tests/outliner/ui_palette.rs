@@ -2,6 +2,7 @@
 //! activating a row authors the widget into the open UI scene.
 
 use crate::util;
+use bevy::picking::cursor::EntityCursor;
 
 use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::prelude::*;
@@ -791,7 +792,6 @@ fn a_new_widget_is_revealed_in_the_scene_tree() {
 
 use bevy::feathers::{
     controls::ButtonVariant,
-    cursor::EntityCursor,
     focus::FocusIndicator,
     theme::{InheritableThemeTextColor, ThemeBackgroundColor, ThemeBorderColor, UiTheme},
     tokens,
@@ -835,7 +835,7 @@ fn the_allowlisted_feathers_paths_are_the_real_type_paths() {
             FocusIndicator::type_path(),
         ),
         (
-            "bevy_feathers::cursor::EntityCursor",
+            "bevy_picking::cursor::EntityCursor",
             EntityCursor::type_path(),
         ),
     ] {

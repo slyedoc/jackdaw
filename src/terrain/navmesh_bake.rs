@@ -670,7 +670,7 @@ impl GeometryTally {
 /// placement turns a thin plank into a box no axis-aligned scaling of the
 /// original describes.
 fn placed_extent(mesh: &Mesh, placement: Affine3A) -> Option<Vec3> {
-    let aabb = mesh.compute_aabb()?;
+    let aabb = mesh.get_aabb()?;
     let (center, half) = (Vec3::from(aabb.center), Vec3::from(aabb.half_extents));
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);

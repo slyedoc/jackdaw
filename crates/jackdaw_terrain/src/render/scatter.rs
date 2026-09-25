@@ -583,7 +583,7 @@ fn flatten(
             // A mesh with no positions has no size to stand a placement in, so
             // it is left out rather than waited for: waiting would re-walk the
             // graph every frame for a bound that never arrives.
-            let Some(bounds) = mesh_assets.get(&primitive.mesh)?.compute_aabb() else {
+            let Some(bounds) = mesh_assets.get(&primitive.mesh)?.get_aabb() else {
                 warn!(
                     "terrain scatter: a primitive of {:?} has no positions and draws nothing",
                     gltf.default_scene

@@ -642,7 +642,7 @@ fn find_descendant_with<T: Component>(world: &mut World, root: Entity) -> Option
 /// leaf rebuilt by reconciler, workspace switch), tear down the
 /// camera that was spawned for it.
 pub(crate) fn on_viewport_panel_despawn(
-    trigger: On<Despawn, ViewportPanelHost>,
+    trigger: On<Despawn<ViewportPanelHost>>,
     hosts: Query<&ViewportPanelHost>,
     mut commands: Commands,
 ) {
@@ -662,7 +662,7 @@ pub(crate) fn on_viewport_panel_despawn(
 
 /// Handle files dropped from the Project window onto the viewport.
 fn handle_viewport_drop(
-    event: On<Pointer<DragDrop>>,
+    event: On<PointerDragDrop>,
     file_items: Query<&FileBrowserItem>,
     parents: Query<&ChildOf>,
     cursor: UiCursorPos,

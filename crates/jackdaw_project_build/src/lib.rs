@@ -43,6 +43,7 @@ pub use build::{
 // The embedded SDK-builder recipe (relative path + bytes), assembled by
 // `build.rs`. Empty when this crate was compiled outside the workspace.
 include!(concat!(env!("OUT_DIR"), "/recipe_data.rs"));
+include!(concat!(env!("OUT_DIR"), "/workspace_patches.rs"));
 
 /// A stable content hash of the embedded recipe. Part of the cache stamp
 /// so a jackdaw upgrade that changes the recipe rebuilds the SDK.
@@ -62,3 +63,23 @@ pub const BEVY_VERSION: &str = concat!(
     ".",
     env!("CARGO_PKG_VERSION_MINOR")
 );
+
+/// The bevy/avian dependency lines a new project states, plus the `[patch]` table that
+/// redirects them.
+///
+/// A published jackdaw resolves both from the registry at the anchored minor. A jackdaw
+/// built from a local checkout does not: its crates ride bevy `main`, whose version no
+/// registry requirement can name, so the project has to state the same git sources and
+/// carry the same redirects -- otherwise it resolves a second bevy and every
+/// `Component`/`Bundle` bound fails to match across the two.
+pub fn ecosystem_deps() -> String {
+    if WORKSPACE_PATCHES.is_empty() {
+        return format!("bevy = \"{BEVY_VERSION}\"\navian3d = \"0.7\"\n");
+    }
+    format!(
+        "bevy = {{ git = \"https://github.com/bevyengine/bevy\", branch = \"main\" }}\n\
+         avian3d = {{ git = \"https://github.com/avianphysics/avian\", branch = \"main\" }}\n\
+         \n{}",
+        WORKSPACE_PATCHES.trim_end()
+    )
+}

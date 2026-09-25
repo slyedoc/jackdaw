@@ -12,9 +12,9 @@ authors = ["{{authors}}"]
 [workspace]
 
 [dependencies]
-bevy = "{{bevy_version}}"
 # Loads authored scenes (assets/*.bsn). `physics` builds colliders from
 # authored brushes and terrain, `terrain` draws authored terrain, `pie`
 # connects the editor's Play button; drop `pie` for a shipping build.
 jackdaw_runtime = { {{jackdaw_runtime_dep}}, features = ["physics", "terrain", "pie"] }
-avian3d = "0.7"
+
+{{ecosystem_deps}}

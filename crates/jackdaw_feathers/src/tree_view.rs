@@ -201,13 +201,13 @@ fn insertion_zone(after: bool) -> impl Bundle {
         // as a click on the row; otherwise it bubbles past the row to the
         // container and selects nothing.
         observe(
-            |mut click: On<Pointer<Click>>,
+            |mut click: On<PointerClick>,
              mut commands: Commands,
              parents: Query<&ChildOf>,
              children: Query<&Children>,
              tree_nodes: Query<&TreeNode>,
              contents: Query<(), With<TreeRowContent>>| {
-                if click.event.button != PointerButton::Primary {
+                if click.button != PointerButton::Primary {
                     return;
                 }
                 click.propagate(false);
@@ -234,7 +234,7 @@ fn insertion_zone(after: bool) -> impl Bundle {
         // land at changes with the pointer's x without it leaving the
         // zone.
         observe(
-            |mut over: On<Pointer<DragOver>>,
+            |mut over: On<PointerDragOver>,
              zones: Query<&TreeRowInsertZone>,
              parents: Query<&ChildOf>,
              children: Query<&Children>,
@@ -245,7 +245,7 @@ fn insertion_zone(after: bool) -> impl Bundle {
              mut line: ResMut<TreeDropLine>| {
                 over.propagate(false);
                 let zone = over.event_target();
-                let cursor = over.pointer_location.position;
+                let cursor = over.pointer.position;
                 let depth = resolve_drop_depth(
                     zone,
                     cursor,
@@ -263,7 +263,7 @@ fn insertion_zone(after: bool) -> impl Bundle {
             },
         ),
         observe(
-            |mut leave: On<Pointer<DragLeave>>, mut line: ResMut<TreeDropLine>| {
+            |mut leave: On<PointerDragLeave>, mut line: ResMut<TreeDropLine>| {
                 leave.propagate(false);
                 if line.zone == Some(leave.event_target()) {
                     line.zone = None;
@@ -271,7 +271,7 @@ fn insertion_zone(after: bool) -> impl Bundle {
             },
         ),
         observe(
-            |mut drop: On<Pointer<DragDrop>>,
+            |mut drop: On<PointerDragDrop>,
              mut commands: Commands,
              parents: Query<&ChildOf>,
              children: Query<&Children>,
@@ -287,7 +287,7 @@ fn insertion_zone(after: bool) -> impl Bundle {
                 let Ok(side) = zones.get(zone) else {
                     return;
                 };
-                let cursor = drop.pointer_location.position;
+                let cursor = drop.pointer.position;
                 let Some((row, _)) = resolve_drop_depth(
                     zone,
                     cursor,
@@ -643,20 +643,18 @@ fn tree_row_content(
             lock_toggle(source, &style.icon_font),
             visibility_toggle(source, &style.icon_font)
         ],
+        observe(move |mut click: On<PointerClick>, mut commands: Commands| {
+            if click.button != PointerButton::Primary {
+                return;
+            }
+            click.propagate(false);
+            commands.trigger(TreeRowClicked {
+                entity: click.event_target(),
+                source_entity: source,
+            });
+        }),
         observe(
-            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
-                if click.event.button != PointerButton::Primary {
-                    return;
-                }
-                click.propagate(false);
-                commands.trigger(TreeRowClicked {
-                    entity: click.event_target(),
-                    source_entity: source,
-                });
-            },
-        ),
-        observe(
-            |hover: On<Pointer<Over>>,
+            |hover: On<PointerOver>,
              mut bg_query: Query<
                 &mut BackgroundColor,
                 (With<TreeRowContent>, Without<TreeRowSelected>),
@@ -667,7 +665,7 @@ fn tree_row_content(
             },
         ),
         observe(
-            |out: On<Pointer<Out>>,
+            |out: On<PointerOut>,
              mut bg_query: Query<
                 &mut BackgroundColor,
                 (With<TreeRowContent>, Without<TreeRowSelected>),
@@ -680,7 +678,7 @@ fn tree_row_content(
         // Drag-and-drop: highlight the drop target, and start the clock that
         // opens a closed row rested on.
         observe(
-            |mut drag_enter: On<Pointer<DragEnter>>,
+            |mut drag_enter: On<PointerDragEnter>,
              mut query: Query<(&mut BackgroundColor, &mut Node), With<TreeRowContent>>,
              parents: Query<&ChildOf>,
              mut spring: ResMut<TreeSpringLoad>,
@@ -699,7 +697,7 @@ fn tree_row_content(
             },
         ),
         observe(
-            |mut drag_leave: On<Pointer<DragLeave>>,
+            |mut drag_leave: On<PointerDragLeave>,
              mut query: Query<(&mut BackgroundColor, &mut Node), With<TreeRowContent>>,
              selected: Query<(), With<TreeRowSelected>>,
              parents: Query<&ChildOf>,
@@ -725,7 +723,7 @@ fn tree_row_content(
             },
         ),
         observe(
-            |mut drag_drop: On<Pointer<DragDrop>>,
+            |mut drag_drop: On<PointerDragDrop>,
              mut commands: Commands,
              parent_query: Query<&ChildOf>,
              tree_nodes: Query<&TreeNode>,
@@ -782,11 +780,11 @@ fn expand_toggle() -> impl Bundle {
             ..default()
         },
         observe(
-            |mut click: On<Pointer<Click>>,
+            |mut click: On<PointerClick>,
              mut commands: Commands,
              parent_query: Query<&ChildOf>,
              tree_node_query: Query<(Entity, &TreeNodeExpanded)>| {
-                if click.event.button != PointerButton::Primary {
+                if click.button != PointerButton::Primary {
                     return;
                 }
                 click.propagate(false);
@@ -861,20 +859,18 @@ fn visibility_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle {
             },
             TextColor(tokens::TEXT_SECONDARY.with_alpha(0.4)),
         )],
+        observe(move |mut click: On<PointerClick>, mut commands: Commands| {
+            if click.button != PointerButton::Primary {
+                return;
+            }
+            click.propagate(false);
+            commands.trigger(TreeRowVisibilityToggled {
+                entity: click.event_target(),
+                source_entity: source,
+            });
+        }),
         observe(
-            move |mut click: On<Pointer<Click>>, mut commands: Commands| {
-                if click.event.button != PointerButton::Primary {
-                    return;
-                }
-                click.propagate(false);
-                commands.trigger(TreeRowVisibilityToggled {
-                    entity: click.event_target(),
-                    source_entity: source,
-                });
-            },
-        ),
-        observe(
-            |hover: On<Pointer<Over>>,
+            |hover: On<PointerOver>,
              children_query: Query<&Children>,
              mut text_color: Query<&mut TextColor>| {
                 let entity = hover.event_target();
@@ -888,7 +884,7 @@ fn visibility_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle {
             },
         ),
         observe(
-            |out: On<Pointer<Out>>,
+            |out: On<PointerOut>,
              children_query: Query<&Children>,
              mut text_color: Query<&mut TextColor>| {
                 let entity = out.event_target();
@@ -1324,7 +1320,7 @@ fn ancestor_tree_root(
 pub fn tree_container_drop_observers() -> impl Bundle {
     (
         observe(
-            |mut drag_enter: On<Pointer<DragEnter>>,
+            |mut drag_enter: On<PointerDragEnter>,
              parents: Query<&ChildOf>,
              tree_nodes: Query<&TreeNode>,
              mut bg_query: Query<&mut BackgroundColor>,
@@ -1345,7 +1341,7 @@ pub fn tree_container_drop_observers() -> impl Bundle {
             },
         ),
         observe(
-            |mut drag_leave: On<Pointer<DragLeave>>,
+            |mut drag_leave: On<PointerDragLeave>,
              mut bg_query: Query<&mut BackgroundColor>,
              mut line: ResMut<TreeDropLine>,
              mut spring: ResMut<TreeSpringLoad>,
@@ -1362,7 +1358,7 @@ pub fn tree_container_drop_observers() -> impl Bundle {
             },
         ),
         observe(
-            |mut drag_drop: On<Pointer<DragDrop>>,
+            |mut drag_drop: On<PointerDragDrop>,
              mut commands: Commands,
              parent_query: Query<&ChildOf>,
              tree_nodes: Query<&TreeNode>,

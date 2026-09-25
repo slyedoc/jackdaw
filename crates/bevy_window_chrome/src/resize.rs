@@ -1,8 +1,8 @@
 //! Invisible edge strips for borderless window resize.
 
-use bevy::feathers::cursor::EntityCursor;
 use bevy::math::CompassOctant;
 use bevy::picking::Pickable;
+use bevy::picking::cursor::EntityCursor;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, SystemCursorIcon, Window, WindowMode};
@@ -192,7 +192,7 @@ fn resize_cursor_icon(direction: CompassOctant) -> SystemCursorIcon {
 }
 
 pub(crate) fn on_resize_edge_press(
-    press: On<Pointer<Press>>,
+    press: On<PointerPress>,
     edges: Query<&WindowResizeEdge>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
     live: Res<ResizeEdgesLive>,

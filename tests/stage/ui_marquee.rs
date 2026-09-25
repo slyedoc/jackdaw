@@ -10,7 +10,7 @@ use bevy::{
     },
     picking::{
         backend::HitData,
-        events::{Drag, DragEnd, DragStart, Pointer, Press},
+        events::{Pointer, PointerDrag, PointerDragEnd, PointerDragStart, PointerPress},
         pointer::{Location, PointerButton, PointerId},
     },
     prelude::*,

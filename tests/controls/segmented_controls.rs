@@ -9,7 +9,7 @@ use crate::util;
 use bevy::camera::{NormalizedRenderTarget, RenderTarget};
 use bevy::picking::{
     backend::HitData,
-    events::{Click, Pointer},
+    events::{Pointer, PointerClick},
     pointer::{Location, PointerButton, PointerId},
 };
 use bevy::prelude::*;
@@ -20,7 +20,7 @@ use bevy::window::{PrimaryWindow, WindowRef};
 use jackdaw::game_panel::{GameModeSegment, GamePanelMode, game_panel_content};
 use jackdaw::pie_mirror::{PieViewMode, PieViewSegment};
 
-/// Click `entity` the way a user does: the `Pointer<Click>` the radio
+/// Click `entity` the way a user does: the `PointerClick` the radio
 /// widget is watching for.
 fn click(app: &mut App, entity: Entity) {
     let window = app

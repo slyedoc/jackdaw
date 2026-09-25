@@ -204,7 +204,7 @@ impl MultiplayerAppExt for App {
 /// With prediction OFF there is no `Predicted`-spawn observer to do this, so the
 /// layer must place the marker explicitly. Generic over `A`, with the same bound
 /// as `register_input` / `InputPlugin<A>`.
-fn place_input_marker<A>(add: On<Add, Controlled>, mut commands: Commands)
+fn place_input_marker<A>(add: On<Add<Controlled>>, mut commands: Commands)
 where
     A: Serialize
         + DeserializeOwned

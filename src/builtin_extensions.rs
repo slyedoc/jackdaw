@@ -3,10 +3,10 @@
 //! same API third-party authors do. Disable one in File > Extensions
 //! to remove its windows from the layout.
 
+use bevy::picking::cursor::EntityCursor;
 use bevy::{
     feathers::{
         controls::ButtonVariant,
-        cursor::EntityCursor,
         focus::FocusIndicator,
         theme::{
             InheritableThemeTextColor, ThemeBackgroundColor, ThemeBorderColor, ThemeTextColor,

@@ -142,7 +142,7 @@ fn networked_input_drives_server_movement_seen_interpolated_by_peer() {
     ));
     // Stamp `Pos` onto every auto-spawned player. `ControlledBy` is inserted
     // exactly once per player in the auto-spawn bundle, so this fires per player.
-    server.add_observer(|add: On<Add, ControlledBy>, mut commands: Commands| {
+    server.add_observer(|add: On<Add<ControlledBy>>, mut commands: Commands| {
         commands.entity(add.entity).insert(Pos(Vec3::ZERO));
     });
 

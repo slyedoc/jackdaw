@@ -6,7 +6,7 @@ use crate::util;
 use bevy::camera::RenderTarget;
 use bevy::picking::{
     backend::HitData,
-    events::{Click, Pointer},
+    events::{Pointer, PointerClick},
     pointer::{Location, PointerButton, PointerId},
 };
 use bevy::prelude::*;
@@ -833,7 +833,7 @@ fn segment_with_label(app: &mut App, label: &str) -> Entity {
     panic!("no `{label}` segment on the card");
 }
 
-/// Click a segment the way a user does: the `Pointer<Click>` its observer
+/// Click a segment the way a user does: the `PointerClick` its observer
 /// is watching for.
 fn click_segment(app: &mut App, segment: Entity) {
     let window = app

@@ -6,7 +6,7 @@ use bevy::{
     camera::{NormalizedRenderTarget, RenderTarget},
     picking::{
         backend::HitData,
-        events::{DragDrop, Pointer},
+        events::{Pointer, PointerDragDrop},
         pointer::{Location, PointerButton, PointerId},
     },
     prelude::*,

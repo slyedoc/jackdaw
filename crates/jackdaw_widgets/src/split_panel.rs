@@ -1,5 +1,5 @@
 use bevy::{
-    feathers::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor},
+    picking::cursor::{CursorIconPlugin, EntityCursor, OverrideCursor},
     prelude::*,
     window::SystemCursorIcon,
 };
@@ -41,7 +41,7 @@ fn setup_panel_watcher(mut commands: Commands) {
 }
 
 fn on_panel_added(
-    trigger: On<Add, Panel>,
+    trigger: On<Add<Panel>>,
     child_of: Query<&ChildOf>,
     mut queries: ParamSet<(
         Query<(&Node, &Children), With<PanelGroup>>,
@@ -91,6 +91,7 @@ fn recalculate_group(
     let panels_ro = queries.p1();
     let total: f32 = panels_ro
         .iter_many(&child_entities)
+        .flatten()
         .filter(|(node, _)| node.display != Display::None)
         .map(|(_, panel)| panel.ratio)
         .sum();
@@ -103,7 +104,13 @@ fn recalculate_group(
     // the zero-size set by a collapse toggle.
     let mut panels = queries.p1();
     let mut iterator = panels.iter_many_mut(&child_entities);
-    while let Some((mut node, panel)) = iterator.fetch_next() {
+    // `while let Some(Ok(..))` would STOP at the first non-matching child rather than skip
+    // it, and these children are panels interleaved with drag handles -- which is every
+    // panel after the first handle never getting its size.
+    while let Some(next) = iterator.fetch_next() {
+        let Ok((mut node, panel)) = next else {
+            continue;
+        };
         if node.display == Display::None {
             continue;
         }
@@ -122,7 +129,7 @@ fn recalculate_group(
 }
 
 fn on_handle_added(
-    trigger: On<Add, PanelHandle>,
+    trigger: On<Add<PanelHandle>>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<(&Children, &Node)>,
     mut commands: Commands,
@@ -148,7 +155,7 @@ fn on_handle_added(
 }
 
 fn on_handle_drag_start(
-    trigger: On<Pointer<DragStart>>,
+    trigger: On<PointerDragStart>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<(&Children, &Node)>,
     mut override_cursor: ResMut<OverrideCursor>,
@@ -175,7 +182,7 @@ fn on_handle_drag_start(
 }
 
 fn on_handle_drag_end(
-    trigger: On<Pointer<DragEnd>>,
+    trigger: On<PointerDragEnd>,
     handles: Query<&ChildOf, With<PanelHandle>>,
     nodes: Query<(&Children, &Node)>,
     mut override_cursor: ResMut<OverrideCursor>,

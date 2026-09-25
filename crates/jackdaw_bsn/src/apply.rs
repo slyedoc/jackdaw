@@ -510,8 +510,11 @@ fn apply_struct_patch(world: &mut World, entity: Entity, data: &BsnStructData) {
             let Ok(entity_ref) = world.get_entity(entity) else {
                 return;
             };
-            if let Some(existing) = reflect_component.reflect(entity_ref) {
-                existing.to_dynamic()
+            if let Some(existing) = reflect_component
+                .reflect(entity_ref)
+                .and_then(|existing| existing.to_dynamic().ok())
+            {
+                existing
             } else if let Some(reflect_default) = reflect_default {
                 reflect_default.default().into_partial_reflect()
             } else {
@@ -573,8 +576,11 @@ fn apply_struct_patch(world: &mut World, entity: Entity, data: &BsnStructData) {
             let Ok(entity_ref) = world.get_entity(entity) else {
                 return;
             };
-            if let Some(existing) = reflect_component.reflect(entity_ref) {
-                existing.to_dynamic()
+            if let Some(existing) = reflect_component
+                .reflect(entity_ref)
+                .and_then(|existing| existing.to_dynamic().ok())
+            {
+                existing
             } else {
                 reflect_default.default().into_partial_reflect()
             }
@@ -801,7 +807,7 @@ fn apply_tuple_struct_patch(world: &mut World, entity: Entity, data: &BsnTupleSt
         };
         reflect_component
             .reflect(entity_ref)
-            .map(bevy::prelude::PartialReflect::to_dynamic)
+            .and_then(|existing| existing.to_dynamic().ok())
     };
     let mut value: Box<dyn PartialReflect> = match existing {
         Some(existing) => existing,
@@ -914,7 +920,7 @@ fn apply_authored_value(target: &mut dyn PartialReflect, value: &dyn PartialRefl
         target.reflect_mut(),
         ReflectMut::List(_) | ReflectMut::Map(_)
     );
-    let prior = clears.then(|| target.to_dynamic());
+    let prior = clears.then(|| target.to_dynamic().ok()).flatten();
 
     if let ReflectMut::List(list) = target.reflect_mut() {
         while !list.is_empty() {

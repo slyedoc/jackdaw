@@ -91,7 +91,7 @@ fn two_clients_see_each_other_then_cross_zone_culls() {
     ));
     // Tag every auto-spawned player with PlayerMarker. `ControlledBy` is inserted
     // exactly once per player in the auto-spawn bundle, so this fires per player.
-    server.add_observer(|add: On<Add, ControlledBy>, mut commands: Commands| {
+    server.add_observer(|add: On<Add<ControlledBy>>, mut commands: Commands| {
         commands.entity(add.entity).insert(PlayerMarker);
     });
 

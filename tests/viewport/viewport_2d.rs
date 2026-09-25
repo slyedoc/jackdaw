@@ -9,7 +9,7 @@ use bevy::{
     image::ToExtents,
     picking::{
         backend::HitData,
-        events::{Click, Pointer, Press},
+        events::{Pointer, PointerClick, PointerPress},
         hover::PickingInteraction,
         pointer::{Location, PointerAction, PointerButton, PointerId, PointerInput, PointerPress},
     },
@@ -929,7 +929,7 @@ const BUTTON_CENTRE: Vec2 = Vec2::new(500.0, 250.0);
 const PANEL_ON_TOP: i32 = 1000;
 
 /// What the authored button has heard from the pointer. `bevy_ui_widgets`
-/// buttons are observers on `Pointer<Press>` and `Pointer<Click>`, not readers
+/// buttons are observers on `PointerPress` and `PointerClick`, not readers
 /// of editor state.
 #[derive(Resource, Default)]
 struct WidgetEvents {
@@ -1460,10 +1460,10 @@ fn authored_button(app: &mut App) -> (Entity, Entity) {
         .id();
     app.world_mut()
         .entity_mut(button)
-        .observe(|_: On<Pointer<Press>>, mut events: ResMut<WidgetEvents>| {
+        .observe(|_: On<PointerPress>, mut events: ResMut<WidgetEvents>| {
             events.presses += 1;
         })
-        .observe(|_: On<Pointer<Click>>, mut events: ResMut<WidgetEvents>| {
+        .observe(|_: On<PointerClick>, mut events: ResMut<WidgetEvents>| {
             events.clicks += 1;
         });
     (root, button)
@@ -1807,7 +1807,7 @@ fn segment_background(app: &mut App, panel: Entity, mode: Viewport2dMode) -> Col
         .0
 }
 
-/// Click a header segment the way a user does: the `Pointer<Click>` its
+/// Click a header segment the way a user does: the `PointerClick` its
 /// inline observer is watching for.
 fn click_segment(app: &mut App, panel: Entity, mode: Viewport2dMode) {
     let segment = segment_entity(app, panel, mode);

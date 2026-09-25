@@ -10,7 +10,7 @@ use bevy::camera::{NormalizedRenderTarget, RenderTarget};
 use bevy::feathers::controls::FeathersListRow;
 use bevy::picking::{
     backend::HitData,
-    events::{Pointer, Scroll},
+    events::{Pointer, PointerScroll},
     pointer::{Location, PointerId},
 };
 use bevy::prelude::*;

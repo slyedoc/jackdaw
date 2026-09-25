@@ -38,6 +38,14 @@ fn main() {
 
     let (data_rs, hash) = generate_data(&recipe);
     fs::write(out_dir.join("recipe_data.rs"), data_rs).unwrap();
+    // A scaffolded project is its own cargo workspace, so it needs the same redirects the
+    // editor uses or it resolves a second bevy from the registry.
+    let patches = workspace.as_deref().map(patches_toml).unwrap_or_default();
+    fs::write(
+        out_dir.join("workspace_patches.rs"),
+        format!("pub const WORKSPACE_PATCHES: &str = {patches:?};\n"),
+    )
+    .unwrap();
     println!("cargo:rustc-env=RECIPE_HASH={hash}");
 
     if assembled && let Some(ws) = workspace.as_deref() {
@@ -247,6 +255,52 @@ fn copy_dir_at_depth(src: &Path, dst: &Path, keep: &dyn Fn(&Path) -> bool, depth
     }
 }
 
+/// The editor workspace's `[patch]` table with every relative `path` resolved against
+/// `ws`, so it still points somewhere once copied into a workspace elsewhere on disk.
+fn absolutised_patch_table(doc: &toml::Value, ws: &Path) -> Option<toml::value::Table> {
+    let patch = doc.get("patch")?.as_table()?;
+    let mut out = toml::value::Table::new();
+    for (source, entries) in patch {
+        let Some(entries) = entries.as_table() else {
+            continue;
+        };
+        let mut rewritten = toml::value::Table::new();
+        for (name, spec) in entries {
+            let mut spec = spec.clone();
+            if let Some(table) = spec.as_table_mut()
+                && let Some(rel) = table.get("path").and_then(toml::Value::as_str)
+            {
+                let abs = ws.join(rel);
+                let abs = abs.canonicalize().unwrap_or(abs);
+                table.insert(
+                    "path".to_string(),
+                    toml::Value::String(abs.to_string_lossy().into_owned()),
+                );
+            }
+            rewritten.insert(name.clone(), spec);
+        }
+        out.insert(source.clone(), toml::Value::Table(rewritten));
+    }
+    Some(out)
+}
+
+/// `[patch]` as standalone TOML, for a scaffolded project's manifest. Empty for a build
+/// with no patch table -- a published release resolves everything from the registry.
+fn patches_toml(ws: &Path) -> String {
+    let Ok(text) = fs::read_to_string(ws.join("Cargo.toml")) else {
+        return String::new();
+    };
+    let Ok(doc) = toml::from_str::<toml::Value>(&text) else {
+        return String::new();
+    };
+    let Some(patch) = absolutised_patch_table(&doc, ws) else {
+        return String::new();
+    };
+    let mut root = toml::value::Table::new();
+    root.insert("patch".to_string(), toml::Value::Table(patch));
+    toml::to_string_pretty(&toml::Value::Table(root)).unwrap_or_default()
+}
+
 /// The recipe's root manifest: the workspace's own `[workspace]` table with
 /// `members` narrowed to the embedded crates and the editor package dropped, so
 /// it is a pure virtual workspace of exactly the library crates.
@@ -268,6 +322,15 @@ fn generate_root_manifest(ws: &Path) -> Option<String> {
 
     let mut root = toml::value::Table::new();
     root.insert("workspace".to_string(), toml::Value::Table(workspace));
+    // The editor's `[patch]` table has to come along, or the recipe resolves bevy (and the
+    // forks that take it by url) straight from upstream while the crates.io-versioned ones
+    // pull their own copy -- two `bevy_ecs` in one graph, and every Component/Bundle bound
+    // fails to match. Path patches are relative to the editor workspace and the recipe is
+    // extracted somewhere else entirely, so they are absolutised on the way through; that
+    // makes the emitted table machine-local, which is what a path-sourced build already is.
+    if let Some(patch) = absolutised_patch_table(&doc, ws) {
+        root.insert("patch".to_string(), toml::Value::Table(patch));
+    }
     toml::to_string_pretty(&toml::Value::Table(root)).ok()
 }
 

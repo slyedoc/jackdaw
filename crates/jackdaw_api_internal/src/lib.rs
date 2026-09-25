@@ -49,7 +49,7 @@ pub mod widgets;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use bevy::ecs::{system::IntoObserverSystem, world::EntityWorldMut};
+use bevy::ecs::{event::EventPattern, system::IntoObserverSystem, world::EntityWorldMut};
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::{
     Action, ActionOf, ActionSettings, Fire, InputConditionAppExt as _, InputContextAppExt as _,
@@ -222,9 +222,9 @@ impl<'a> ExtensionContext<'a> {
     }
 
     /// Calls [`World::add_observer`] to initialize an observer, ensuring that it is removed on unload.
-    pub fn add_observer<E: Event, B: Bundle, M>(
+    pub fn add_observer<E: EventPattern, M>(
         &mut self,
-        system: impl IntoObserverSystem<E, B, M>,
+        system: impl IntoObserverSystem<E, M>,
     ) -> &mut Self {
         self.entity_mut().with_child(Observer::new(system));
         self
@@ -386,7 +386,7 @@ impl<'a> ExtensionContext<'a> {
                 // below covers entities already spawned before this call
                 // (some `add_to_extension` modules spawn actions first and
                 // register the operator afterwards).
-                Observer::new(move |trigger: On<Add, Action<O>>, mut commands: Commands| {
+                Observer::new(move |trigger: On<Add<Action<O>>>, mut commands: Commands| {
                     commands
                         .entity(trigger.event_target())
                         .insert(OperatorAction(O::ID));

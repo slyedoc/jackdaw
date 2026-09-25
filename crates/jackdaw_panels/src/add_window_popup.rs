@@ -1,3 +1,4 @@
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
 use jackdaw_feathers::tokens;
@@ -35,7 +36,7 @@ impl Plugin for AddWindowPopupPlugin {
 }
 
 fn on_add_button_click(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     buttons: Query<(&DockTabAddButton, &UiGlobalTransform, &ComputedNode)>,
     existing_popups: Query<Entity, With<AddWindowPopup>>,
     registry: Res<WindowRegistry>,
@@ -73,7 +74,6 @@ fn on_add_button_click(
 
     commands.spawn((
         AddWindowPopupBackdrop,
-        Interaction::default(),
         Node {
             position_type: PositionType::Absolute,
             left: Val::Px(0.0),
@@ -112,7 +112,6 @@ fn on_add_button_click(
                 window_id: window_id.clone(),
                 area_entity,
             },
-            Interaction::default(),
             Node {
                 padding: UiRect::axes(Val::Px(10.0), Val::Px(5.0)),
                 border_radius: BorderRadius::all(Val::Px(3.0)),
@@ -133,7 +132,7 @@ fn on_add_button_click(
 }
 
 fn on_item_click(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     items: Query<&AddWindowPopupItem>,
     popups: Query<Entity, With<AddWindowPopup>>,
     backdrops: Query<Entity, With<AddWindowPopupBackdrop>>,
@@ -158,7 +157,7 @@ fn on_item_click(
 }
 
 fn on_backdrop_click(
-    trigger: On<Pointer<Click>>,
+    trigger: On<PointerClick>,
     backdrops: Query<(), With<AddWindowPopupBackdrop>>,
     popups: Query<Entity, With<AddWindowPopup>>,
     backdrop_entities: Query<Entity, With<AddWindowPopupBackdrop>>,
@@ -177,14 +176,15 @@ fn on_backdrop_click(
 
 fn hover_popup_items(
     mut items: Query<
-        (&Interaction, &mut BackgroundColor),
-        (Changed<Interaction>, With<AddWindowPopupItem>),
+        (&Hovered, &mut BackgroundColor),
+        (Changed<Hovered>, With<AddWindowPopupItem>),
     >,
 ) {
-    for (interaction, mut bg) in &mut items {
-        bg.0 = match interaction {
-            Interaction::Hovered => tokens::HOVER_BG,
-            _ => Color::NONE,
+    for (hovered, mut bg) in &mut items {
+        bg.0 = if hovered.0 {
+            tokens::HOVER_BG
+        } else {
+            Color::NONE
         };
     }
 }

@@ -7,7 +7,7 @@ use bevy::{
     camera::{NormalizedRenderTarget, RenderTarget},
     picking::{
         backend::HitData,
-        events::{Pointer, Press},
+        events::{Pointer, PointerPress},
         pointer::{Location, PointerButton, PointerId},
     },
     prelude::*,

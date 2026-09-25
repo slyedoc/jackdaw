@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::ui::interaction_states::Pressed;
 use jackdaw_commands::KeymapCapture;
 use lucide_icons::Icon;
 
@@ -370,7 +371,6 @@ fn spawn_dialog(
     let backdrop_id = commands
         .spawn((
             DialogBackdrop,
-            Interaction::None,
             Node {
                 width: percent(100),
                 height: percent(100),
@@ -481,7 +481,6 @@ fn spawn_dialog(
 
     let mut panel = commands.spawn((
         DialogPanel,
-        Interaction::None,
         Node {
             width: percent(100),
             max_width: event.max_width.unwrap_or(px(448)),
@@ -586,16 +585,12 @@ fn sync_children_slot_visibility(
 }
 
 fn handle_backdrop_click(
-    interactions: Query<(&Interaction, &ChildOf), (Changed<Interaction>, With<DialogBackdrop>)>,
-    panels: Query<&Interaction, With<DialogPanel>>,
+    interactions: Query<&ChildOf, (Added<Pressed>, With<DialogBackdrop>)>,
+    panels: Query<Has<Pressed>, With<DialogPanel>>,
     dialogs: Query<&DialogConfig, With<EditorDialog>>,
     mut commands: Commands,
 ) {
-    for (interaction, child_of) in &interactions {
-        if *interaction != Interaction::Pressed {
-            continue;
-        }
-
+    for child_of in &interactions {
         let Ok(config) = dialogs.get(child_of.parent()) else {
             continue;
         };
@@ -604,7 +599,7 @@ fn handle_backdrop_click(
             continue;
         }
 
-        if panels.iter().any(|i| *i == Interaction::Pressed) {
+        if panels.iter().any(|pressed| pressed) {
             continue;
         }
 

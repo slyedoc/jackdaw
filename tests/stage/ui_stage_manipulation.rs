@@ -11,7 +11,7 @@ use bevy::{
     },
     picking::{
         backend::HitData,
-        events::{Drag, DragEnd, DragStart, Pointer, Press},
+        events::{Pointer, PointerDrag, PointerDragEnd, PointerDragStart, PointerPress},
         pointer::{Location, PointerButton, PointerId},
     },
     prelude::*,
@@ -438,7 +438,7 @@ fn a_stage_press_never_reaches_the_dock() {
     settle(&mut app);
 
     app.world_mut().entity_mut(panel).observe(
-        |_: On<Pointer<Press>>, mut presses: ResMut<DockPresses>| {
+        |_: On<PointerPress>, mut presses: ResMut<DockPresses>| {
             presses.0 += 1;
         },
     );
@@ -4106,7 +4106,7 @@ fn move_over(app: &mut App, panel: Entity, authored: Vec2) {
         app,
         stage,
         position,
-        bevy::picking::events::Move {
+        bevy::picking::events::PointerMove {
             hit: HitData::new(camera, 0.0, None, None),
             delta: Vec2::ZERO,
         },
@@ -4368,7 +4368,7 @@ fn the_outline_goes_away_when_the_pointer_leaves_the_stage() {
         &mut app,
         stage,
         position,
-        bevy::picking::events::Out {
+        bevy::picking::events::PointerOut {
             hit: HitData::new(camera, 0.0, None, None),
         },
     );
