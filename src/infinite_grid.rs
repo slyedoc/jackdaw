@@ -6,10 +6,13 @@
 //! `Transform` that `view_ops` slides to follow the camera. Those live here, with the same
 //! field names and defaults, so `snapping.rs` and `view_ops.rs` are unchanged.
 //!
-//! Drawing is aurora's job: a ground-plane grid on a ray tracer is a ray-plane
-//! intersection in the miss/closest-hit path, not geometry to rasterize.
+//! Drawn as gizmo lines, which aurora rasterizes over the traced frame and depth-tests
+//! against its depth guide. A ray-plane intersection in the miss path would be sharper at
+//! grazing angles; this needs no aurora-side pipeline.
 
 use bevy::prelude::*;
+
+use crate::viewport::MainViewportCamera;
 
 /// Marks the entity carrying the viewport grid. Its `Transform` positions the plane.
 #[derive(Component, Copy, Clone, Debug, Default, Reflect)]
@@ -56,12 +59,92 @@ impl Default for InfiniteGridSettings {
     }
 }
 
-/// Registers the grid components. No draw systems: see the module docs.
+/// Caps the line count when the spacing is small relative to `fadeout_distance`.
+const MAX_LINES_PER_AXIS: i32 = 512;
+
+/// Emits the grid as gizmo lines on the grid entity's local XZ plane, centred on the
+/// viewport camera so it reads as unbounded, with alpha falling off to `fadeout_distance`.
+fn draw_infinite_grid(
+    mut gizmos: Gizmos,
+    grids: Query<(&GlobalTransform, &InfiniteGridSettings), With<InfiniteGrid>>,
+    camera: Query<&GlobalTransform, With<MainViewportCamera>>,
+) {
+    // `iter().next()`, not `single()`: a second viewport panel spawns a second
+    // `MainViewportCamera` and the grid would vanish from both.
+    let Some(camera) = camera.iter().next() else {
+        return;
+    };
+    for (grid, settings) in &grids {
+        // `scale` is lines per unit (snapping.rs writes `1.0 / grid_size`), not spacing.
+        if settings.scale <= 0.0 {
+            continue;
+        }
+        let interval = settings.major_line_interval.max(2) as f32;
+        let to_local = grid.affine().inverse();
+        let eye = to_local.transform_point3(camera.translation());
+
+        // Coarsen by whole intervals until the lines are no denser than roughly 1/60 of the
+        // camera's distance to the plane, or the count fits. Drawing a 0.25 m grid out to
+        // 100 m is 800 lines of grey haze.
+        let radius = settings.fadeout_distance;
+        let mut step = 1.0 / settings.scale;
+        let min_step = eye.y.abs() / 60.0;
+        while step < min_step || radius / step > MAX_LINES_PER_AXIS as f32 {
+            step *= interval;
+        }
+        let count = (radius / step).ceil() as i32;
+        let snap = |v: f32| (v / step).round() * step;
+        let (cx, cz) = (snap(eye.x), snap(eye.z));
+
+        // Alpha peaks at the point on the line nearest the eye and reaches zero at
+        // `radius`, so each line is two gradient segments meeting under the camera. One
+        // segment end to end would fade both its endpoints to zero and interpolate nothing.
+        let alpha = |d: f32| (1.0 - d / radius).clamp(0.0, 1.0);
+        let mut ray = |near: Vec3, far: Vec3, offset: f32, color: Color| {
+            let at = |a: f32| color.with_alpha(color.alpha() * a);
+            let (inner, outer) = (at(alpha(offset.abs())), at(alpha(radius)));
+            gizmos.line_gradient(grid.transform_point(near), grid.transform_point(far), inner, outer);
+        };
+
+        for i in -count..=count {
+            let offset = i as f32 * step;
+            let major = i.rem_euclid(interval as i32) == 0;
+            let line_color = if major {
+                settings.major_line_color
+            } else {
+                settings.minor_line_color
+            };
+
+            let x = cx + offset;
+            let color = if x == 0.0 {
+                settings.z_axis_color
+            } else {
+                line_color
+            };
+            let mid = Vec3::new(x, 0.0, cz);
+            ray(mid, Vec3::new(x, 0.0, cz - radius), offset, color);
+            ray(mid, Vec3::new(x, 0.0, cz + radius), offset, color);
+
+            let z = cz + offset;
+            let color = if z == 0.0 {
+                settings.x_axis_color
+            } else {
+                line_color
+            };
+            let mid = Vec3::new(cx, 0.0, z);
+            ray(mid, Vec3::new(cx - radius, 0.0, z), offset, color);
+            ray(mid, Vec3::new(cx + radius, 0.0, z), offset, color);
+        }
+    }
+}
+
+/// Registers the grid components and their draw system.
 pub struct InfiniteGridPlugin;
 
 impl Plugin for InfiniteGridPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<InfiniteGrid>()
-            .register_type::<InfiniteGridSettings>();
+            .register_type::<InfiniteGridSettings>()
+            .add_systems(Update, draw_infinite_grid);
     }
 }
