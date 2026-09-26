@@ -45,7 +45,10 @@ widgets themselves, their picking observers and their value plumbing are unaffec
   (aurora has its own `Shader` type; bevy's is only registered by `RenderPlugin`).
 * Aurora gained multi-camera support for this: `Camera::order` sorts views, per-view
   extents, `Camera::viewport` for a docked rect, `RenderTarget::Image` offscreen targets,
-  and `ViewportNode` drawing in `ui_render`.
+  and `ViewportNode` drawing in `ui_render`. Item 1 below is closed by it.
+* The grid draws, as gizmo lines (item 3 below). Alpha peaks under the camera and falls
+  to zero at `fadeout_distance`, so each line is two segments; one segment end to end has
+  both endpoints at the fade radius and interpolates zero alpha the whole way.
 * Debugger sparklines and system-graph edges are `UiPolyline`s; both shaders deleted.
   The sparkline lost the area fill under its curve -- the stroke is what carries the
   reading, and a fill needs a triangulated mesh rather than a polyline.
@@ -94,9 +97,33 @@ So the registrations are back without the plugins: `StandardMaterial` (normally
 `ScatterPrefabs`. `init_asset`/`init_resource` are idempotent, so each plugin takes its own
 back unchanged when it returns.
 
+## Gotcha: what aurora does NOT inherit from bevy_render
+
+Three render-side jobs had no owner once `bevy_render` left, and each failed silently
+rather than at compile time:
+
+* `Camera::computed.clip_from_view` is written only by `bevy_render`'s `camera_system`.
+  Left at its default, `Camera::viewport_to_world` returns the same ray for every cursor
+  position -- the draw tool put every brush on one spot. Aurora's
+  `camera_target::sync_camera_projections` covers it, next to the `target_info` mirrors.
+* `RenderConfig` (the ray-tracing pipeline and post-process filter) was published only by
+  aurora's `DevShaderPlugin`, which every example added by hand. Without it `update_sbt`
+  returns early, the SBT address stays 0 and nothing traces -- a black viewport with no
+  error. It is `RenderShadersPlugin`, inside `AuroraDefaultPlugins`, now.
+* `Image::new_target_texture` allocates a zero-filled `data` buffer, so aurora's texture
+  uploader claimed every render target, destroyed the owner's image and left a dead
+  `VkImage` bound as a colour attachment: Xid 31 and `ERROR_DEVICE_LOST`, a second or two
+  after the fact.
+
+A `DEVICE_LOST` here is a real GPU fault. Read `journalctl -k` for the Xid line first
+(engine plus fault type name the culprit), then force validation without rebuilding:
+`VK_LOADER_LAYERS_ENABLE=VK_LAYER_KHRONOS_validation`. Aurora also logs one line per
+change of frame shape -- `frame: views=N tlas=.. sbt=.. traced=.. gizmo_verts=..` --
+which says which link is missing.
+
 ## Left, roughly in dependency order
 
-1. **Offscreen camera targets.** Aurora renders one `Camera3d` to one swapchain. The
+1. ~~**Offscreen camera targets.**~~ DONE. Kept for the list of call sites: Aurora renders one `Camera3d` to one swapchain. The
    editor needs `RenderTarget::Image` in seven places: `viewport.rs`, `viewport_2d.rs`,
    `thumbnail.rs`, `material_preview.rs`, `camera_preview.rs`, `camera_capture.rs`.
    These still COMPILE today, because `bevy_render` has not actually left the graph
@@ -116,8 +143,8 @@ back unchanged when it returns.
    `inspector/material_row`, `definition_assets`, `scene_io`, ...). Aurora's
    `AuroraMaterial` has to substitute. This is the last unconditional `bevy_render`
    dependency inside jackdaw itself.
-3. **Draw the grid.** `src/infinite_grid.rs` is data only. On a ray tracer a ground
-   grid is a ray-plane intersection in the miss path, not geometry to rasterize.
+3. ~~**Draw the grid.**~~ DONE, as gizmo lines. A ray-plane intersection in the miss
+   path would still be sharper at grazing angles, if it ever matters.
 4. **`jackdaw_terrain/render` and `jackdaw_runtime/render`** are still ON, marked
    TODO(aurora) in Cargo.toml. They carry the splat material and the material
    plumbing the editor calls (`MaterialOverridesPlugin`, `material_of_reference`), so
@@ -131,3 +158,13 @@ back unchanged when it returns.
 6. **`bevy_rerecast_core`'s `bevy_mesh` feature is `["dep:bevy_mesh", "dep:bevy_render"]`**,
    so the navmesh bake's `TriMeshFromBevyMesh` pulls bevy_render at the fork level.
    Worth fixing in slyedoc/rerecast once the bigger items land.
+
+7. **Materials in existing projects.** A `.bsn` authored before the rename holds
+   `bevy_pbr::pbr_material::StandardMaterial`; the loader wants
+   `bevy_aurora::material::AuroraMaterial` and warns, then drops the document. Needs a
+   migration rule in `scene_io/stamp.rs`. `emissive_exposure_weight` has no aurora
+   equivalent and is dropped.
+8. **Cubemaps.** Aurora's texture path is 2D single-layer, so `EnvironmentMapLight`'s
+   ktx2 cubemaps are declined with a warning and preview lighting is wrong.
+9. **An empty scene traces nothing.** `TlasBuilder::record` returns at `count == 0`, so
+   there is no TLAS, so no trace and no sky -- a new scene is the grid on a clear.
