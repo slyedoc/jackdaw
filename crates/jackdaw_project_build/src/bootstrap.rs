@@ -510,39 +510,28 @@ fn build_recipe(
     triple: &str,
     report: &mut impl FnMut(SetupProgress),
 ) -> Result<(), String> {
-    // A denominator for the bar, best-effort: the union build closure of
-    // the three artifacts. Undershoots slightly (a crate can compile to
-    // several units); the UI clamps overshoot.
-    if let Some(total) = estimate_units(build_dir, triple) {
-        report(SetupProgress::Total(total));
+    // SDK dylib is a cross-target artifact (`--target`); its
+    // deps land in `target/<triple>/release` and proc-macro host deps in
+    // `target/release`.
+    let sdk = [
+        "build",
+        "--release",
+        "--target",
+        triple,
+        "-p",
+        "jackdaw_sdk",
+    ];
+    // The rustc wrapper is a host tool; build it without `--target` so it
+    // lands in `target/release`, where `for_workspace_profile` looks.
+    let wrapper = ["build", "--release", "-p", "jackdaw_rustc_wrapper"];
+    if let (Some(a), Some(b)) = (unit_count(build_dir, &sdk), unit_count(build_dir, &wrapper)) {
+        report(SetupProgress::Total(a + b));
     }
     // `done` is cumulative so the bar advances continuously across both
     // cargo invocations rather than resetting for the wrapper.
     let mut done = 0u32;
-    // SDK dylib is a cross-target artifact (`--target`); its
-    // deps land in `target/<triple>/release` and proc-macro host deps in
-    // `target/release`.
-    run_cargo(
-        build_dir,
-        &[
-            "build",
-            "--release",
-            "--target",
-            triple,
-            "-p",
-            "jackdaw_sdk",
-        ],
-        &mut done,
-        report,
-    )?;
-    // The rustc wrapper is a host tool; build it without `--target` so it
-    // lands in `target/release`, where `for_workspace_profile` looks.
-    run_cargo(
-        build_dir,
-        &["build", "--release", "-p", "jackdaw_rustc_wrapper"],
-        &mut done,
-        report,
-    )
+    run_cargo(build_dir, &sdk, &mut done, report)?;
+    run_cargo(build_dir, &wrapper, &mut done, report)
 }
 
 /// Run one cargo build, streaming progress. cargo's status lines and its
@@ -619,39 +608,30 @@ fn report_cargo_line(line: &str, done: &mut u32, report: &mut impl FnMut(SetupPr
     }
 }
 
-/// Estimate the build phase's compile-unit count from the union normal +
-/// build dependency closure of the SDK artifacts (`cargo tree`). A
-/// denominator for the progress bar; `None` on any failure, and the UI
-/// then shows a running count instead of a filled bar.
-fn estimate_units(build_dir: &Path, triple: &str) -> Option<u32> {
+/// How many `compiler-artifact` lines a cargo build with `args` will emit:
+/// its compile units, read off the unit graph without building anything. A
+/// build-script run emits no artifact line, so it is not counted. The SDK
+/// toolchain is nightly, which `-Z unstable-options` needs. `None` on any
+/// failure, and the UI then shows a running count instead of a filled bar.
+fn unit_count(build_dir: &Path, args: &[&str]) -> Option<u32> {
     let output = rust_env_command("cargo")
-        .args([
-            "tree",
-            "-p",
-            "jackdaw_sdk",
-            "-p",
-            "jackdaw_rustc_wrapper",
-            "--target",
-            triple,
-            "-e",
-            "normal,build",
-            "--prefix",
-            "none",
-        ])
+        .args(args)
+        .args(["--unit-graph", "-Z", "unstable-options"])
         .current_dir(build_dir)
         .output()
         .ok()?;
     if !output.status.success() {
         return None;
     }
-    let mut units = std::collections::BTreeSet::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        let mut parts = line.split_whitespace();
-        if let (Some(name), Some(version)) = (parts.next(), parts.next()) {
-            units.insert(format!("{name} {version}"));
-        }
-    }
-    (!units.is_empty()).then_some(units.len() as u32)
+    let graph: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let units = graph.get("units")?.as_array()?;
+    let compiled = units
+        .iter()
+        .filter(|unit| {
+            unit.get("mode").and_then(serde_json::Value::as_str) != Some("run-custom-build")
+        })
+        .count();
+    u32::try_from(compiled).ok()
 }
 
 #[cfg(test)]

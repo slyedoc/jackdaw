@@ -3,8 +3,8 @@
 //! placement back out. Until one has been run, every re-scatter doubles the
 //! groups a generated scene already holds as entities.
 
-use bevy_aurora::material::AuroraMaterial;
 use crate::util;
+use bevy_aurora::material::AuroraMaterial;
 
 use bevy::prelude::*;
 use jackdaw::boot_ops::{SELECTION_FALLBACK_OPS, run_op_clause};

@@ -22,10 +22,7 @@ fn make_app() -> App {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.add_plugins(jackdaw_bsn::JackdawBsnPlugin);
     app.add_plugins(jackdaw::prefab::PrefabPlugin);

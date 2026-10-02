@@ -259,8 +259,8 @@ fn refresh_sdk_setup_ui(
     let phase_line = snap.phase.clone();
     let crate_line = match (&snap.current_crate, snap.total) {
         (Some(name), Some(total)) => {
-            // The estimate can undershoot the real unit count; clamp so
-            // the counter never reads past the total.
+            // The total is cargo's own unit count; the clamp only guards a
+            // build that compiles something the graph did not list.
             let total = total.max(snap.done);
             format!("Compiling {name}  ({}/{total})", snap.done)
         }

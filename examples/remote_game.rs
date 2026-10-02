@@ -96,7 +96,10 @@ fn setup(
     // Ground plane
     commands.spawn((
         Name::new("Ground"),
-        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Plane3d::new(Vec3::Y, Vec2::splat(10.0))))),
+        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Plane3d::new(
+            Vec3::Y,
+            Vec2::splat(10.0),
+        )))),
         AuroraMaterial3d(materials.add(AuroraMaterial {
             base_color: Color::srgb(0.3, 0.5, 0.3),
             ..default()

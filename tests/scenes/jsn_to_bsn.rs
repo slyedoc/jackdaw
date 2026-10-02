@@ -448,8 +448,7 @@ fn inline_material_reference_and_terrain_survive_conversion() {
         converted.scene_bsn
     );
     assert!(
-        converted.scene_bsn.contains("#RedMat\n")
-            && converted.scene_bsn.contains("AuroraMaterial"),
+        converted.scene_bsn.contains("#RedMat\n") && converted.scene_bsn.contains("AuroraMaterial"),
         "scene must embed the inline material definition:\n{}",
         converted.scene_bsn
     );

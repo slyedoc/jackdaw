@@ -523,11 +523,11 @@ bevy_aurora = { path = "../../p/aurora" }
 aurora_material = { path = "../../p/aurora/crates/aurora_material" }
 
 [patch."https://github.com/avianphysics/avian"]
-avian3d = { path = "../avian-multiworld/crates/avian3d" } # branch aurora, local until pushed
+avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 
 # Taken by crates.io version here; the fork branches satisfy those requirements.
 [patch.crates-io]
-avian3d = { path = "../avian-multiworld/crates/avian3d" } # branch aurora, local until pushed
+avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 bevy_enhanced_input = { git = "https://github.com/slyedoc/bevy_enhanced_input", branch = "bevy-main" }
 # Path, not the branch: the `bevy_mesh` feature's dead `dep:bevy_render` is fixed in the
 # side-by-side checkout and not yet pushed. Point these back at the branch once it is.

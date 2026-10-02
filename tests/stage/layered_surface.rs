@@ -277,4 +277,3 @@ fn named(app: &mut App, name: &str) -> Option<Entity> {
         .collect();
     found.into_iter().next_back()
 }
-

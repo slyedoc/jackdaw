@@ -62,10 +62,7 @@ fn document_capture_includes_brushes() {
     use jackdaw_scene_types::Brush;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw_bsn::SceneBsnAst>();
     let brush = app
@@ -91,10 +88,7 @@ fn swap_round_trips_a_single_brush() {
     use jackdaw_scene_types::Brush;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -158,10 +152,7 @@ fn swap_preserves_a_sculpted_terrain() {
     const DATA_PATH: &str = "zone.terrain-0.jdterrain";
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -252,10 +243,7 @@ fn scene_tabs_keep_same_named_terrain_sidecars_isolated() {
     const DATA_PATH: &str = "zone.terrain-0.jdterrain";
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -358,10 +346,7 @@ fn swap_preserves_camera_transform_per_tab() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -400,10 +385,7 @@ fn scene_new_appends_an_untitled_tab() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -446,10 +428,7 @@ fn scene_open_dedupes_by_path() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -498,10 +477,7 @@ fn make_app_with_n_tabs(n: usize) -> bevy::app::App {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -899,10 +875,7 @@ fn tab_swap_preserves_entity_ordering_and_components() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -1022,10 +995,7 @@ fn scene_open_flags_dirty_when_ids_need_migration() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
@@ -1182,10 +1152,7 @@ fn finish_load_scene_entities_and_ast_share_ids_after_heal() {
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
-    app.add_plugins(
-        bevy::app::PluginGroup::build(DefaultPlugins)
-            .disable::<WinitPlugin>(),
-    );
+    app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();

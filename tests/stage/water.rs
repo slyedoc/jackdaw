@@ -185,4 +185,3 @@ fn applying_water_replaces_the_meshs_material_component() {
         "and no longer wears a standard material as well",
     );
 }
-
