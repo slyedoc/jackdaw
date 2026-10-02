@@ -2282,8 +2282,10 @@ mod tests {
         // `[patch]` table; a path-sourced build (this branch) emits the git dep plus the
         // patches, so the scaffolded project resolves the same bevy the editor did.
         assert!(
-            cargo.contains(&format!("bevy = \"{}\"", jackdaw_project_build::BEVY_VERSION))
-                || cargo.contains("bevy = { git = \"https://github.com/bevyengine/bevy\""),
+            cargo.contains(&format!(
+                "bevy = \"{}\"",
+                jackdaw_project_build::BEVY_VERSION
+            )) || cargo.contains("bevy = { git = \"https://github.com/bevyengine/bevy\""),
             "scaffolded manifest pins no bevy:\n{cargo}"
         );
         assert!(!cargo.contains("{{"));

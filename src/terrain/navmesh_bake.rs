@@ -299,7 +299,6 @@ pub(crate) fn terrain_navmesh_bake(
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
     scatter_assets: Option<Res<jackdaw_terrain::render::ScatterAssets>>,
-    scatter_prefabs: Option<Res<jackdaw_terrain::render::ScatterPrefabs>>,
     scene_path: Res<SceneFilePath>,
     running: Option<Res<RunningBake>>,
     mut state: ResMut<TerrainNavmeshState>,
@@ -348,9 +347,9 @@ pub(crate) fn terrain_navmesh_bake(
     // bake that quietly left the trees out because a resource was missing
     // would report success over a navmesh with no forest in it.
     let bounds_of = |entry: &jackdaw_terrain::ScatterPaletteEntry| {
-        scatter_assets.as_deref().and_then(|assets| {
-            jackdaw_terrain::render::palette_entry_bounds(assets, scatter_prefabs.as_deref(), entry)
-        })
+        scatter_assets
+            .as_deref()
+            .and_then(|assets| jackdaw_terrain::render::palette_entry_bounds(assets, entry))
     };
     let (obstacles, skipped, unresolved) = scatter_obstacles(
         document,
@@ -1488,11 +1487,11 @@ fn surface_mesh(artifact: &NavmeshArtifact, lift: f32) -> Option<Mesh> {
         return None;
     }
     let mut mesh = Mesh::new(
-        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        bevy::mesh::PrimitiveTopology::TriangleList,
         bevy::asset::RenderAssetUsages::default(),
     );
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_indices(bevy::render::mesh::Indices::U32(indices));
+    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
     Some(mesh)
 }
 
@@ -2494,7 +2493,7 @@ mod tests {
             "every surface vertex is drawn"
         );
         assert_eq!(
-            mesh.indices().map(bevy::render::mesh::Indices::len),
+            mesh.indices().map(bevy::mesh::Indices::len),
             Some(artifact.surface_triangles.len() * 3),
             "every surface triangle is drawn"
         );
@@ -2571,7 +2570,7 @@ mod tests {
             .clone();
         let meshes = world.resource::<Assets<Mesh>>();
         let mesh = meshes.get(&mesh).expect("the overlay has a mesh");
-        let Some(bevy::render::mesh::VertexAttributeValues::Float32x3(positions)) =
+        let Some(bevy::mesh::VertexAttributeValues::Float32x3(positions)) =
             mesh.attribute(Mesh::ATTRIBUTE_POSITION)
         else {
             panic!("the overlay mesh has positions");

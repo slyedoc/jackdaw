@@ -7,16 +7,16 @@
 //! Materials panel - passes a [`WornMaterial`] so neither side has to know
 //! which kind it holds.
 
-use crate::{FoliageMaterial, LayeredSurfaceMaterial, WaterMaterial};
+use crate::{
+    FoliageMaterial, LayeredSurfaceMaterial, WaterMaterial,
+    foliage::Foliage3d, surface_class::LayeredSurface3d, water::Water3d,
+};
 use bevy::asset::UntypedHandle;
 use bevy::prelude::*;
-// The `Standard` arm is the plain PBR material an entity wears; on this branch that is
-// aurora's. The three extended arms below still name the parked raster materials.
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Reflect type path of the component a mesh wears a standard material on.
-pub const STANDARD_MATERIAL_COMPONENT: &str =
-    "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>";
+pub const STANDARD_MATERIAL_COMPONENT: &str = "bevy_aurora::material::AuroraMaterial3d";
 
 /// The material a mesh entity wears, whichever kind holds it.
 #[derive(Clone, Debug, PartialEq)]
@@ -30,18 +30,21 @@ pub enum WornMaterial {
 impl WornMaterial {
     /// The material the entity is wearing, if it wears one.
     pub fn of(world: &World, entity: Entity) -> Option<Self> {
-        if let Some(standard) = world.get::<AuroraMaterial3d>(entity) {
-            return Some(Self::Standard(standard.0.clone()));
-        }
-        if let Some(layered) = world.get::<MeshMaterial3d<LayeredSurfaceMaterial>>(entity) {
+        // The extended kinds come FIRST: each also wears the `AuroraMaterial3d` mirror its
+        // class shades through, so checking standard first would call every one of them
+        // standard.
+        if let Some(layered) = world.get::<LayeredSurface3d>(entity) {
             return Some(Self::Layered(layered.0.clone()));
         }
-        if let Some(foliage) = world.get::<MeshMaterial3d<FoliageMaterial>>(entity) {
+        if let Some(foliage) = world.get::<Foliage3d>(entity) {
             return Some(Self::Foliage(foliage.0.clone()));
         }
+        if let Some(water) = world.get::<Water3d>(entity) {
+            return Some(Self::Water(water.0.clone()));
+        }
         world
-            .get::<MeshMaterial3d<WaterMaterial>>(entity)
-            .map(|water| Self::Water(water.0.clone()))
+            .get::<AuroraMaterial3d>(entity)
+            .map(|standard| Self::Standard(standard.0.clone()))
     }
 
     /// The material a handle holds, if it holds one of a kind a mesh can wear.
@@ -63,17 +66,19 @@ impl WornMaterial {
         let Ok(mut node) = world.get_entity_mut(entity) else {
             return;
         };
+        // An extended kind's own plugin puts the mirror `AuroraMaterial3d` and the
+        // `SurfaceClass` back on; taking them off here is what makes the swap a swap.
         node.remove::<AuroraMaterial3d>();
-        node.remove::<MeshMaterial3d<LayeredSurfaceMaterial>>();
-        node.remove::<MeshMaterial3d<FoliageMaterial>>();
-        node.remove::<MeshMaterial3d<WaterMaterial>>();
+        node.remove::<bevy_aurora::surface_group::SurfaceClass>();
+        node.remove::<LayeredSurface3d>();
+        node.remove::<Foliage3d>();
+        node.remove::<Water3d>();
         match self {
             Self::Standard(handle) => node.insert(AuroraMaterial3d(handle.clone())),
-            Self::Layered(handle) => node.insert(MeshMaterial3d(handle.clone())),
-            Self::Foliage(handle) => node.insert(MeshMaterial3d(handle.clone())),
-            Self::Water(handle) => node.insert(MeshMaterial3d(handle.clone())),
+            Self::Layered(handle) => node.insert(LayeredSurface3d(handle.clone())),
+            Self::Foliage(handle) => node.insert(Foliage3d(handle.clone())),
+            Self::Water(handle) => node.insert(Water3d(handle.clone())),
         };
-        mark_for_respecialization(world, entity);
     }
 
     /// The reflect type path of the component this material is worn on.
@@ -115,47 +120,22 @@ impl WornMaterial {
     }
 }
 
-/// Tell the renderer this mesh's material changed, whatever part of the frame
-/// the change was made in.
-///
-/// Bevy collects the meshes whose material changed in `PostUpdate` but reads
-/// the material itself when it extracts the frame, after `Last`. A swap made
-/// between the two, which is where every operator a remote session dispatches
-/// runs, reaches the render world with the mesh still held in the render phases
-/// against the pipeline its old material was specialized to. Between two
-/// materials of one type that only draws a stale material for a frame; between
-/// two material types it binds one material's bind group against the other's
-/// pipeline, which fails validation and ends the render. Listing the entity
-/// here reaches the same frame's extraction, so the mesh leaves the phases with
-/// its old material.
-///
-/// Every material type's list is drained into one set of changed renderables,
-/// which the renderer reads without regard to type, so one list carries a swap
-/// in either direction.
-fn mark_for_respecialization(world: &mut World, entity: Entity) {
-    if let Some(mut changed) =
-        world.get_resource_mut::<bevy::pbr::EntitiesNeedingSpecialization<AuroraMaterial>>()
-    {
-        changed.changed.push(entity);
-    }
-}
-
 /// Reflect type path of the component a mesh wears a layered surface on.
 pub fn layered_material_component() -> &'static str {
     use bevy::reflect::TypePath;
-    <MeshMaterial3d<LayeredSurfaceMaterial> as TypePath>::type_path()
+    <LayeredSurface3d as TypePath>::type_path()
 }
 
 /// Reflect type path of the component a mesh wears a foliage material on.
 pub fn foliage_material_component() -> &'static str {
     use bevy::reflect::TypePath;
-    <MeshMaterial3d<FoliageMaterial> as TypePath>::type_path()
+    <Foliage3d as TypePath>::type_path()
 }
 
 /// Reflect type path of the component a mesh wears a water material on.
 pub fn water_material_component() -> &'static str {
     use bevy::reflect::TypePath;
-    <MeshMaterial3d<WaterMaterial> as TypePath>::type_path()
+    <Water3d as TypePath>::type_path()
 }
 
 /// The component type paths a mesh can wear a material on.

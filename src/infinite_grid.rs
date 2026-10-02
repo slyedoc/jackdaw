@@ -103,7 +103,12 @@ fn draw_infinite_grid(
         let mut ray = |near: Vec3, far: Vec3, offset: f32, color: Color| {
             let at = |a: f32| color.with_alpha(color.alpha() * a);
             let (inner, outer) = (at(alpha(offset.abs())), at(alpha(radius)));
-            gizmos.line_gradient(grid.transform_point(near), grid.transform_point(far), inner, outer);
+            gizmos.line_gradient(
+                grid.transform_point(near),
+                grid.transform_point(far),
+                inner,
+                outer,
+            );
         };
 
         for i in -count..=count {

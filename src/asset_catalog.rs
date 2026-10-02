@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use bevy::asset::{UntypedAssetId, UntypedHandle};
 use bevy::prelude::*;
-use jackdaw_jsn::format::JsnCatalog;
 use bevy_aurora::material::AuroraMaterial;
+use jackdaw_jsn::format::JsnCatalog;
 
 /// Project-level asset catalog for cross-scene deduplication.
 ///

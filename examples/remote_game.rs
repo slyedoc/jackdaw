@@ -10,13 +10,16 @@
 //! Run with: `cargo run --example remote_game`
 
 use bevy::prelude::*;
+use bevy_aurora::AuroraDefaultPlugins;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_remote::prelude::*;
 
 fn main() -> AppExit {
     App::new()
         // log errors instead of panicking
         .set_error_handler(bevy::ecs::error::error)
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
+        .add_plugins(AuroraDefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Jackdaw Remote Test Game".to_string(),
                 resolution: (800, 600).into(),
@@ -70,8 +73,8 @@ struct Rotating;
 
 fn setup(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
 ) {
     // Camera
     commands.spawn((
@@ -93,8 +96,8 @@ fn setup(
     // Ground plane
     commands.spawn((
         Name::new("Ground"),
-        Mesh3d(meshes.add(Plane3d::new(Vec3::Y, Vec2::splat(10.0)))),
-        MeshMaterial3d(materials.add(StandardMaterial {
+        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Plane3d::new(Vec3::Y, Vec2::splat(10.0))))),
+        AuroraMaterial3d(materials.add(AuroraMaterial {
             base_color: Color::srgb(0.3, 0.5, 0.3),
             ..default()
         })),
@@ -103,8 +106,8 @@ fn setup(
     // Player
     commands.spawn((
         Name::new("Player"),
-        Mesh3d(meshes.add(Cuboid::new(1.0, 2.0, 1.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
+        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Cuboid::new(1.0, 2.0, 1.0)))),
+        AuroraMaterial3d(materials.add(AuroraMaterial {
             base_color: Color::srgb(0.2, 0.6, 1.0),
             ..default()
         })),
@@ -129,8 +132,8 @@ fn setup(
 
         commands.spawn((
             Name::new(format!("Enemy_{i}")),
-            Mesh3d(meshes.add(Cuboid::new(0.8, 1.5, 0.8))),
-            MeshMaterial3d(materials.add(StandardMaterial {
+            AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Cuboid::new(0.8, 1.5, 0.8)))),
+            AuroraMaterial3d(materials.add(AuroraMaterial {
                 base_color: Color::srgb(0.9, 0.2, 0.2),
                 ..default()
             })),

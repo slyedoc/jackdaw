@@ -13,9 +13,7 @@ use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use jackdaw_terrain::region::RegionCoord;
-use jackdaw_terrain::render::{
-    ScatterChunk, ScatterDirty, ScatterPrefab, ScatterPrefabs, TerrainScatter,
-};
+use jackdaw_terrain::render::{ScatterChunk, ScatterDirty, TerrainScatter};
 use jackdaw_terrain::{RegionTerrainData, ScatterPalette, ScatterPlacement};
 
 use crate::commands::{CommandGroup, CommandHistory, DespawnEntity, EditorCommand};
@@ -361,60 +359,6 @@ pub fn set_palette_asset(
         },
     );
     Ok(true)
-}
-
-/// Answer the prefabs stored scatter names with the models they draw: each
-/// new name once, and every name again whenever the prefab cache changes, as
-/// it does when a prefab file is written.
-pub fn resolve_scatter_prefabs(
-    // TODO(aurora): `Option` because `ScatterPrefabs` is owned by `ScatterRenderPlugin`,
-    // which is off on this branch (AURORA.md item 2). `navmesh_bake` takes it the same way.
-    // Drop the `Option` when the terrain render port lands.
-    prefabs: Option<ResMut<ScatterPrefabs>>,
-    mut cache: ResMut<crate::prefab::PrefabAstCache>,
-    project: Option<Res<crate::project::ProjectRoot>>,
-    mut seen_epoch: Local<Option<u64>>,
-) {
-    let Some(mut prefabs) = prefabs else {
-        return;
-    };
-    let refresh = *seen_epoch != Some(cache.epoch());
-    let names: Vec<String> = if refresh {
-        prefabs
-            .known()
-            .chain(prefabs.wanted())
-            .map(str::to_string)
-            .collect()
-    } else {
-        prefabs.wanted().map(str::to_string).collect()
-    };
-    if names.is_empty() {
-        *seen_epoch = Some(cache.epoch());
-        return;
-    }
-    let Some(assets) = project.map(|project| project.assets_dir()) else {
-        return;
-    };
-    let assets_root = dunce::canonicalize(&assets).unwrap_or_else(|_| assets.clone());
-    for name in names {
-        let path = assets_root.join(&name);
-        if cache.get(&path).is_none() {
-            crate::prefab::save_load::cache_prefab_tree(&path, &mut cache, &assets_root);
-        }
-        let model = cache
-            .get(&path)
-            .and_then(jackdaw_prefab::prefab_model)
-            .map(|model| ScatterPrefab {
-                model: model.source,
-                local: Transform::from_matrix(Mat4::from(model.local)),
-                materials: model.materials,
-            });
-        let asked = prefabs.wanted().any(|wanted| wanted == name);
-        if asked || prefabs.get(&name) != model.as_ref() {
-            prefabs.resolve(&name, model);
-        }
-    }
-    *seen_epoch = Some(cache.epoch());
 }
 
 /// Drop one group's stored placements, as one undo entry. Returns how many

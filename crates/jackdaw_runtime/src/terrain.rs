@@ -21,9 +21,9 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use jackdaw_scene_types::Terrain;
 use jackdaw_terrain::render::{
-    DetailDirty, DetailRenderPlugin, DetailSystems, ScatterDirty, ScatterPrefab, ScatterPrefabs,
+    DetailDirty, DetailRenderPlugin, DetailSystems, MirrorToAurora, ScatterDirty,
     ScatterRenderPlugin, ScatterSystems, SplatArrayHandles, SplatBuildError, TerrainDetailSource,
-    TerrainRenderPlugin, TerrainScatter, TerrainSplatMaterial, TextureSetImages,
+    TerrainRenderPlugin, TerrainScatter, TerrainSplat3d, TerrainSplatMaterial, TextureSetImages,
     control_image_from_bytes, resolve_with, slope_image, splat_images, tint_image,
 };
 use jackdaw_terrain::sidecar::{self, TerrainMaterialSlot};
@@ -35,8 +35,6 @@ use crate::JackdawCatalog;
 
 #[cfg(feature = "physics")]
 use avian3d::prelude::{Collider, RigidBody};
-// The plain PBR material this reads for texture handles is aurora's; the
-// `TerrainSplatMaterial` it inserts below is still parked raster (AURORA.md item 2).
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Colour of a terrain drawn without a texture set.
@@ -63,7 +61,6 @@ pub(crate) fn plugin(app: &mut App) {
                 resolve_material_slots,
                 build_ready_materials,
                 sync_surfaces,
-                resolve_scatter_prefabs,
             )
                 .chain()
                 .after(crate::spawn_loaded_scenes)
@@ -72,40 +69,6 @@ pub(crate) fn plugin(app: &mut App) {
         );
     #[cfg(feature = "physics")]
     app.add_systems(Update, build_ground_colliders.after(refresh_heightmaps));
-}
-
-/// Answer the prefabs stored scatter names with the models they draw, read
-/// from the game's assets.
-fn resolve_scatter_prefabs(
-    mut prefabs: ResMut<ScatterPrefabs>,
-    catalog_path: Option<Res<crate::JackdawCatalogPath>>,
-    asset_folder: Option<Res<crate::AssetFolder>>,
-) {
-    let wanted: Vec<String> = prefabs.wanted().map(str::to_string).collect();
-    if wanted.is_empty() {
-        return;
-    }
-    let Some(assets) = crate::resolve_assets_root(catalog_path.as_deref(), asset_folder.as_deref())
-    else {
-        return;
-    };
-    for name in wanted {
-        let path = assets.join(&name);
-        let file = jackdaw_bsn::existing_form(&path).unwrap_or(path);
-        let model = match jackdaw_prefab::read_prefab_document(&file, &assets) {
-            Ok(document) => jackdaw_prefab::prefab_model(&document),
-            Err(err) => {
-                warn!("terrain scatter: cannot read the prefab {name}: {err}");
-                None
-            }
-        };
-        let model = model.map(|model| ScatterPrefab {
-            model: model.source,
-            local: Transform::from_matrix(Mat4::from(model.local)),
-            materials: model.materials,
-        });
-        prefabs.resolve(&name, model);
-    }
 }
 
 /// The sidecar file one terrain draws, resolved beneath the directory of the
@@ -173,6 +136,7 @@ pub struct TerrainViewer;
 
 /// One LOD level of a terrain's surface, rebuilt as the camera moves.
 #[derive(Component)]
+#[require(MirrorToAurora)]
 struct TerrainSurface {
     terrain: Entity,
     /// 0 is the finest ring.
@@ -610,19 +574,15 @@ fn sync_surfaces(
             if let Some(handle) = fresh {
                 entity.insert(Mesh3d(handle));
             }
-            // The two material types are different components, so the unused
-            // one has to be removed.
-            // The splat material is parked raster, the fallback is aurora's -- so the two
-            // arms wear different components and each removes the other's.
+            // A splat-wearing surface is given its traced material by
+            // `TerrainRenderPlugin`; dropping the splat goes back to the fallback.
             match &splat.material {
                 Some(handle) => {
-                    entity
-                        .remove::<AuroraMaterial3d>()
-                        .insert(MeshMaterial3d(handle.clone()));
+                    entity.insert(TerrainSplat3d(handle.clone()));
                 }
                 None => {
                     entity
-                        .remove::<MeshMaterial3d<TerrainSplatMaterial>>()
+                        .remove::<TerrainSplat3d>()
                         .insert(AuroraMaterial3d(fallback.clone()));
                 }
             }
@@ -781,7 +741,7 @@ mod tests {
     use bevy::asset::{AssetApp, AssetPlugin};
     use jackdaw_terrain::sidecar::{AutoTerrainSettings, RegionTerrainData};
 
-    const GRASS: &str = "#grass\nbevy_pbr::pbr_material::StandardMaterial {\n    \
+    const GRASS: &str = "#grass\nbevy_aurora::material::AuroraMaterial {\n    \
         base_color_texture: \"textures/grass_basecolor.png\",\n    \
         normal_map_texture: \"textures/grass_normal.png\",\n    \
         depth_map: \"textures/grass_height.png\",\n    \
@@ -1158,8 +1118,8 @@ mod tests {
         let mut query = world.query::<(
             &TerrainSurface,
             &Mesh3d,
-            Has<MeshMaterial3d<AuroraMaterial>>,
-            Has<MeshMaterial3d<TerrainSplatMaterial>>,
+            Has<AuroraMaterial3d>,
+            Has<TerrainSplat3d>,
         )>();
         let held: Vec<(u32, Handle<Mesh>, bool)> = query
             .iter(world)

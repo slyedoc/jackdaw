@@ -15,7 +15,7 @@ use jackdaw::asset_index::AssetIndex;
 use jackdaw::entity_ops::PendingModelRoots;
 use jackdaw::status_bar::EditorPhase;
 
-const MATERIAL: &str = "#slate\nbevy_pbr::pbr_material::StandardMaterial {}\n";
+const MATERIAL: &str = "#slate\nbevy_aurora::material::AuroraMaterial {}\n";
 
 const SCENE: &str = "bevy_ecs::hierarchy::Children [\n    \
                      #Root\n    \

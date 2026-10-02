@@ -16,21 +16,42 @@
 //! as in the shader, which is what the tests check: the two have to agree or a
 //! dial reads one way in the inspector and another on screen.
 
-use bevy::asset::embedded_asset;
 use bevy::color::ColorToComponents;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderType};
-use bevy::render::texture::GpuImage;
-use bevy::shader::{Shader, ShaderRef};
+use bevy_aurora::material::AuroraMaterial;
+use bevy_aurora::surface_group::SurfaceClass;
 use jackdaw_scene_types::{SceneWind, Wind};
 
-const SHADER_PATH: &str = "embedded://jackdaw_surface/shaders/foliage.wgsl";
-const PREPASS_SHADER_PATH: &str = "embedded://jackdaw_surface/shaders/foliage_prepass.wgsl";
+use crate::surface_class::{ExtendedSurface, Mirrors, mirror_extended};
+
 
 /// The material an entity wears to blow with the wind and pass light.
-pub type FoliageMaterial = ExtendedMaterial<StandardMaterial, Foliage>;
+/// TODO(aurora): no `foliage.rchit` yet, so the class is `OPAQUE` and a plant shades as its
+/// base: right colour and cutout, no wind and no light through the leaves. Aurora's
+/// `WindSway` moves geometry in a compute pass and is where the wind belongs.
+#[derive(Asset, Reflect, Clone, Debug, Default)]
+#[reflect(Default, Clone)]
+pub struct FoliageMaterial {
+    pub base: AuroraMaterial,
+    pub extension: Foliage,
+}
+
+impl ExtendedSurface for FoliageMaterial {
+    fn base(&self) -> &AuroraMaterial {
+        &self.base
+    }
+}
+
+/// The foliage material a mesh wears.
+#[derive(Component, Clone, Debug, Default, Reflect, PartialEq, Eq)]
+#[reflect(Component, Default, Clone, PartialEq)]
+pub struct Foliage3d(pub Handle<FoliageMaterial>);
+
+impl AsRef<Handle<FoliageMaterial>> for Foliage3d {
+    fn as_ref(&self) -> &Handle<FoliageMaterial> {
+        &self.0
+    }
+}
 
 /// How far a wind of strength 1 leans a part responding at 1, in world units.
 const FOLIAGE_LEAN: f32 = 0.35;
@@ -41,9 +62,8 @@ const FLUTTER_RATE: f32 = 7.0;
 
 /// A standard material that leans in the scene's wind, tints up its own
 /// height, varies by where it stands and passes light through from behind.
-#[derive(Asset, AsBindGroup, Reflect, Clone, Debug)]
+#[derive(Component, Reflect, Clone, Debug)]
 #[reflect(Default, Clone)]
-#[uniform(100, FoliageUniform)]
 pub struct Foliage {
     /// Alpha a fragment has to clear to draw, `0..1`.
     pub alpha_cutoff: f32,
@@ -191,7 +211,8 @@ impl Foliage {
 }
 
 /// The foliage half of the material's bind group, as the shader reads it.
-#[derive(Clone, Default, ShaderType)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct FoliageUniform {
     pub gradient_color: Vec4,
     pub variation_color: Vec4,
@@ -219,8 +240,9 @@ pub struct FoliageUniform {
     pub bend_contrast: f32,
 }
 
-impl AsBindGroupShaderType<FoliageUniform> for Foliage {
-    fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> FoliageUniform {
+impl Foliage {
+    /// The parameter row `foliage.rchit` will read.
+    pub fn params(&self) -> FoliageUniform {
         FoliageUniform {
             gradient_color: LinearRgba::from(self.gradient_color).to_vec4(),
             variation_color: LinearRgba::from(self.variation_color).to_vec4(),
@@ -250,45 +272,26 @@ impl AsBindGroupShaderType<FoliageUniform> for Foliage {
     }
 }
 
-impl MaterialExtension for Foliage {
-    fn vertex_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
-
-    fn prepass_vertex_shader() -> ShaderRef {
-        PREPASS_SHADER_PATH.into()
-    }
-
-    fn fragment_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
-}
-
-/// Keeps the shader the foliage stages import loaded for as long as the app runs.
-#[derive(Resource)]
-struct FoliageShaderLibrary(
-    #[expect(dead_code, reason = "held only to keep the shader loaded")] Handle<Shader>,
-);
-
 /// Registers the foliage material, its shader and its reflected type, so a
 /// scene naming one renders it.
 pub struct FoliagePlugin;
 
 impl Plugin for FoliagePlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/foliage.wgsl");
-        embedded_asset!(app, "shaders/foliage_prepass.wgsl");
-        embedded_asset!(app, "shaders/foliage_wind.wgsl");
-        if app.world().contains_resource::<Assets<Shader>>() {
-            let library = bevy::asset::load_embedded_asset!(app, "shaders/foliage_wind.wgsl");
-            app.insert_resource(FoliageShaderLibrary(library));
-        }
-        app.add_plugins(MaterialPlugin::<FoliageMaterial>::default())
+        app.init_asset::<FoliageMaterial>()
             .init_resource::<SceneWind>()
+            .init_resource::<Mirrors<FoliageMaterial>>()
             .register_type::<Foliage>()
+            .register_type::<Foliage3d>()
             .register_asset_reflect::<FoliageMaterial>()
             .register_type_data::<FoliageMaterial, bevy::reflect::std_traits::ReflectDefault>()
-            .add_systems(PostUpdate, blow_the_foliage_by_the_scenes_wind);
+            .add_systems(
+                PostUpdate,
+                (
+                    mirror_extended::<FoliageMaterial, Foliage3d>(SurfaceClass::OPAQUE),
+                    blow_the_foliage_by_the_scenes_wind,
+                ),
+            );
     }
 }
 
@@ -340,62 +343,7 @@ mod tests {
         };
     }
 
-    #[test]
-    fn every_material_binding_is_declared_in_the_shader_at_its_derive_index() {
-        let expected =
-            "@group(#{MATERIAL_BIND_GROUP}) @binding(100) var<uniform> foliage: FoliageUniform;";
-        assert!(
-            SHADER_SOURCE.contains(expected),
-            "the AsBindGroup derive binds 100 as the foliage uniform, \
-             but the shader does not declare it that way"
-        );
-    }
 
-    /// The uniform is one buffer built from [`FoliageUniform`]'s fields in
-    /// declaration order, so the WGSL struct has to list them in the same
-    /// order or every field reads its neighbour's bytes.
-    #[test]
-    fn the_uniform_struct_matches_the_rust_field_order() {
-        let start = SHADER_SOURCE
-            .find("struct FoliageUniform {")
-            .expect("FoliageUniform is declared");
-        let body = &SHADER_SOURCE[start..];
-        let end = body.find('}').expect("FoliageUniform is closed");
-        let body = &body[..end];
-
-        let mut at = 0usize;
-        for field in [
-            "gradient_color: vec4<f32>",
-            "variation_color: vec4<f32>",
-            "wind_direction: vec2<f32>",
-            "wind_strength: f32",
-            "wind_gust: f32",
-            "wind_gust_speed: f32",
-            "wind_turbulence_scale: f32",
-            "alpha_cutoff: f32",
-            "gradient_position: f32",
-            "gradient_falloff: f32",
-            "gradient_invert: u32",
-            "variation_strength: f32",
-            "variation_scale: f32",
-            "translucency_strength: f32",
-            "translucency_normal_distortion: f32",
-            "translucency_scattering: f32",
-            "translucency_direct: f32",
-            "translucency_ambient: f32",
-            "translucency_shadow: f32",
-            "shading_normal_up: f32",
-            "wind_response: f32",
-            "micro_wind_response: f32",
-            "bend_position: f32",
-            "bend_contrast: f32",
-        ] {
-            let found = body[at..].find(field).unwrap_or_else(|| {
-                panic!("the shader declares `{field}` after the field above it")
-            });
-            at += found + field.len();
-        }
-    }
 
     /// An unedited foliage material is a standard material with a cutout:
     /// nothing leans, nothing is tinted and nothing glows.

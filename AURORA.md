@@ -145,10 +145,17 @@ which says which link is missing.
    dependency inside jackdaw itself.
 3. ~~**Draw the grid.**~~ DONE, as gizmo lines. A ray-plane intersection in the miss
    path would still be sharper at grazing angles, if it ever matters.
-4. **`jackdaw_terrain/render` and `jackdaw_runtime/render`** are still ON, marked
-   TODO(aurora) in Cargo.toml. They carry the splat material and the material
-   plumbing the editor calls (`MaterialOverridesPlugin`, `material_of_reference`), so
-   they go with item 2 rather than separately.
+4. ~~**`jackdaw_terrain/render` and `jackdaw_runtime/render`**~~ DONE: neither names a raster
+   crate, and `cargo tree --features dylib -i bevy_render` is empty (with the avian fork's
+   `debug-plugin` fix and the bevy fork's `bevy_remote` render half following `bevy_render`).
+   Terrain on aurora: scatter palette entries are baked `.bsn` scenes, flattened once into
+   `AuroraMesh` + `AuroraMaterial` parts (a glTF entry warns and draws nothing); detail tiles
+   bake their instances into one static `AuroraMesh` each (wind, pressers and fade were
+   vertex-stage work -- `shaders/detail.wgsl` is the reference); surfaces keep their `Mesh3d`
+   and trace through `MirrorToAurora`; a splat-wearing surface (`TerrainSplat3d`) traces a
+   flat stand-in until aurora has a terrain surface class (`shaders/terrain_splat.wgsl`).
+   Left: PIE's live frame view (`pie_frames` feature, off) needs an image-target readback in
+   aurora; `GltfMaterialName` overrides still read glTF names beside the new `MaterialSlot`.
 5. **Revisit `propagate_on_cpu: true`** in `main.rs` when the f64 GPU-transform branch
    lands. It is on because aurora propagates only ROOT transforms -- the tracer reads its
    own GPU transforms and never touches `GlobalTransform`, while the editor reads a
@@ -159,11 +166,6 @@ which says which link is missing.
    so the navmesh bake's `TriMeshFromBevyMesh` pulls bevy_render at the fork level.
    Worth fixing in slyedoc/rerecast once the bigger items land.
 
-7. **Materials in existing projects.** A `.bsn` authored before the rename holds
-   `bevy_pbr::pbr_material::StandardMaterial`; the loader wants
-   `bevy_aurora::material::AuroraMaterial` and warns, then drops the document. Needs a
-   migration rule in `scene_io/stamp.rs`. `emissive_exposure_weight` has no aurora
-   equivalent and is dropped.
 8. **Cubemaps.** Aurora's texture path is 2D single-layer, so `EnvironmentMapLight`'s
    ktx2 cubemaps are declined with a warning and preview lighting is wrong.
 9. **An empty scene traces nothing.** `TlasBuilder::record` returns at `count == 0`, so

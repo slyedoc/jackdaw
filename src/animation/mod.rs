@@ -20,6 +20,11 @@ use bevy::prelude::*;
 use jackdaw_api::prelude::*;
 
 pub(crate) fn plugin(app: &mut App) {
+    // The library indexes glTF clips; no glTF loader is added on aurora, so the store is
+    // registered here rather than arriving with one.
+    if !app.world().contains_resource::<Assets<bevy::gltf::Gltf>>() {
+        app.init_asset::<bevy::gltf::Gltf>();
+    }
     app.add_plugins((
         graph_window::plugin,
         library::plugin,

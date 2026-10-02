@@ -138,10 +138,7 @@ pub fn seed_default_categories(r: &mut InspectorRegistry) {
         // Modifier stack lives in the Modifiers tab.
         ("jackdaw_geometry::modifiers::ModifierStack", "modifiers"),
         // Standard material component lives in the Material tab.
-        (
-            "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>",
-            "material",
-        ),
+        ("bevy_aurora::material::AuroraMaterial3d", "material"),
         // Physics components.
         ("jackdaw_avian_integration::AvianCollider", "physics"),
         ("avian3d::dynamics::rigid_body::RigidBody", "physics"),

@@ -8,6 +8,7 @@ repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
 bevy_aurora.workspace = true
+wgpu-types = { version = "30", default-features = false, optional = true }
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
     "reflect_auto_register",
     "std",
@@ -70,9 +71,8 @@ thiserror = "2"
 default = ["render"]
 render = [
     "dep:jackdaw_surface",
-    "bevy/bevy_pbr",
+    "dep:wgpu-types",
     "bevy/bevy_gltf",
-    "bevy/bevy_render",
     "bevy/bevy_image",
     "jackdaw_geometry/render",
     "jackdaw_scene_types/render",
@@ -83,17 +83,18 @@ render = [
 # Play-in-editor: connect to the editor over ipc-channel, stream the
 # scene's ECS state, and apply control commands. Off by default so the
 # protocol and ipc-channel stay out of the standalone runtime build.
-# Frame capture renders the active camera rig offscreen and reads it
-# back, which needs bevy's gpu readback (bevy_render) and Image
-# (bevy_image) even when the `render` feature is off.
 pie = [
     "dep:jackdaw_pie_protocol",
     "jackdaw_pie_protocol/ipc",
     "dep:jackdaw_camera_rig",
-    "bevy/bevy_render",
+    "dep:wgpu-types",
     "bevy/bevy_image",
     "bevy/mesh_picking",
 ]
+# Live frame view: renders the active camera rig offscreen and reads it back
+# through bevy's gpu readback. TODO(aurora): aurora has no render-target
+# readback yet, so nothing on this branch enables it.
+pie_frames = ["pie", "bevy/bevy_render"]
 # Avian physics: build `Collider`s from authored `AvianCollider` components at
 # runtime so brushes collide in the standalone game and in PIE, not only in the
 # editor preview. Add `PhysicsPlugins` in your app to actually simulate.

@@ -6,7 +6,7 @@ use bevy::gltf::GltfMaterialName;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use jackdaw_bsn::BsnProjectAssets;
-use jackdaw_scene_types::{InstanceMaterialOverrides, MaterialOverrides};
+use jackdaw_scene_types::{InstanceMaterialOverrides, MaterialOverrides, MaterialSlot};
 use jackdaw_surface::WornMaterial;
 
 use crate::JackdawCatalog;
@@ -35,7 +35,7 @@ fn find_models_to_dress(
             Changed<InstanceMaterialOverrides>,
         )>,
     >,
-    new_parts: Query<Entity, Added<GltfMaterialName>>,
+    new_parts: Query<Entity, Or<(Added<GltfMaterialName>, Added<MaterialSlot>)>>,
     overridden: Query<Entity, Overridden>,
     mut removed: RemovedComponents<MaterialOverrides>,
     mut removed_instance: RemovedComponents<InstanceMaterialOverrides>,
@@ -131,8 +131,9 @@ pub fn dress_model(world: &mut World, root: Entity) {
 /// Dress one part in the material the overrides reaching it name, or give it back its own.
 pub fn dress_part(world: &mut World, part: Entity) {
     let Some(name) = world
-        .get::<GltfMaterialName>(part)
-        .map(|name| name.0.clone())
+        .get::<MaterialSlot>(part)
+        .map(|slot| slot.0.clone())
+        .or_else(|| world.get::<GltfMaterialName>(part).map(|name| name.0.clone()))
     else {
         return;
     };
@@ -166,12 +167,13 @@ fn give_back(world: &mut World, part: Entity) {
 mod tests {
     use super::*;
     use bevy::platform::collections::HashMap;
+    use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
     use jackdaw_surface::{LayeredSurfaceMaterial, WaterMaterial};
 
     fn app() -> App {
         let mut app = App::new();
         app.add_plugins(bevy::asset::AssetPlugin::default())
-            .init_asset::<StandardMaterial>()
+            .init_asset::<AuroraMaterial>()
             .init_asset::<LayeredSurfaceMaterial>()
             .init_asset::<WaterMaterial>()
             .add_plugins(MaterialOverridesPlugin);
@@ -187,7 +189,7 @@ mod tests {
         app.world_mut().insert_resource(references);
     }
 
-    fn model(app: &mut App, own: &Handle<StandardMaterial>) -> (Entity, Entity, Entity) {
+    fn model(app: &mut App, own: &Handle<AuroraMaterial>) -> (Entity, Entity, Entity) {
         let world = app.world_mut();
         let rock = world
             .spawn((GltfMaterialName("Rock".into()), AuroraMaterial3d(own.clone())))
@@ -216,8 +218,8 @@ mod tests {
         let mut app = app();
         let own = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let water = app
             .world_mut()
             .resource_mut::<Assets<WaterMaterial>>()
@@ -245,8 +247,8 @@ mod tests {
         let mut app = app();
         let own = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let layered = app
             .world_mut()
             .resource_mut::<Assets<LayeredSurfaceMaterial>>()
@@ -275,8 +277,8 @@ mod tests {
         let mut app = app();
         let own = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let water = app
             .world_mut()
             .resource_mut::<Assets<WaterMaterial>>()
@@ -309,8 +311,8 @@ mod tests {
         let mut app = app();
         let own = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let lake = app
             .world_mut()
             .resource_mut::<Assets<WaterMaterial>>()
@@ -362,8 +364,8 @@ mod tests {
         let mut app = app();
         let own = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .add(StandardMaterial::default());
+            .resource_mut::<Assets<AuroraMaterial>>()
+            .add(AuroraMaterial::default());
         let (root, rock, _) = model(&mut app, &own);
         app.world_mut()
             .entity_mut(root)

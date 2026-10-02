@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
-bevy_aurora.workspace = true
+aurora_material = { workspace = true, optional = true }
 glam.workspace = true
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, optional = true, features = [
     "reflect_auto_register",
@@ -38,10 +38,10 @@ default = ["render"]
 # do not depend on a render stack being present.
 reflect = ["dep:bevy"]
 # `render` is the full Bevy-facing build used by the editor: `reflect` plus
-# StandardMaterial handles on faces. The engine-agnostic core consumed by the
+# AuroraMaterial handles on faces. The engine-agnostic core consumed by the
 # Godot binding is the `--no-default-features` build: glam + serde only,
 # String materials, no derives.
-render = ["reflect", "bevy/bevy_pbr", "bevy/bevy_render"]
+render = ["reflect", "dep:aurora_material"]
 
 [lints]
 workspace = true

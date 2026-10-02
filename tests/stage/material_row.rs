@@ -5,6 +5,7 @@
 //! row lists it and takes a choice, which lasts as long as the editor holds
 //! what put the mesh there.
 
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -89,7 +90,7 @@ fn app_with_unauthored_mesh() -> (App, tempfile::TempDir, Entity) {
         .spawn((
             ChildOf(root),
             Mesh3d::default(),
-            MeshMaterial3d(Handle::<StandardMaterial>::default()),
+            AuroraMaterial3d(Handle::<AuroraMaterial>::default()),
         ))
         .id();
     app.world_mut().resource_mut::<Selection>().entities = vec![part];
@@ -149,7 +150,7 @@ fn picking_a_material_for_such_a_mesh_dresses_it_without_authoring_it() {
     let chosen = filed_material(&app);
     let worn = app
         .world()
-        .get::<MeshMaterial3d<StandardMaterial>>(part)
+        .get::<AuroraMaterial3d>(part)
         .expect("the mesh still wears a material");
     assert_eq!(
         worn.0.id().untyped(),
@@ -264,11 +265,11 @@ fn a_material_picked_on_an_authored_mesh_survives_a_save_and_a_reopen() {
     let mesh = last_named(&mut app, "lamp").expect("the scene spawned the mesh");
     let empty = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     app.world_mut()
         .entity_mut(mesh)
-        .insert((Mesh3d::default(), MeshMaterial3d(empty)));
+        .insert((Mesh3d::default(), AuroraMaterial3d(empty)));
     app.world_mut().resource_mut::<Selection>().entities = vec![mesh];
     settle(&mut app);
 
@@ -297,7 +298,7 @@ fn a_material_picked_on_an_authored_mesh_survives_a_save_and_a_reopen() {
     let chosen = filed_material(&app);
     assert_eq!(
         app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(reopened)
+            .get::<AuroraMaterial3d>(reopened)
             .map(|worn| worn.0.id().untyped()),
         Some(chosen.id()),
         "and it comes back wearing it",

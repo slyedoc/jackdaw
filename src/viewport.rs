@@ -1,16 +1,16 @@
 use bevy::{
-    anti_alias::fxaa::{Fxaa, Sensitivity},
     asset::{embedded_asset, load_embedded_asset},
     camera::{RenderTarget, visibility::RenderLayers},
-    core_pipeline::oit::OrderIndependentTransparencySettings,
     gizmos::{GizmoAsset, retained::Gizmo},
     image::ImageSampler,
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
     ui::{UiGlobalTransform, widget::ViewportNode},
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowFocused},
 };
+// wgpu's own types, still the vocabulary `Image` is described in; the `bevy_render` path to
+// them is gone with the raster back end.
 use jackdaw_api::prelude::*;
+use wgpu_types::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 
 use crate::infinite_grid::{InfiniteGrid, InfiniteGridPlugin};
 use jackdaw_api_internal::keymap::PresetInput;
@@ -491,22 +491,15 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
                 intensity: 500.0,
                 ..default()
             },
-            OrderIndependentTransparencySettings::default(),
             Camera {
                 order: -1,
                 ..default()
             },
             RenderTarget::Image(image_handle.into()),
             Transform::from_xyz(0.0, 4.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
-            // Order-independent transparency forces MSAA off, so smooth the
-            // jagged gizmo lines and outlines with a post-process pass
-            // instead. Lower sensitivity keeps the thin edit lines sharp.
-            Msaa::Off,
-            Fxaa {
-                edge_threshold: Sensitivity::Medium,
-                edge_threshold_min: Sensitivity::Medium,
-                ..default()
-            },
+            // Order-independent transparency, MSAA and FXAA were the raster back end's;
+            // the tracer resolves transparency by tracing through it and antialiases with
+            // DLSS Ray Reconstruction.
             JackdawCameraSettings::default(),
             ViewportConfig::default(),
             camera_layers,

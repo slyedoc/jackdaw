@@ -1,5 +1,7 @@
 //! Materials a placed model's parts wear in place of their own, kept with the scene.
 
+use bevy_aurora::material::AuroraMaterial;
+use bevy_aurora::material::AuroraMaterial3d;
 use std::path::{Path, PathBuf};
 
 use bevy::gltf::GltfMaterialName;
@@ -99,17 +101,17 @@ fn make_a_model(app: &mut App, root: Entity) {
 }
 
 /// A part of the model as the glTF loader leaves one: no document node, a material name and the model's own material.
-fn a_part(app: &mut App, root: Entity, material_name: &str) -> (Entity, Handle<StandardMaterial>) {
+fn a_part(app: &mut App, root: Entity, material_name: &str) -> (Entity, Handle<AuroraMaterial>) {
     let own = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     let part = app
         .world_mut()
         .spawn((
             GltfMaterialName(material_name.to_string()),
             Mesh3d::default(),
-            MeshMaterial3d(own.clone()),
+            AuroraMaterial3d(own.clone()),
             ChildOf(root),
         ))
         .id();

@@ -37,7 +37,7 @@ pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
 pub use types::{
     Brush, BrushFaceData, BrushPlane, BrushTopology, CustomProperties, DerivedFaceMesh,
     DetailLayer, DetailMesh, DetailPresser, GltfSource, InstanceMaterialOverrides,
-    MaterialOverrides, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude, PrefabBaseline, PropertyValue,
+    MaterialOverrides, MaterialSlot, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude, PrefabBaseline, PropertyValue,
     ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain, TerrainChannel,
     TerrainChannelElement, TerrainNavmesh, TerrainPaletteEntry, TerrainQuantization, Wind,
 };
@@ -85,6 +85,7 @@ impl Plugin for SceneTypesPlugin {
             .register_type::<SceneNodeId>()
             .register_type::<GltfSource>()
             .register_type::<MaterialOverrides>()
+            .register_type::<MaterialSlot>()
             .register_type::<InstanceMaterialOverrides>()
             .register_type::<Terrain>()
             .register_type::<TerrainChannel>()
@@ -124,21 +125,24 @@ impl Plugin for SceneTypesPlugin {
 
         #[cfg(feature = "render")]
         {
-            // With `render`, `BrushFaceData::material` is a `Handle<StandardMaterial>`.
-            // A dedicated server builds with `render` for these types but adds no
-            // rendering plugins, so material/image asset reflection is never set up and
-            // the deserializer (which keys these handles off `ReflectHandle`) drops any
-            // brush with an unassigned `material: null` face. Register it only when the
-            // render plugins are absent; when they are present (the editor, a windowed
-            // client) they own this, and re-registering corrupts the asset storage.
+            // With `render`, `BrushFaceData::material` is a `Handle<AuroraMaterial>`. A
+            // dedicated server builds with `render` for these types but adds no renderer,
+            // so material/image asset reflection is never set up and the deserializer
+            // (which keys these handles off `ReflectHandle`) drops any brush with an
+            // unassigned `material: null` face. Register it only when nothing has yet;
+            // re-registering corrupts the asset storage.
             if !app
                 .world()
-                .contains_resource::<bevy::asset::Assets<bevy::pbr::StandardMaterial>>()
+                .contains_resource::<bevy::asset::Assets<aurora_material::AuroraMaterial>>()
+            {
+                app.add_plugins(aurora_material::AuroraMaterialTypesPlugin);
+            }
+            if !app
+                .world()
+                .contains_resource::<bevy::asset::Assets<bevy::image::Image>>()
             {
                 use bevy::asset::AssetApp;
-                app.init_asset::<bevy::pbr::StandardMaterial>()
-                    .register_asset_reflect::<bevy::pbr::StandardMaterial>()
-                    .init_asset::<bevy::image::Image>()
+                app.init_asset::<bevy::image::Image>()
                     .register_asset_reflect::<bevy::image::Image>();
             }
 

@@ -3634,16 +3634,13 @@ fn screen_position_of(app: &mut App, panel: Entity, authored: Vec2) -> Vec2 {
 fn press_at(app: &mut App, panel: Entity, authored: Vec2, target: Entity) {
     let position = screen_position_of(app, panel, authored);
     let camera = panel_camera(app, panel);
-    pointer_at(
-        app,
-        target,
-        position,
-        Press {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-            count: 1,
-        },
-    );
+    pointer_at(app, target, position, |entity, pointer| PointerPress {
+        entity,
+        pointer,
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+        count: 1,
+    });
 }
 
 fn panel_camera(app: &mut App, panel: Entity) -> Entity {
@@ -3654,11 +3651,13 @@ fn panel_camera(app: &mut App, panel: Entity) -> Entity {
 }
 
 /// Deliver one pointer event to `target` at a window position.
-fn pointer_at<E: std::fmt::Debug + Clone + Reflect>(
+/// Each picking event now carries its own `entity` and `pointer`, so there is no wrapper to
+/// put an arbitrary event inside: the caller builds the event from the two.
+fn pointer_at<'a, E: EntityEvent<Trigger<'a>: Default>>(
     app: &mut App,
     target: Entity,
     position: Vec2,
-    event: E,
+    event: impl FnOnce(Entity, Pointer) -> E,
 ) {
     let window = app
         .world_mut()
@@ -3668,15 +3667,14 @@ fn pointer_at<E: std::fmt::Debug + Clone + Reflect>(
     let render_target: NormalizedRenderTarget = RenderTarget::Window(WindowRef::Primary)
         .normalize(Some(window))
         .expect("the primary window normalizes");
-    app.world_mut().trigger(Pointer::new(
+    let pointer = Pointer::new(
         PointerId::Mouse,
         Location {
             target: render_target,
             position,
         },
-        event,
-        target,
-    ));
+    );
+    app.world_mut().trigger(event(target, pointer));
 }
 
 /// The primary selection's overlay: the one carrying the handles, and the one
@@ -3733,41 +3731,36 @@ fn drag_authored(app: &mut App, panel: Entity, target: Entity, from: Vec2, to: V
 fn begin_drag(app: &mut App, panel: Entity, target: Entity, from: Vec2) -> Vec2 {
     let start = screen_position_of(app, panel, from);
     let camera = panel_camera(app, panel);
-    pointer_at(
-        app,
-        target,
-        start,
-        DragStart {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-        },
-    );
+    pointer_at(app, target, start, |entity, pointer| PointerDragStart {
+        entity,
+        pointer,
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+    });
     start
 }
 
 fn continue_drag(app: &mut App, target: Entity, start: Vec2, distance: Vec2) {
-    pointer_at(
-        app,
-        target,
-        start + distance,
-        Drag {
+    pointer_at(app, target, start + distance, |entity, pointer| {
+        PointerDrag {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
             delta: distance,
-        },
-    );
+        }
+    });
 }
 
 fn end_drag(app: &mut App, target: Entity, start: Vec2, distance: Vec2) {
-    pointer_at(
-        app,
-        target,
-        start + distance,
-        DragEnd {
+    pointer_at(app, target, start + distance, |entity, pointer| {
+        PointerDragEnd {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
-        },
-    );
+        }
+    });
 }
 
 /// Escape as the input pass reports it.
@@ -4102,15 +4095,14 @@ fn move_over(app: &mut App, panel: Entity, authored: Vec2) {
     let stage = stage_entity(app, panel);
     let position = screen_position_of(app, panel, authored);
     let camera = panel_camera(app, panel);
-    pointer_at(
-        app,
-        stage,
-        position,
+    pointer_at(app, stage, position, |entity, pointer| {
         bevy::picking::events::PointerMove {
+            entity,
+            pointer,
             hit: HitData::new(camera, 0.0, None, None),
             delta: Vec2::ZERO,
-        },
-    );
+        }
+    });
     app.update();
 }
 
@@ -4364,14 +4356,13 @@ fn the_outline_goes_away_when_the_pointer_leaves_the_stage() {
     let stage = stage_entity(&mut app, panel);
     let position = screen_position_of(&mut app, panel, Vec2::new(500.0, 250.0));
     let camera = panel_camera(&mut app, panel);
-    pointer_at(
-        &mut app,
-        stage,
-        position,
+    pointer_at(&mut app, stage, position, |entity, pointer| {
         bevy::picking::events::PointerOut {
+            entity,
+            pointer,
             hit: HitData::new(camera, 0.0, None, None),
-        },
-    );
+        }
+    });
     settle(&mut app);
 
     assert_eq!(

@@ -1,9 +1,10 @@
 //! The layered surface: a material asset of its own that a mesh wears in place
 //! of its standard one.
 
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use jackdaw_surface::LayeredSurface3d;
 use std::path::{Path, PathBuf};
 
-use bevy::pbr::EntitiesNeedingSpecialization;
 use bevy::prelude::*;
 use jackdaw::asset_index::{AssetIndex, AssetValue};
 use jackdaw::definition_assets::LAYERED_SURFACE_KIND;
@@ -150,14 +151,14 @@ fn a_layered_surface_file_round_trips_through_save_and_load() {
 fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
     let standard = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     let mesh = app
         .world_mut()
         .spawn((
             Name::new("cliff"),
             Mesh3d::default(),
-            MeshMaterial3d(standard),
+            AuroraMaterial3d(standard),
         ))
         .id();
     jackdaw::scene_io::register_entity_in_ast(app.world_mut(), mesh);
@@ -181,13 +182,11 @@ fn applying_a_layered_surface_replaces_the_meshs_material_component() {
     let chosen = handle_at(&app, &relative);
     let worn = app
         .world()
-        .get::<MeshMaterial3d<LayeredSurfaceMaterial>>(mesh)
+        .get::<LayeredSurface3d>(mesh)
         .expect("the mesh wears the layered surface");
     assert_eq!(worn.0.id().untyped(), chosen.id());
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
-            .is_none(),
+        app.world().get::<AuroraMaterial3d>(mesh).is_none(),
         "and no longer wears a standard material as well",
     );
 }
@@ -199,7 +198,7 @@ fn undoing_the_apply_puts_the_standard_material_back() {
     let mesh = a_mesh_wearing_a_standard_material(&mut app);
     let before = app
         .world()
-        .get::<MeshMaterial3d<StandardMaterial>>(mesh)
+        .get::<AuroraMaterial3d>(mesh)
         .map(|worn| worn.0.id())
         .expect("the mesh starts in a standard material");
 
@@ -207,14 +206,12 @@ fn undoing_the_apply_puts_the_standard_material_back() {
     call(&mut app, "history.undo", &[]);
 
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<LayeredSurfaceMaterial>>(mesh)
-            .is_none(),
+        app.world().get::<LayeredSurface3d>(mesh).is_none(),
         "the layered surface comes off",
     );
     assert_eq!(
         app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
+            .get::<AuroraMaterial3d>(mesh)
             .map(|worn| worn.0.id()),
         Some(before),
         "and the material the mesh wore is back",
@@ -237,11 +234,11 @@ fn a_scene_naming_a_layered_surface_reloads_with_it_on_the_mesh() {
     let mesh = named(&mut app, "cliff").expect("the scene spawned the mesh");
     let standard = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     app.world_mut()
         .entity_mut(mesh)
-        .insert((Mesh3d::default(), MeshMaterial3d(standard)));
+        .insert((Mesh3d::default(), AuroraMaterial3d(standard)));
     app.world_mut().resource_mut::<Selection>().entities = vec![mesh];
     settle(&mut app);
 
@@ -264,9 +261,7 @@ fn a_scene_naming_a_layered_surface_reloads_with_it_on_the_mesh() {
     settle(&mut app);
     let reopened = named(&mut app, "cliff").expect("the scene spawned the mesh again");
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<LayeredSurfaceMaterial>>(reopened)
-            .is_some(),
+        app.world().get::<LayeredSurface3d>(reopened).is_some(),
         "and it comes back wearing the layered surface",
     );
 }
@@ -283,63 +278,3 @@ fn named(app: &mut App, name: &str) -> Option<Entity> {
     found.into_iter().next_back()
 }
 
-/// Dispatch an operator and apply its commands without letting a frame run,
-/// which is what the renderer sees when an operator arrives late in the frame.
-#[track_caller]
-fn call_without_a_frame(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)]) {
-    let mut call = app.world_mut().operator(id).settings(CallOperatorSettings {
-        execution_context: ExecutionContext::Invoke,
-        creates_history_entry: true,
-    });
-    for (name, value) in params {
-        call = call.param(*name, value.clone());
-    }
-    assert_eq!(
-        call.call().expect("the operator dispatched"),
-        OperatorResult::Finished,
-        "{id} ran",
-    );
-    app.world_mut().flush();
-}
-
-/// The meshes whose material changed, as the renderer will read them when it
-/// extracts this frame. One list covers every material type.
-fn listed_for_respecialization(app: &App) -> &[Entity] {
-    &app.world()
-        .resource::<EntitiesNeedingSpecialization<StandardMaterial>>()
-        .changed
-}
-
-/// Bevy collects the meshes whose material changed in `PostUpdate` and reads
-/// the material itself when it extracts the frame. A swap between the two,
-/// which is where every operator a remote session dispatches runs, has to say
-/// so itself, or the mesh is drawn for a frame against the pipeline its old
-/// material was specialized to. It holds in both directions: taking a layered
-/// surface off again is the same swap backwards.
-#[test]
-fn swapping_a_meshs_material_lists_it_for_respecialization_either_way() {
-    let (mut app, _tmp) = editor();
-    let relative = a_layered_surface(&mut app, "mossy");
-    let mesh = a_mesh_wearing_a_standard_material(&mut app);
-
-    call_without_a_frame(&mut app, "material.apply", &[("material", relative.into())]);
-
-    assert!(
-        listed_for_respecialization(&app).contains(&mesh),
-        "the apply has to list the mesh before the frame is extracted",
-    );
-    settle(&mut app);
-
-    call_without_a_frame(&mut app, "history.undo", &[]);
-
-    assert!(
-        app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
-            .is_some(),
-        "the undo puts the standard material back",
-    );
-    assert!(
-        listed_for_respecialization(&app).contains(&mesh),
-        "and lists the mesh again, or the reverse swap draws against the layered pipeline",
-    );
-}

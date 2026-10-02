@@ -4,6 +4,7 @@
 //! points at, the list to choose another from, and a Clear that takes the
 //! choice back out of the scene again.
 
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -18,8 +19,7 @@ use crate::util;
 
 /// The component a mesh wears its material on, the field the document carries
 /// it under, and the name the row answers to.
-const MESH_MATERIAL: &str =
-    "bevy_pbr::mesh_material::MeshMaterial3d<bevy_pbr::pbr_material::StandardMaterial>";
+const MESH_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial3d";
 const HANDLE_FIELD: &str = "0";
 const MATERIAL_FIELD: &str = "material";
 
@@ -88,7 +88,7 @@ fn app_with_mesh() -> (App, tempfile::TempDir, Entity) {
         .spawn((
             Name::new("crate"),
             Mesh3d::default(),
-            MeshMaterial3d(Handle::<StandardMaterial>::default()),
+            AuroraMaterial3d(Handle::<AuroraMaterial>::default()),
         ))
         .id();
     jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
@@ -281,17 +281,17 @@ fn material_the_cards_edit(app: &App) -> Option<bevy::asset::UntypedAssetId> {
 /// The material the entity is wearing.
 fn worn_material(app: &App, entity: Entity) -> Option<bevy::asset::UntypedAssetId> {
     app.world()
-        .get::<MeshMaterial3d<StandardMaterial>>(entity)
+        .get::<AuroraMaterial3d>(entity)
         .map(|material| material.0.id().untyped())
 }
 
 /// The material a project file holds, as the handle for it.
-fn material_handle(app: &App, path: &str) -> Handle<StandardMaterial> {
+fn material_handle(app: &App, path: &str) -> Handle<AuroraMaterial> {
     app.world()
         .resource::<jackdaw::asset_index::AssetIndex>()
         .get(Path::new(path))
         .and_then(|entry| entry.value.handle().cloned())
-        .and_then(|handle| handle.try_typed::<StandardMaterial>().ok())
+        .and_then(|handle| handle.try_typed::<AuroraMaterial>().ok())
         .expect("the project holds the material file")
 }
 
@@ -301,7 +301,7 @@ fn undoing_a_pick_puts_the_material_the_entity_wore_back_on_it() {
     let moss = material_handle(&app, "materials/moss.bsn");
     app.world_mut()
         .entity_mut(entity)
-        .insert(MeshMaterial3d(moss.clone()));
+        .insert(AuroraMaterial3d(moss.clone()));
     settle(&mut app);
 
     call(

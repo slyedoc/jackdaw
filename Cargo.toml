@@ -172,6 +172,7 @@ arboard = { version = "3", features = ["wayland-data-control"] }
 dirs.workspace = true
 regex.workspace = true
 pathdiff.workspace = true
+wgpu-types = { version = "30", default-features = false }
 path-slash.workspace = true
 dunce = "1.0.5"
 notify = "8"
@@ -293,8 +294,7 @@ jackdaw_feathers = { version = "0.19.0", path = "crates/jackdaw_feathers" }
 jackdaw_widgets = { version = "0.19.0", path = "crates/jackdaw_widgets" }
 jackdaw_widgets_runtime = { version = "0.19.0", path = "crates/jackdaw_widgets_runtime", default-features = false }
 jackdaw_commands = { version = "0.19.0", path = "crates/jackdaw_commands" }
-# TODO(aurora): `render` is the splat material and its shader, which the editor uses in
-# src/terrain/*. It goes when the terrain render port lands (AURORA.md item 2).
+# `render` is the splat data, scatter and detail drawn through aurora; no raster crate.
 jackdaw_terrain = { version = "0.19.0", path = "crates/jackdaw_terrain", default-features = false, features = [
     "procgen",
     "render",
@@ -331,8 +331,8 @@ avian3d = { git = "https://github.com/avianphysics/avian", branch = "main", feat
 jackdaw_avian_integration = { version = "0.19.0", path = "crates/jackdaw_avian_integration" }
 jackdaw_multiplayer = { version = "0.19.0", path = "crates/jackdaw_multiplayer" }
 jackdaw_multiplayer_editor = { version = "0.19.0", path = "crates/jackdaw_multiplayer_editor" }
-# TODO(aurora): `render` pulls jackdaw_surface and the material plumbing the editor
-# uses (MaterialOverridesPlugin, material_of_reference). Goes with AURORA.md item 2.
+# `render` is jackdaw_surface and the material plumbing the editor uses
+# (MaterialOverridesPlugin, material_of_reference); no raster crate.
 jackdaw_runtime = { version = "0.19.0", path = "crates/jackdaw_runtime", default-features = false, features = [
     "render",
 ] }
@@ -361,6 +361,8 @@ bevy_rerecast = { version = "0.5.0", default-features = false, features = ["bevy
 # The renderer. Named by its upstream url like every other fork here; the
 # `[patch]` section below swaps in the side-by-side checkout at ../../p/aurora.
 bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+# The material as data, no Vulkan: for the crates that only name materials.
+aurora_material = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 ehttp = { version = "0.5", default-features = false, features = [
     "native-async",
     "json",
@@ -518,13 +520,14 @@ bevy_world_serialization = { path = "../bevy/crates/bevy_world_serialization" }
 
 [patch."https://github.com/slyedoc/aurora.git"]
 bevy_aurora = { path = "../../p/aurora" }
+aurora_material = { path = "../../p/aurora/crates/aurora_material" }
 
 [patch."https://github.com/avianphysics/avian"]
-avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
+avian3d = { path = "../avian-multiworld/crates/avian3d" } # branch aurora, local until pushed
 
 # Taken by crates.io version here; the fork branches satisfy those requirements.
 [patch.crates-io]
-avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
+avian3d = { path = "../avian-multiworld/crates/avian3d" } # branch aurora, local until pushed
 bevy_enhanced_input = { git = "https://github.com/slyedoc/bevy_enhanced_input", branch = "bevy-main" }
 # Path, not the branch: the `bevy_mesh` feature's dead `dep:bevy_render` is fixed in the
 # side-by-side checkout and not yet pushed. Point these back at the branch once it is.

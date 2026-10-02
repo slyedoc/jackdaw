@@ -1,52 +1,23 @@
-//! Drawing a terrain's detail layers as one instanced call per layer per tile.
-//! A host writes [`TerrainDetailSource`] and [`DetailDirty`] onto the terrain.
+//! Drawing a terrain's detail layers: each tile's instances baked into one
+//! [`AuroraMesh`]. A host writes [`TerrainDetailSource`] and [`DetailDirty`]
+//! onto the terrain.
+//!
+//! TODO(aurora): the raster pass bent blades in the vertex stage (wind,
+//! pressers, distance fade). A baked tile stands still until a tracer-side
+//! deformer exists; `shaders/detail.wgsl` is the reference for it.
 
 use std::sync::Arc;
 
-use bevy::asset::{RenderAssetUsages, embedded_asset};
+use bevy::asset::RenderAssetUsages;
 use bevy::camera::RenderTarget;
 use bevy::camera::primitives::Aabb;
 use bevy::camera::visibility::NoAutoAabb;
-use bevy::core_pipeline::core_3d::{Opaque3d, Opaque3dBatchSetKey, Opaque3dBinKey};
-use bevy::ecs::query::QueryItem;
-use bevy::ecs::system::SystemParamItem;
-use bevy::ecs::system::lifetimeless::{Read, SRes};
-use bevy::image::{ImageAddressMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::math::{Affine3A, Mat3A};
-use bevy::mesh::{
-    Indices, MeshVertexAttribute, MeshVertexBufferLayoutRef, PrimitiveTopology, VertexBufferLayout,
-};
-use bevy::pbr::{
-    MeshPipeline, MeshPipelineKey, MeshPipelineSystems, RenderMeshInstances, SetMeshBindGroup,
-    SetMeshViewBindGroup, SetMeshViewBindingArrayBindGroup,
-};
+use bevy::mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexFormat};
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
-use bevy::render::extract_component::{ExtractComponent, ExtractComponentPlugin};
-use bevy::render::extract_resource::{ExtractResource, ExtractResourcePlugin};
-use bevy::render::material_bind_groups::FallbackBuffer;
-use bevy::render::mesh::allocator::MeshAllocator;
-use bevy::render::mesh::{RenderMesh, RenderMeshBufferInfo};
-use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_phase::{
-    AddRenderCommand, BinnedRenderPhase, BinnedRenderPhaseType, DrawFunctions, InputUniformIndex,
-    PhaseItem, RenderCommand, RenderCommandResult, SetItemPipeline, TrackedRenderPass,
-    ViewBinnedRenderPhases,
-};
-use bevy::render::render_resource::{
-    AsBindGroup, BindGroup, BindGroupLayoutDescriptor, BufferUsages, Extent3d, PipelineCache,
-    RawBufferVec, RenderPipelineDescriptor, SpecializedMeshPipeline, SpecializedMeshPipelineError,
-    SpecializedMeshPipelines, TextureDimension, TextureFormat, VertexAttribute, VertexFormat,
-    VertexStepMode,
-};
-use bevy::render::renderer::{RenderDevice, RenderQueue};
-use bevy::render::storage::GpuShaderBuffer;
-use bevy::render::sync_component::SyncComponent;
-use bevy::render::sync_world::MainEntity;
-use bevy::render::texture::{FallbackImage, GpuImage};
-use bevy::render::view::ExtractedView;
-use bevy::render::{Render, RenderApp, RenderStartup, RenderSystems};
-use bevy::shader::Shader;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_scene_types::{
     DetailLayer, DetailMesh, DetailPresser, NavmeshExclude, SceneWind, Terrain, Wind,
 };
@@ -54,7 +25,7 @@ use jackdaw_scene_types::{
 use crate::channel::ChannelElement;
 use crate::detail::{
     DetailInstance, DetailLod, detail_lod_at, detail_tiles_around, place_detail,
-    tile_centre_distance, tileable_value_noise,
+    tile_centre_distance,
 };
 use crate::heightmap::Heightmap;
 use crate::rect::GridRect;
@@ -62,21 +33,7 @@ use crate::sidecar::{GridShape, RegionTerrainData};
 
 use super::scatter::{ScatterAssets, ScatterPrimitive, ScatterSystems};
 
-const SHADER_PATH: &str = "embedded://jackdaw_terrain/render/shaders/detail.wgsl";
-
-/// How far a blade's shading normal is bent onto the ground's normal; the shader's `NORMAL_BEND`.
-pub const DETAIL_NORMAL_BEND: f32 = 0.8;
-
-/// The normal a blade is lit by: its own, turned to face the viewer, bent onto the ground's.
-pub fn blade_shading_normal(blade: Vec3, ground: Vec3, front_facing: bool) -> Vec3 {
-    let facing = if front_facing { blade } else { -blade };
-    facing
-        .normalize()
-        .lerp(ground.normalize(), DETAIL_NORMAL_BEND)
-        .normalize()
-}
-
-/// Pressers the shader reads. Past this the nearest to the viewer win.
+/// Pressers gathered around the viewer. Past this the nearest win.
 pub const MAX_DETAIL_PRESSERS: usize = 16;
 
 /// Grid cells along one edge of a detail tile.
@@ -85,7 +42,7 @@ pub const DETAIL_TILE_CELLS: u32 = 16;
 /// Tiles seeded per frame.
 pub const DETAIL_TILE_BUDGET: usize = 2;
 
-/// How far up its own mesh a vertex stands, in `0..1`. The shader bends and
+/// How far up its own mesh a vertex stands, in `0..1`. The bake bends and
 /// shades by it.
 pub const ATTRIBUTE_HEIGHT_FRACTION: MeshVertexAttribute =
     MeshVertexAttribute::new("HeightFraction", 1_903_552_411, VertexFormat::Float32);
@@ -93,11 +50,6 @@ pub const ATTRIBUTE_HEIGHT_FRACTION: MeshVertexAttribute =
 /// Card segments at each detail level.
 const NEAR_SEGMENTS: u32 = 3;
 const FAR_SEGMENTS: u32 = 1;
-
-/// Edge of the generated wind texture, in texels.
-const WIND_TEXTURE_SIZE: u32 = 32;
-/// Lattice cells across that texture, which wraps on the lattice.
-const WIND_LATTICE: f32 = 4.0;
 
 /// What a terrain's detail is grown from: its ground, and one entry per layer.
 /// A projection of the terrain's document and component, shared in one `Arc`.
@@ -255,20 +207,6 @@ pub struct DetailTile {
     pub bounds: Aabb,
 }
 
-impl SyncComponent<RenderApp> for DetailTile {
-    type Target = Self;
-}
-
-impl ExtractComponent<RenderApp> for DetailTile {
-    type QueryData = &'static DetailTile;
-    type QueryFilter = ();
-    type Out = Self;
-
-    fn extract_component(item: QueryItem<'_, '_, Self::QueryData>) -> Option<Self> {
-        (!item.instances.is_empty()).then(|| item.clone())
-    }
-}
-
 /// How far and how thickly detail draws, over what every layer declares.
 /// Not persisted.
 #[derive(Resource, Clone, Copy, Debug)]
@@ -296,14 +234,11 @@ pub struct DetailPressers {
     pub pressers: Vec<(Vec3, f32)>,
 }
 
-/// The card meshes and the two shared textures, used by every terrain.
+/// The card meshes every terrain's card layers instance.
 #[derive(Resource, Clone, Debug)]
 pub struct DetailAssets {
     pub near_card: Handle<Mesh>,
     pub far_card: Handle<Mesh>,
-    pub wind_noise: Handle<Image>,
-    /// The one-texel white a layer with no texture of its own multiplies by.
-    pub white: Handle<Image>,
 }
 
 impl DetailAssets {
@@ -319,11 +254,11 @@ impl DetailAssets {
 #[derive(Resource, Default, Debug)]
 pub struct DetailMeshes(HashMap<String, BuiltDetailMesh>);
 
-/// One glTF, merged into the single mesh a layer instances.
+/// One scene, merged into the single mesh a layer instances.
 #[derive(Clone, Debug)]
 pub struct BuiltDetailMesh {
     pub mesh: Handle<Mesh>,
-    /// The base colour texture the file's first textured primitive carries.
+    /// The base colour texture the scene's first textured part carries.
     pub color: Option<Handle<Image>>,
 }
 
@@ -334,106 +269,8 @@ impl DetailMeshes {
     }
 }
 
-/// The bind group one layer of one terrain draws with. A plain
-/// [`AsBindGroup`] rather than a `Material`, with a pipeline of its own.
-#[derive(AsBindGroup, Clone, Debug)]
-pub struct DetailBindings {
-    /// Linear colour at the foot of an instance. `w` is unused.
-    #[uniform(0)]
-    pub color_base: Vec4,
-    /// Linear colour at the top of an instance. `w` is unused.
-    #[uniform(0)]
-    pub color_tip: Vec4,
-    /// Which way the scene's wind blows, on the XZ plane.
-    #[uniform(0)]
-    pub wind_direction: Vec2,
-    #[uniform(0)]
-    pub wind_strength: f32,
-    #[uniform(0)]
-    pub wind_gust: f32,
-    #[uniform(0)]
-    pub wind_gust_speed: f32,
-    #[uniform(0)]
-    pub wind_turbulence_scale: f32,
-    /// How far this layer goes with that wind, over a blade of grass.
-    #[uniform(0)]
-    pub wind_response: f32,
-    #[uniform(0)]
-    pub bend: f32,
-    /// Shortest and tallest an instance stands, in world units.
-    #[uniform(0)]
-    pub height_range: Vec2,
-    /// Narrowest and widest an instance is drawn, over the mesh's own width.
-    #[uniform(0)]
-    pub width_range: Vec2,
-    #[uniform(0)]
-    pub push_strength: f32,
-    #[uniform(0)]
-    pub cull_distance: f32,
-    #[uniform(0)]
-    pub presser_count: u32,
-    /// Whether the layer draws the built-in card, whose taper the fragment
-    /// stage carves.
-    #[uniform(0)]
-    pub is_card: u32,
-    /// `xyz` is a presser's world position, `w` how far it flattens detail.
-    #[uniform(0)]
-    pub pressers: [Vec4; MAX_DETAIL_PRESSERS],
-    #[texture(1)]
-    #[sampler(2)]
-    pub wind_noise: Handle<Image>,
-    #[texture(3)]
-    #[sampler(4)]
-    pub color_texture: Handle<Image>,
-}
-
-impl DetailBindings {
-    /// The bindings one layer's look and the pressers around it come to.
-    pub fn new(
-        layer: &DetailLayer,
-        wind: &Wind,
-        settings: &DetailSettings,
-        pressers: &DetailPressers,
-        wind_noise: Handle<Image>,
-        color_texture: Handle<Image>,
-    ) -> Self {
-        let mut packed = [Vec4::ZERO; MAX_DETAIL_PRESSERS];
-        for (slot, (position, radius)) in packed.iter_mut().zip(&pressers.pressers) {
-            *slot = position.extend(radius * layer.push_radius);
-        }
-        Self {
-            color_base: linear_of(layer.color_base),
-            color_tip: linear_of(layer.color_tip),
-            wind_direction: wind.heading(),
-            wind_strength: wind.strength,
-            wind_gust: wind.gust,
-            wind_gust_speed: wind.gust_speed,
-            wind_turbulence_scale: wind.turbulence_scale,
-            wind_response: layer.wind_response,
-            bend: layer.bend,
-            push_strength: layer.push_strength,
-            height_range: Vec2::new(layer.height[0], layer.height[1]),
-            width_range: Vec2::new(layer.width[0], layer.width[1]),
-            cull_distance: layer.cull_distance * settings.cull_scale,
-            presser_count: pressers.pressers.len().min(MAX_DETAIL_PRESSERS) as u32,
-            is_card: u32::from(layer.mesh == DetailMesh::Card),
-            pressers: packed,
-            wind_noise,
-            color_texture,
-        }
-    }
-}
-
-/// Which terrain's layer a bind group belongs to.
-pub type DetailKey = (Entity, usize);
-
-/// The bindings every layer currently drawing is asking for.
-#[derive(Resource, Clone, Debug, Default, ExtractResource)]
-#[extract_app(RenderApp)]
-pub struct DetailLooks(pub Vec<(DetailKey, DetailBindings)>);
-
 /// A card of `segments` stacked quads, one unit tall and wide, its foot at the
-/// origin and its face on +Z. Straight-sided; the fragment stage carves it.
+/// origin and its face on +Z. Straight-sided; the bake tapers it.
 pub fn card_mesh(segments: u32) -> Mesh {
     let segments = segments.max(1);
     let mut positions = Vec::new();
@@ -472,53 +309,6 @@ pub fn card_mesh(segments: u32) -> Mesh {
         .with_inserted_indices(Indices::U32(indices))
 }
 
-/// A tileable value-noise texture for the shader to read the wind from.
-/// Sampled at world coordinates over a tile size, so the sampler repeats.
-pub fn wind_noise_image() -> Image {
-    let side = WIND_TEXTURE_SIZE;
-    let scale = WIND_LATTICE / side as f32;
-    let mut data = Vec::with_capacity((side * side) as usize);
-    for z in 0..side {
-        for x in 0..side {
-            let at = Vec2::new(x as f32, z as f32) * scale;
-            let value = tileable_value_noise(at, WIND_LATTICE);
-            data.push((value.clamp(0.0, 1.0) * 255.0).round() as u8);
-        }
-    }
-    let mut image = Image::new(
-        Extent3d {
-            width: side,
-            height: side,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        data,
-        TextureFormat::R8Unorm,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::Repeat,
-        address_mode_v: ImageAddressMode::Repeat,
-        ..ImageSamplerDescriptor::linear()
-    });
-    image
-}
-
-/// One opaque white texel, which a layer with no texture multiplies by.
-pub fn white_image() -> Image {
-    Image::new(
-        Extent3d {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        vec![255, 255, 255, 255],
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-}
-
 /// Seeds and retires the tiles around the viewer, and draws them. Independent
 /// of [`super::TerrainRenderPlugin`]; either can be added alone.
 pub struct DetailRenderPlugin;
@@ -533,7 +323,6 @@ pub enum DetailSystems {
 
 impl Plugin for DetailRenderPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/detail.wgsl");
         super::scatter::add_asset_plugin(app);
         if !app.world().contains_resource::<Assets<Mesh>>() {
             app.init_asset::<Mesh>();
@@ -541,12 +330,7 @@ impl Plugin for DetailRenderPlugin {
         app.init_resource::<DetailSettings>()
             .init_resource::<SceneWind>()
             .init_resource::<DetailPressers>()
-            .init_resource::<DetailLooks>()
             .init_resource::<DetailMeshes>()
-            .add_plugins((
-                ExtractComponentPlugin::<DetailTile>::extract_visible(),
-                ExtractResourcePlugin::<DetailLooks>::default(),
-            ))
             .add_systems(Startup, init_detail_assets)
             .add_systems(
                 Update,
@@ -556,53 +340,27 @@ impl Plugin for DetailRenderPlugin {
                         build_detail_meshes,
                         collect_detail_pressers,
                         rebuild_detail_tiles,
-                        build_detail_looks,
                     )
                         .chain()
                         .after(ScatterSystems::Resolve),
                 )
                     .in_set(DetailSystems::Rebuild)
-                    .run_if(resource_exists::<DetailAssets>),
-            );
-
-        let Some(render_app) = app.get_sub_app_mut(RenderApp) else {
-            return;
-        };
-        render_app
-            .init_resource::<SpecializedMeshPipelines<DetailPipeline>>()
-            .init_resource::<DetailBindGroups>()
-            .init_resource::<QueuedDetailTiles>()
-            .add_render_command::<Opaque3d, DrawDetail>()
-            .add_systems(
-                RenderStartup,
-                init_detail_pipeline.after(MeshPipelineSystems),
-            )
-            .add_systems(
-                Render,
-                (
-                    prepare_detail_buffers.in_set(RenderSystems::PrepareResources),
-                    prepare_detail_bind_groups.in_set(RenderSystems::PrepareBindGroups),
-                    queue_detail_tiles.in_set(RenderSystems::QueueMeshes),
-                ),
+                    .run_if(resource_exists::<DetailAssets>)
+                    .run_if(resource_exists::<Assets<AuroraMesh>>)
+                    .run_if(resource_exists::<Assets<AuroraMaterial>>),
             );
     }
 }
 
-/// Build the card meshes and the shared textures once, for every layer to use.
-fn init_detail_assets(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut images: ResMut<Assets<Image>>,
-) {
+/// Build the card meshes once, for every layer to use.
+fn init_detail_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.insert_resource(DetailAssets {
         near_card: meshes.add(card_mesh(NEAR_SEGMENTS)),
         far_card: meshes.add(card_mesh(FAR_SEGMENTS)),
-        wind_noise: images.add(wind_noise_image()),
-        white: images.add(white_image()),
     });
 }
 
-/// Start loading the glTF every asset-backed layer names.
+/// Start loading the scene every asset-backed layer names.
 fn request_detail_assets(
     mut assets: ResMut<ScatterAssets>,
     server: Res<AssetServer>,
@@ -617,12 +375,13 @@ fn request_detail_assets(
     }
 }
 
-/// Merge the primitives of every asset-backed layer whose glTF has resolved.
+/// Merge the primitives of every asset-backed layer whose scene has resolved.
 fn build_detail_meshes(
     mut built: ResMut<DetailMeshes>,
     scatter: Res<ScatterAssets>,
     mut meshes: ResMut<Assets<Mesh>>,
-    materials: Res<Assets<StandardMaterial>>,
+    parts: Res<Assets<AuroraMesh>>,
+    materials: Res<Assets<AuroraMaterial>>,
     terrains: Query<&TerrainDetailSource>,
 ) {
     let mut wanted: Vec<&String> = Vec::new();
@@ -640,7 +399,7 @@ fn build_detail_meshes(
         let Some(primitives) = scatter.primitives(path) else {
             continue;
         };
-        let Some((merged, color)) = merge_primitives(path, primitives, &meshes, &materials) else {
+        let Some((merged, color)) = merge_primitives(path, primitives, &parts, &materials) else {
             continue;
         };
         let mesh = meshes.add(merged);
@@ -656,13 +415,13 @@ fn normal_matrix_of(affine: Affine3A) -> Mat3A {
     affine.matrix3.inverse().transpose()
 }
 
-/// Every primitive of a flattened glTF as one mesh, with the base colour
+/// Every primitive of a flattened scene as one mesh, with the base colour
 /// texture the first textured primitive carries. `None` while any is loading.
 fn merge_primitives(
     asset: &str,
     primitives: &[ScatterPrimitive],
-    meshes: &Assets<Mesh>,
-    materials: &Assets<StandardMaterial>,
+    meshes: &Assets<AuroraMesh>,
+    materials: &Assets<AuroraMaterial>,
 ) -> Option<(Mesh, Option<Handle<Image>>)> {
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
@@ -672,51 +431,28 @@ fn merge_primitives(
     let mut textures: Vec<Option<Handle<Image>>> = Vec::new();
 
     for primitive in primitives {
-        if primitive.material.path().is_some() {
-            let material = materials.get(&primitive.material)?;
+        if let Some(material) = materials.get(&primitive.material) {
             let texture = material.base_color_texture.clone();
             color = color.or_else(|| texture.clone());
             if !textures.contains(&texture) {
                 textures.push(texture);
             }
         }
-        let mesh = meshes.get(&primitive.mesh)?;
-        let Some(source) = mesh
-            .attribute(Mesh::ATTRIBUTE_POSITION)
-            .and_then(|values| values.as_float3())
-        else {
-            continue;
-        };
+        let mesh = meshes.get(&primitive.mesh)?.flatten();
         let affine = primitive.local.compute_affine();
         let normal_matrix = normal_matrix_of(affine);
         let base = positions.len() as u32;
-
-        let source_normals = mesh
-            .attribute(Mesh::ATTRIBUTE_NORMAL)
-            .and_then(|values| values.as_float3());
-        let source_uvs = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
-            Some(bevy::mesh::VertexAttributeValues::Float32x2(values)) => Some(values.as_slice()),
-            _ => None,
-        };
-        for (vertex, point) in source.iter().enumerate() {
-            positions.push(affine.transform_point3(Vec3::from(*point)).to_array());
-            let normal = source_normals
-                .and_then(|values| values.get(vertex))
-                .map(|normal| normal_matrix.mul_vec3(Vec3::from(*normal)))
+        for (vertex, point) in mesh.positions.iter().enumerate() {
+            positions.push(affine.transform_point3(*point).to_array());
+            let normal = mesh
+                .normals
+                .get(vertex)
+                .map(|normal| normal_matrix.mul_vec3(*normal))
                 .unwrap_or(Vec3::Y);
             normals.push(normal.normalize_or(Vec3::Y).to_array());
-            uvs.push(
-                source_uvs
-                    .and_then(|values| values.get(vertex))
-                    .copied()
-                    .unwrap_or([0.0, 0.0]),
-            );
+            uvs.push(mesh.uvs.get(vertex).copied().unwrap_or(Vec2::ZERO).to_array());
         }
-
-        match mesh.indices() {
-            Some(read) => indices.extend(read.iter().map(|index| base + index as u32)),
-            None => indices.extend(base..base + source.len() as u32),
-        }
+        indices.extend(mesh.indices.iter().map(|index| base + index));
     }
 
     if positions.is_empty() {
@@ -827,6 +563,9 @@ fn rebuild_detail_tiles(
     mut commands: Commands,
     assets: Res<DetailAssets>,
     built: Res<DetailMeshes>,
+    meshes: Res<Assets<Mesh>>,
+    mut baked: ResMut<Assets<AuroraMesh>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
     settings: Res<DetailSettings>,
     wind: Res<SceneWind>,
     viewers: DetailViewers,
@@ -906,7 +645,23 @@ fn rebuild_detail_tiles(
                     true => footprint(source, coord, world_from_local),
                     false => tile_bounds(&instances, &entry.layer, &wind.0),
                 };
-                commands.spawn((
+                let drawn = meshes
+                    .get(&mesh)
+                    .and_then(|mesh| bake_tile(mesh, &instances, &entry.layer))
+                    .and_then(|mesh| AuroraMesh::clustered(&mesh).ok())
+                    .map(|mesh| {
+                        let color = match &entry.layer.mesh {
+                            DetailMesh::Card => None,
+                            DetailMesh::Asset(path) => {
+                                built.get(path).and_then(|built| built.color.clone())
+                            }
+                        };
+                        (
+                            AuroraMesh3d(baked.add(mesh)),
+                            AuroraMaterial3d(materials.add(tile_material(&entry.layer, color))),
+                        )
+                    });
+                let mut tile = commands.spawn((
                     DetailTile {
                         terrain: entity,
                         layer: index,
@@ -915,13 +670,15 @@ fn rebuild_detail_tiles(
                         instances: Arc::new(instances),
                         bounds,
                     },
-                    Mesh3d(mesh),
                     Transform::IDENTITY,
                     Visibility::default(),
                     bounds,
                     NoAutoAabb,
                     NavmeshExclude,
                 ));
+                if let Some(drawn) = drawn {
+                    tile.insert(drawn);
+                }
             }
         }
     }
@@ -997,398 +754,101 @@ fn tile_bounds(instances: &[DetailInstance], layer: &DetailLayer, wind: &Wind) -
     )
 }
 
-/// Collect the bindings every layer currently drawing is asking for.
-fn build_detail_looks(
-    mut looks: ResMut<DetailLooks>,
-    assets: Res<DetailAssets>,
-    built: Res<DetailMeshes>,
-    settings: Res<DetailSettings>,
-    pressers: Res<DetailPressers>,
-    wind: Res<SceneWind>,
-    terrains: Query<(Entity, &TerrainDetailSource)>,
-) {
-    looks.0.clear();
-    for (entity, source) in &terrains {
-        for (index, entry) in source.source().layers.iter().enumerate() {
-            let color = match &entry.layer.mesh {
-                DetailMesh::Card => None,
-                DetailMesh::Asset(path) => built.get(path).and_then(|built| built.color.clone()),
+/// One tile's instances stood up around the layer mesh, as one world-space
+/// mesh: the raster vertex stage's pose with the wind, pressers and fade left
+/// out. A card is tapered to the blade the fragment stage used to carve.
+fn bake_tile(mesh: &Mesh, instances: &[DetailInstance], layer: &DetailLayer) -> Option<Mesh> {
+    if instances.is_empty() {
+        return None;
+    }
+    let source = mesh
+        .attribute(Mesh::ATTRIBUTE_POSITION)
+        .and_then(|values| values.as_float3())?;
+    let normals = mesh
+        .attribute(Mesh::ATTRIBUTE_NORMAL)
+        .and_then(|values| values.as_float3());
+    let uvs = match mesh.attribute(Mesh::ATTRIBUTE_UV_0) {
+        Some(bevy::mesh::VertexAttributeValues::Float32x2(values)) => Some(values.as_slice()),
+        _ => None,
+    };
+    let fractions = match mesh.attribute(ATTRIBUTE_HEIGHT_FRACTION) {
+        Some(bevy::mesh::VertexAttributeValues::Float32(values)) => Some(values.as_slice()),
+        _ => None,
+    };
+    let local_indices: Vec<u32> = match mesh.indices() {
+        Some(read) => read.iter().map(|index| index as u32).collect(),
+        None => (0..source.len() as u32).collect(),
+    };
+    let is_card = layer.mesh == DetailMesh::Card;
+
+    let count = instances.len() * source.len();
+    let mut positions = Vec::with_capacity(count);
+    let mut out_normals = Vec::with_capacity(count);
+    let mut out_uvs = Vec::with_capacity(count);
+    let mut indices = Vec::with_capacity(instances.len() * local_indices.len());
+    for instance in instances {
+        let [height, width, yaw, _tint] = instance.unpack().map(|byte| f32::from(byte) / 255.0);
+        let height = layer.height[0] + (layer.height[1] - layer.height[0]) * height;
+        let width = layer.width[0] + (layer.width[1] - layer.width[0]) * width;
+        let spin = Quat::from_rotation_y(yaw * core::f32::consts::TAU);
+        let tilt = instance.tilt;
+        let ground = Vec3::new(tilt.x, (1.0 - tilt.length_squared()).max(0.0).sqrt(), tilt.y);
+        let lean = Quat::from_rotation_arc(Vec3::Y, ground);
+        let base = positions.len() as u32;
+        for (vertex, point) in source.iter().enumerate() {
+            let uv = uvs.and_then(|values| values.get(vertex)).copied().unwrap_or([0.0, 0.0]);
+            let up = fractions
+                .and_then(|values| values.get(vertex))
+                .copied()
+                .unwrap_or(uv[1]);
+            let taper = match is_card {
+                true => 1.0 - uv[1] * uv[1],
+                false => 1.0,
             };
-            looks.0.push((
-                (entity, index),
-                DetailBindings::new(
-                    &entry.layer,
-                    &wind.0,
-                    &settings,
-                    &pressers,
-                    assets.wind_noise.clone(),
-                    color.unwrap_or_else(|| assets.white.clone()),
-                ),
-            ));
-        }
-    }
-}
-
-/// One tile's instances, on the GPU.
-#[derive(Component)]
-pub struct DetailInstanceBuffer {
-    buffer: RawBufferVec<DetailInstance>,
-    length: usize,
-    /// Which `Arc` this was filled from; an unchanged tile is not re-uploaded.
-    source: usize,
-}
-
-/// The bind group each layer of each terrain draws with.
-#[derive(Resource, Default)]
-pub struct DetailBindGroups(HashMap<DetailKey, BindGroup>);
-
-/// The bin a tile was last placed in: its batch set key and its bin key.
-type DetailBin = (Opaque3dBatchSetKey, Opaque3dBinKey);
-
-/// The bin each view holds each tile in, a binned phase retaining what it is
-/// given across frames.
-#[derive(Resource, Default)]
-struct QueuedDetailTiles(
-    HashMap<bevy::render::view::RetainedViewEntity, HashMap<MainEntity, DetailBin>>,
-);
-
-/// Place a tile in `bin`, taking it out of the bin it was last placed in when
-/// that differs.
-fn rebin_tile(
-    phase: &mut BinnedRenderPhase<Opaque3d>,
-    last: Option<&DetailBin>,
-    ids: (Entity, MainEntity),
-    bin: DetailBin,
-    uniform_index: InputUniformIndex,
-) {
-    if last.is_some_and(|last| *last != bin) {
-        phase.remove(ids.1);
-    }
-    let draws_its_own_instances = BinnedRenderPhaseType::NonMesh;
-    phase.add(bin.0, bin.1, ids, uniform_index, draws_its_own_instances);
-}
-
-/// The detail pipeline: the mesh pipeline with a per-instance vertex buffer, a
-/// bind group of its own, and both stages replaced.
-#[derive(Resource)]
-pub struct DetailPipeline {
-    shader: Handle<Shader>,
-    mesh_pipeline: MeshPipeline,
-    layout: BindGroupLayoutDescriptor,
-}
-
-fn init_detail_pipeline(
-    mut commands: Commands,
-    assets: Res<AssetServer>,
-    mesh_pipeline: Res<MeshPipeline>,
-    render_device: Res<RenderDevice>,
-) {
-    commands.insert_resource(DetailPipeline {
-        shader: assets.load(SHADER_PATH),
-        mesh_pipeline: mesh_pipeline.clone(),
-        layout: DetailBindings::bind_group_layout_descriptor(&render_device),
-    });
-}
-
-/// The per-instance vertex buffer one [`DetailInstance`] is read through.
-/// Locations start past the four the mesh carries.
-pub fn detail_instance_layout() -> VertexBufferLayout {
-    VertexBufferLayout {
-        array_stride: size_of::<DetailInstance>() as u64,
-        step_mode: VertexStepMode::Instance,
-        attributes: vec![
-            VertexAttribute {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 4,
-            },
-            VertexAttribute {
-                format: VertexFormat::Uint32,
-                offset: VertexFormat::Float32x3.size(),
-                shader_location: 5,
-            },
-            VertexAttribute {
-                format: VertexFormat::Float32x2,
-                offset: VertexFormat::Float32x3.size() + VertexFormat::Uint32.size(),
-                shader_location: 6,
-            },
-        ],
-    }
-}
-
-/// The four attributes every detail mesh carries, at the locations the shader
-/// declares them.
-fn detail_mesh_layout(
-    layout: &MeshVertexBufferLayoutRef,
-) -> Result<VertexBufferLayout, SpecializedMeshPipelineError> {
-    Ok(layout.0.get_layout(&[
-        Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
-        Mesh::ATTRIBUTE_NORMAL.at_shader_location(1),
-        Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
-        ATTRIBUTE_HEIGHT_FRACTION.at_shader_location(3),
-    ])?)
-}
-
-impl SpecializedMeshPipeline for DetailPipeline {
-    type Key = MeshPipelineKey;
-
-    fn specialize(
-        &self,
-        key: Self::Key,
-        layout: &MeshVertexBufferLayoutRef,
-    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        let mut descriptor = self.mesh_pipeline.specialize(key, layout)?;
-        descriptor.vertex.shader = self.shader.clone();
-        descriptor.vertex.buffers = vec![detail_mesh_layout(layout)?, detail_instance_layout()];
-        if let Some(fragment) = descriptor.fragment.as_mut() {
-            fragment.shader = self.shader.clone();
-        }
-        descriptor.layout.push(self.layout.clone());
-        let draw_both_faces_of_a_sheet = None;
-        descriptor.primitive.cull_mode = draw_both_faces_of_a_sheet;
-        Ok(descriptor)
-    }
-}
-
-/// Upload the instances of every tile that has been reseeded since its last
-/// upload.
-fn prepare_detail_buffers(
-    mut commands: Commands,
-    render_device: Res<RenderDevice>,
-    render_queue: Res<RenderQueue>,
-    tiles: Query<(Entity, &DetailTile, Option<&DetailInstanceBuffer>)>,
-) {
-    for (entity, tile, held) in &tiles {
-        let source = Arc::as_ptr(&tile.instances) as usize;
-        if held.is_some_and(|held| held.source == source) {
-            continue;
-        }
-        let mut buffer = RawBufferVec::new(BufferUsages::VERTEX);
-        for instance in tile.instances.iter() {
-            buffer.push(*instance);
-        }
-        buffer.write_buffer(&render_device, &render_queue);
-        commands.entity(entity).insert(DetailInstanceBuffer {
-            buffer,
-            length: tile.instances.len(),
-            source,
-        });
-    }
-}
-
-/// Build one bind group per layer of every terrain drawing detail. A look
-/// whose textures have not reached the GPU is left out.
-fn prepare_detail_bind_groups(
-    mut groups: ResMut<DetailBindGroups>,
-    pipeline: Res<DetailPipeline>,
-    render_device: Res<RenderDevice>,
-    pipeline_cache: Res<PipelineCache>,
-    looks: Res<DetailLooks>,
-    images: Res<RenderAssets<GpuImage>>,
-    fallback: Res<FallbackImage>,
-    fallback_buffer: Res<FallbackBuffer>,
-    shader_buffers: Res<RenderAssets<GpuShaderBuffer>>,
-    buffers: Res<RenderAssets<GpuShaderBuffer>>,
-) {
-    groups.0.clear();
-    let mut param = (images, fallback, buffers);
-    for (key, bindings) in &looks.0 {
-        if let Ok(prepared) = bindings.as_bind_group(
-            &pipeline.layout,
-            &render_device,
-            &pipeline_cache,
-            &fallback_buffer,
-            &shader_buffers,
-            &mut param,
-        ) {
-            groups.0.insert(*key, prepared.bind_group);
-        }
-    }
-}
-
-/// Put every tile in view into the opaque phase. An instance writes depth and
-/// discards the pixels outside its own silhouette.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the queue reads the whole render world's mesh bookkeeping"
-)]
-fn queue_detail_tiles(
-    pipeline: Res<DetailPipeline>,
-    mut pipelines: ResMut<SpecializedMeshPipelines<DetailPipeline>>,
-    pipeline_cache: Res<PipelineCache>,
-    draw_functions: Res<DrawFunctions<Opaque3d>>,
-    mut phases: ResMut<ViewBinnedRenderPhases<Opaque3d>>,
-    mut queued: ResMut<QueuedDetailTiles>,
-    view_keys: Res<bevy::pbr::ViewKeyCache>,
-    meshes: Res<RenderAssets<RenderMesh>>,
-    mesh_instances: Res<RenderMeshInstances>,
-    mesh_allocator: Res<MeshAllocator>,
-    views: Query<&ExtractedView>,
-    tiles: Query<(Entity, &MainEntity), With<DetailTile>>,
-) {
-    let draw_function = draw_functions.read().id::<DrawDetail>();
-    let live: HashSet<_> = views.iter().map(|view| view.retained_view_entity).collect();
-    queued.0.retain(|view, _| live.contains(view));
-
-    for view in &views {
-        let Some(phase) = phases.get_mut(&view.retained_view_entity) else {
-            continue;
-        };
-        let Some(&view_key) = view_keys.get(&view.retained_view_entity) else {
-            continue;
-        };
-
-        let held = queued.0.entry(view.retained_view_entity).or_default();
-        let mut present = HashMap::new();
-
-        for (entity, main_entity) in &tiles {
-            let Some(instance) = mesh_instances.render_mesh_queue_data(*main_entity) else {
-                continue;
-            };
-            let Some(mesh) = meshes.get(instance.mesh_asset_id()) else {
-                continue;
-            };
-            let Some(slabs) = mesh_allocator.mesh_slabs(&instance.mesh_asset_id()) else {
-                continue;
-            };
-            let key = view_key
-                | MeshPipelineKey::from_primitive_topology_and_strip_index(
-                    mesh.primitive_topology(),
-                    mesh.index_format(),
-                );
-            let Ok(pipeline_id) =
-                pipelines.specialize(&pipeline_cache, &pipeline, key, &mesh.layout)
-            else {
-                continue;
-            };
-            let bin = (
-                Opaque3dBatchSetKey {
-                    draw_function,
-                    pipeline: pipeline_id,
-                    material_bind_group_index: None,
-                    slabs,
-                    lightmap_slab: None,
-                },
-                Opaque3dBinKey {
-                    asset_id: instance.mesh_asset_id().into(),
-                },
+            let local = Vec3::new(
+                point[0] * width * taper,
+                up * height,
+                point[2] * width + up * up * layer.bend,
             );
-            rebin_tile(
-                phase,
-                held.get(main_entity),
-                (entity, *main_entity),
-                bin.clone(),
-                instance.current_uniform_index,
-            );
-            present.insert(*main_entity, bin);
+            let normal = normals
+                .and_then(|values| values.get(vertex))
+                .map_or(Vec3::Y, |normal| Vec3::from(*normal))
+                .lerp(Vec3::Y, up)
+                .normalize_or(Vec3::Y);
+            positions.push((instance.position + lean * (spin * local)).to_array());
+            out_normals.push((lean * (spin * normal)).to_array());
+            out_uvs.push(uv);
         }
+        indices.extend(local_indices.iter().map(|index| base + index));
+    }
+    Some(
+        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out_normals)
+            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, out_uvs)
+            .with_inserted_indices(Indices::U32(indices)),
+    )
+}
 
-        for gone in held.keys().filter(|tile| !present.contains_key(*tile)) {
-            phase.remove(*gone);
-        }
-        *held = present;
+/// What a layer's tiles wear: the midpoint of its foot and tip colours over
+/// its texture, both faces lit.
+fn tile_material(layer: &DetailLayer, texture: Option<Handle<Image>>) -> AuroraMaterial {
+    let mid = (linear_of(layer.color_base) + linear_of(layer.color_tip)) * 0.5;
+    AuroraMaterial {
+        base_color: Color::linear_rgb(mid.x, mid.y, mid.z),
+        alpha_mode: match texture.is_some() {
+            true => AlphaMode::Mask(0.5),
+            false => AlphaMode::Opaque,
+        },
+        base_color_texture: texture,
+        perceptual_roughness: 0.8,
+        double_sided: true,
+        cull_mode: None,
+        ..default()
     }
 }
 
-/// Everything one tile of detail takes to draw.
-type DrawDetail = (
-    SetItemPipeline,
-    SetMeshViewBindGroup<0>,
-    SetMeshViewBindingArrayBindGroup<1>,
-    SetMeshBindGroup<2>,
-    SetDetailBindGroup<3>,
-    DrawDetailInstanced,
-);
-
-/// Binds the look the tile's layer declared.
-pub struct SetDetailBindGroup<const I: usize>;
-
-impl<P: PhaseItem, const I: usize> RenderCommand<P> for SetDetailBindGroup<I> {
-    type Param = SRes<DetailBindGroups>;
-    type ViewQuery = ();
-    type ItemQuery = Read<DetailTile>;
-
-    fn render<'w>(
-        _item: &P,
-        _view: (),
-        tile: Option<&'w DetailTile>,
-        groups: SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        let Some(tile) = tile else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(group) = groups.into_inner().0.get(&(tile.terrain, tile.layer)) else {
-            return RenderCommandResult::Skip;
-        };
-        pass.set_bind_group(I, group, &[]);
-        RenderCommandResult::Success
-    }
-}
-
-/// Draws the layer's mesh once per instance.
-pub struct DrawDetailInstanced;
-
-impl<P: PhaseItem> RenderCommand<P> for DrawDetailInstanced {
-    type Param = (
-        SRes<RenderAssets<RenderMesh>>,
-        SRes<RenderMeshInstances>,
-        SRes<MeshAllocator>,
-    );
-    type ViewQuery = ();
-    type ItemQuery = Read<DetailInstanceBuffer>;
-
-    fn render<'w>(
-        item: &P,
-        _view: (),
-        instances: Option<&'w DetailInstanceBuffer>,
-        (meshes, mesh_instances, mesh_allocator): SystemParamItem<'w, '_, Self::Param>,
-        pass: &mut TrackedRenderPass<'w>,
-    ) -> RenderCommandResult {
-        let mesh_allocator = mesh_allocator.into_inner();
-        let Some(instances) = instances else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(buffer) = instances.buffer.buffer() else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(instance) = mesh_instances.render_mesh_queue_data(item.main_entity()) else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(mesh) = meshes.into_inner().get(instance.mesh_asset_id()) else {
-            return RenderCommandResult::Skip;
-        };
-        let Some(vertices) = mesh_allocator.mesh_vertex_slice(&instance.mesh_asset_id()) else {
-            return RenderCommandResult::Skip;
-        };
-
-        pass.set_vertex_buffer(0, vertices.buffer.slice(..));
-        pass.set_vertex_buffer(1, buffer.slice(..));
-
-        match &mesh.buffer_info {
-            RenderMeshBufferInfo::Indexed {
-                index_format,
-                count,
-            } => {
-                let Some(index) = mesh_allocator.mesh_index_slice(&instance.mesh_asset_id()) else {
-                    return RenderCommandResult::Skip;
-                };
-                pass.set_index_buffer(index.buffer.slice(..), *index_format);
-                pass.draw_indexed(
-                    index.range.start..(index.range.start + count),
-                    vertices.range.start as i32,
-                    0..instances.length as u32,
-                );
-            }
-            RenderMeshBufferInfo::NonIndexed => {
-                pass.draw(vertices.range.clone(), 0..instances.length as u32);
-            }
-        }
-        RenderCommandResult::Success
-    }
-}
-
-/// An authored sRGB colour as the linear vector the shader multiplies by.
+/// An authored sRGB colour as a linear vector.
 fn linear_of(rgb: [f32; 3]) -> Vec4 {
     let linear = Color::srgb(rgb[0], rgb[1], rgb[2]).to_linear();
     Vec4::new(linear.red, linear.green, linear.blue, 1.0)
@@ -1447,6 +907,8 @@ mod tests {
         app.add_plugins(bevy::asset::AssetPlugin::default())
             .init_asset::<Mesh>()
             .init_asset::<Image>()
+            .init_asset::<AuroraMesh>()
+            .init_asset::<AuroraMaterial>()
             .init_resource::<DetailSettings>()
             .init_resource::<SceneWind>()
             .init_resource::<DetailPressers>()
@@ -1670,7 +1132,7 @@ mod tests {
     fn an_asset_layer_draws_nothing_until_its_mesh_has_resolved() {
         let mut app = detail_app();
         let mut grown = layer("ferns", "grass");
-        grown.mesh = DetailMesh::Asset("models/fern.gltf".to_string());
+        grown.mesh = DetailMesh::Asset("models/fern.bsn".to_string());
         spawn_terrain(&mut app, &terrain(vec![grown]), &document(64, &["grass"]));
         spawn_viewer(&mut app, Vec3::new(32.0, 5.0, 32.0));
         settle(&mut app);
@@ -1684,7 +1146,7 @@ mod tests {
             .resource_mut::<Assets<Mesh>>()
             .add(card_mesh(1));
         app.world_mut().resource_mut::<DetailMeshes>().0.insert(
-            "models/fern.gltf".to_string(),
+            "models/fern.bsn".to_string(),
             BuiltDetailMesh { mesh, color: None },
         );
         settle(&mut app);
@@ -1696,8 +1158,8 @@ mod tests {
 
     #[test]
     fn an_asset_layer_merges_the_scatter_primitives_into_one_mesh() {
-        let mut meshes = Assets::<Mesh>::default();
-        let materials = Assets::<StandardMaterial>::default();
+        let mut meshes = Assets::<AuroraMesh>::default();
+        let materials = Assets::<AuroraMaterial>::default();
         let mut part = |offset: f32| {
             let mesh = Mesh::new(
                 PrimitiveTopology::TriangleList,
@@ -1710,7 +1172,7 @@ mod tests {
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0, 1.0]; 3])
             .with_inserted_indices(Indices::U32(vec![0, 1, 2]));
             ScatterPrimitive {
-                mesh: meshes.add(mesh),
+                mesh: meshes.add(AuroraMesh::from_mesh(&mesh).unwrap()),
                 material: Handle::default(),
                 material_name: None,
                 local: Transform::from_xyz(0.0, offset, 0.0),
@@ -1719,7 +1181,7 @@ mod tests {
         let primitives = vec![part(0.0), part(1.0)];
 
         let (merged, color) =
-            merge_primitives("models/fern.gltf", &primitives, &meshes, &materials)
+            merge_primitives("models/fern.bsn", &primitives, &meshes, &materials)
                 .expect("both parts are loaded");
         assert!(color.is_none(), "neither part carries a material");
         assert_eq!(merged.count_vertices(), 6);
@@ -1747,68 +1209,9 @@ mod tests {
     }
 
     #[test]
-    fn a_merged_asset_fills_in_the_attributes_a_primitive_left_out() {
-        let mut meshes = Assets::<Mesh>::default();
-        let materials = Assets::<StandardMaterial>::default();
-        let bare = Mesh::new(
-            PrimitiveTopology::TriangleList,
-            RenderAssetUsages::default(),
-        )
-        .with_inserted_attribute(
-            Mesh::ATTRIBUTE_POSITION,
-            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-        )
-        .with_inserted_indices(Indices::U16(vec![0, 1, 2]));
-        let primitives = vec![ScatterPrimitive {
-            mesh: meshes.add(bare),
-            material: Handle::default(),
-            material_name: None,
-            local: Transform::from_scale(Vec3::new(3.0, 1.0, 1.0)),
-        }];
-
-        let (merged, color) =
-            merge_primitives("models/bare.gltf", &primitives, &meshes, &materials)
-                .expect("the one part is loaded");
-        assert!(color.is_none());
-        assert_eq!(merged.attributes().count(), 4);
-        assert_eq!(
-            merged.indices().expect("a u16 source still merges indexed"),
-            &Indices::U32(vec![0, 1, 2])
-        );
-
-        let positions = merged
-            .attribute(Mesh::ATTRIBUTE_POSITION)
-            .expect("the merge carries positions")
-            .as_float3()
-            .expect("positions are three floats");
-        assert_eq!(
-            positions[1],
-            [3.0, 0.0, 0.0],
-            "the placement scale is folded in"
-        );
-
-        let normals = merged
-            .attribute(Mesh::ATTRIBUTE_NORMAL)
-            .expect("the merge carries normals")
-            .as_float3()
-            .expect("normals are three floats");
-        assert!(
-            normals.iter().all(|normal| *normal == [0.0, 1.0, 0.0]),
-            "a part with no normals stands its own up"
-        );
-
-        let Some(bevy::mesh::VertexAttributeValues::Float32x2(uvs)) =
-            merged.attribute(Mesh::ATTRIBUTE_UV_0)
-        else {
-            panic!("the merge carries a uv per vertex");
-        };
-        assert!(uvs.iter().all(|uv| *uv == [0.0, 0.0]));
-    }
-
-    #[test]
     fn a_merged_normal_survives_a_non_uniform_scale() {
-        let mut meshes = Assets::<Mesh>::default();
-        let materials = Assets::<StandardMaterial>::default();
+        let mut meshes = Assets::<AuroraMesh>::default();
+        let materials = Assets::<AuroraMaterial>::default();
         let diagonal = Vec3::new(1.0, 1.0, 0.0).normalize().to_array();
         let leaning = Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -1822,13 +1225,13 @@ mod tests {
         .with_inserted_indices(Indices::U32(vec![0, 1, 2]));
         let stretched_fourfold_up = Transform::from_scale(Vec3::new(1.0, 4.0, 1.0));
         let primitives = vec![ScatterPrimitive {
-            mesh: meshes.add(leaning),
+            mesh: meshes.add(AuroraMesh::from_mesh(&leaning).unwrap()),
             material: Handle::default(),
             material_name: None,
             local: stretched_fourfold_up,
         }];
 
-        let (merged, _) = merge_primitives("models/leaning.gltf", &primitives, &meshes, &materials)
+        let (merged, _) = merge_primitives("models/leaning.bsn", &primitives, &meshes, &materials)
             .expect("the one part is loaded");
         let normals = merged
             .attribute(Mesh::ATTRIBUTE_NORMAL)
@@ -1845,8 +1248,8 @@ mod tests {
 
     #[test]
     fn a_flat_asset_gives_every_vertex_the_same_height_fraction() {
-        let mut meshes = Assets::<Mesh>::default();
-        let materials = Assets::<StandardMaterial>::default();
+        let mut meshes = Assets::<AuroraMesh>::default();
+        let materials = Assets::<AuroraMaterial>::default();
         let flat = Mesh::new(
             PrimitiveTopology::TriangleList,
             RenderAssetUsages::default(),
@@ -1857,13 +1260,13 @@ mod tests {
         )
         .with_inserted_indices(Indices::U32(vec![0, 1, 2]));
         let primitives = vec![ScatterPrimitive {
-            mesh: meshes.add(flat),
+            mesh: meshes.add(AuroraMesh::from_mesh(&flat).unwrap()),
             material: Handle::default(),
             material_name: None,
             local: Transform::IDENTITY,
         }];
 
-        let (merged, _) = merge_primitives("models/flat.gltf", &primitives, &meshes, &materials)
+        let (merged, _) = merge_primitives("models/flat.bsn", &primitives, &meshes, &materials)
             .expect("the one part is loaded");
         let Some(bevy::mesh::VertexAttributeValues::Float32(fractions)) =
             merged.attribute(ATTRIBUTE_HEIGHT_FRACTION)
@@ -2041,37 +1444,6 @@ mod tests {
     }
 
     #[test]
-    fn the_wind_texture_is_a_repeating_single_channel_field() {
-        let image = wind_noise_image();
-        assert_eq!(image.texture_descriptor.format, TextureFormat::R8Unorm);
-        assert_eq!(image.texture_descriptor.size.width, WIND_TEXTURE_SIZE);
-        assert_eq!(image.texture_descriptor.size.height, WIND_TEXTURE_SIZE);
-        let ImageSampler::Descriptor(sampler) = &image.sampler else {
-            panic!("the wind texture carries a sampler of its own");
-        };
-        assert_eq!(sampler.address_mode_u, ImageAddressMode::Repeat);
-        assert_eq!(sampler.address_mode_v, ImageAddressMode::Repeat);
-
-        let data = image.data.as_ref().expect("the texture has texels");
-        assert_eq!(data.len(), (WIND_TEXTURE_SIZE * WIND_TEXTURE_SIZE) as usize);
-        assert!(
-            data.iter().any(|texel| *texel != data[0]),
-            "the field varies rather than being flat"
-        );
-    }
-
-    #[test]
-    fn a_layer_with_no_texture_multiplies_by_one_white_texel() {
-        let image = white_image();
-        assert_eq!(image.texture_descriptor.size.width, 1);
-        assert_eq!(image.texture_descriptor.size.height, 1);
-        assert_eq!(
-            image.data.as_ref().expect("the texture has texels"),
-            &[255, 255, 255, 255]
-        );
-    }
-
-    #[test]
     fn two_edits_before_a_rebuild_cover_both() {
         let mut dirty = DetailDirty::default();
         dirty.touch(GridRect {
@@ -2093,327 +1465,35 @@ mod tests {
         assert_eq!(rect.height, 24);
     }
 
-    /// Wind is the scene's, not the layer's: two layers in one scene lean the
-    /// same way and at the same pace, and differ only by their response.
     #[test]
-    fn two_layers_lean_on_the_one_scene_wind() {
-        let blowing = Wind {
-            direction: 90.0,
-            strength: 0.75,
-            gust: 0.4,
-            gust_speed: 0.3,
-            turbulence_scale: 9.0,
-        };
-        let settings = DetailSettings::default();
-        let pressers = DetailPressers::default();
-        let bindings = |response: f32| {
-            DetailBindings::new(
-                &DetailLayer {
-                    wind_response: response,
-                    ..DetailLayer::default()
-                },
-                &blowing,
-                &settings,
-                &pressers,
-                Handle::default(),
-                Handle::default(),
-            )
-        };
-
-        let grass = bindings(1.0);
-        let reeds = bindings(2.5);
-
-        assert_eq!(grass.wind_direction, reeds.wind_direction);
-        assert_eq!(grass.wind_strength, reeds.wind_strength);
-        assert_eq!(grass.wind_gust, reeds.wind_gust);
-        assert_eq!(grass.wind_gust_speed, reeds.wind_gust_speed);
-        assert_eq!(grass.wind_turbulence_scale, reeds.wind_turbulence_scale);
-        assert_eq!(grass.wind_strength, 0.75);
-        assert_eq!((grass.wind_response, reeds.wind_response), (1.0, 2.5));
-    }
-
-    /// A scene with no wind hands the shader a strength of zero, so every
-    /// blade in it stands where it was planted.
-    #[test]
-    fn a_still_scene_leans_nothing() {
-        let bindings = DetailBindings::new(
-            &DetailLayer::default(),
-            &SceneWind::default().0,
-            &DetailSettings::default(),
-            &DetailPressers::default(),
-            Handle::default(),
-            Handle::default(),
-        );
-        assert_eq!(bindings.wind_strength, 0.0);
-    }
-
-    /// The shader source, for the binding checks below. naga-oil input rather
-    /// than plain WGSL, so the checks are textual.
-    const SHADER_SOURCE: &str = include_str!("shaders/detail.wgsl");
-
-    #[test]
-    fn every_detail_binding_is_declared_in_the_shader_at_its_derive_index() {
-        for (binding, declaration) in [
-            (0, "var<uniform> detail: DetailUniform"),
-            (1, "var wind_noise: texture_2d<f32>"),
-            (2, "var wind_sampler: sampler"),
-            (3, "var color_texture: texture_2d<f32>"),
-            (4, "var color_sampler: sampler"),
-        ] {
-            let expected = format!("@group(3) @binding({binding}) {declaration};");
-            assert!(
-                SHADER_SOURCE.contains(&expected),
-                "the AsBindGroup derive binds {binding} as `{declaration}`, \
-                 but the shader does not declare it that way"
-            );
-        }
-    }
-
-    #[test]
-    fn the_detail_uniform_struct_matches_the_bindings_field_order() {
-        let declared: Vec<String> = shader_uniform_members()
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
-        assert_eq!(
-            declared,
-            [
-                "color_base",
-                "color_tip",
-                "wind_direction",
-                "wind_strength",
-                "wind_gust",
-                "wind_gust_speed",
-                "wind_turbulence_scale",
-                "wind_response",
-                "bend",
-                "height_range",
-                "width_range",
-                "push_strength",
-                "cull_distance",
-                "presser_count",
-                "is_card",
-                "pressers",
-            ]
-        );
-    }
-
-    /// The bytes the shader reads are the bytes the derive writes. `Mirror`
-    /// repeats the `#[uniform(0)]` field types in declaration order.
-    #[test]
-    fn the_detail_uniform_lays_out_the_same_bytes_the_shader_reads() {
-        use bevy::render::render_resource::ShaderType;
-
-        #[derive(ShaderType)]
-        struct Mirror {
-            color_base: Vec4,
-            color_tip: Vec4,
-            wind_direction: Vec2,
-            wind_strength: f32,
-            wind_gust: f32,
-            wind_gust_speed: f32,
-            wind_turbulence_scale: f32,
-            wind_response: f32,
-            bend: f32,
-            height_range: Vec2,
-            width_range: Vec2,
-            push_strength: f32,
-            cull_distance: f32,
-            presser_count: u32,
-            is_card: u32,
-            pressers: [Vec4; MAX_DETAIL_PRESSERS],
-        }
-
-        let mut offset = 0u64;
-        let mut declared = Vec::new();
-        for (name, ty) in shader_uniform_members() {
-            let (size, align) = match ty.as_str() {
-                "f32" | "u32" => (4, 4),
-                "vec2<f32>" => (8, 8),
-                "vec4<f32>" => (16, 16),
-                "array<vec4<f32>, 16>" => (16 * MAX_DETAIL_PRESSERS as u64, 16),
-                other => panic!("no layout rule for `{other}`"),
-            };
-            offset = offset.next_multiple_of(align);
-            declared.push((name, offset));
-            offset += size;
-        }
-        let size = offset.next_multiple_of(16);
-
-        assert_eq!(
-            declared,
-            vec![
-                ("color_base".to_string(), 0),
-                ("color_tip".to_string(), 16),
-                ("wind_direction".to_string(), 32),
-                ("wind_strength".to_string(), 40),
-                ("wind_gust".to_string(), 44),
-                ("wind_gust_speed".to_string(), 48),
-                ("wind_turbulence_scale".to_string(), 52),
-                ("wind_response".to_string(), 56),
-                ("bend".to_string(), 60),
-                ("height_range".to_string(), 64),
-                ("width_range".to_string(), 72),
-                ("push_strength".to_string(), 80),
-                ("cull_distance".to_string(), 84),
-                ("presser_count".to_string(), 88),
-                ("is_card".to_string(), 92),
-                ("pressers".to_string(), 96),
-            ]
-        );
-        assert_eq!(size, Mirror::min_size().get());
-    }
-
-    /// The name and type of each member of the shader's uniform struct.
-    fn shader_uniform_members() -> Vec<(String, String)> {
-        let start = SHADER_SOURCE
-            .find("struct DetailUniform {")
-            .expect("DetailUniform is declared");
-        let body = &SHADER_SOURCE[start..];
-        let body = &body[..body.find('}').expect("DetailUniform is closed")];
-        body.lines()
-            .skip(1)
-            .filter_map(|line| line.trim().strip_suffix(','))
-            .filter(|line| !line.starts_with("//"))
-            .map(|line| {
-                let (name, ty) = line.split_once(':').expect("a member is `name: type`");
-                (name.trim().to_string(), ty.trim().to_string())
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_instance_and_the_mesh_take_separate_attribute_slots() {
-        let layout = detail_instance_layout();
-        assert_eq!(layout.step_mode, VertexStepMode::Instance);
-        assert_eq!(layout.array_stride, size_of::<DetailInstance>() as u64);
-
-        let mut locations: Vec<u32> = layout
-            .attributes
-            .iter()
-            .map(|attribute| attribute.shader_location)
-            .collect();
-        locations.sort_unstable();
-        locations.dedup();
-        assert_eq!(
-            locations.len(),
-            layout.attributes.len(),
-            "no slot is reused"
-        );
-
-        let card = card_mesh(NEAR_SEGMENTS);
-        for attribute in [
-            Mesh::ATTRIBUTE_POSITION.id,
-            Mesh::ATTRIBUTE_NORMAL.id,
-            Mesh::ATTRIBUTE_UV_0.id,
-            ATTRIBUTE_HEIGHT_FRACTION.id,
-        ] {
-            assert!(card.attribute(attribute).is_some());
-        }
-        assert_eq!(
-            card.attributes().count(),
-            4,
-            "the card and every merged asset carry one attribute per mesh slot"
-        );
-        for location in &locations {
-            assert!(*location >= 4, "slot {location} is already the mesh's");
-        }
-    }
-
-    #[test]
-    fn requeuing_a_tile_under_a_new_pipeline_leaves_one_bin_entry() {
-        use bevy::render::batching::gpu_preprocessing::GpuPreprocessingMode;
-        use bevy::render::mesh::allocator::MeshSlabs;
-        use bevy::render::render_phase::DrawFunctionId;
-        use bevy::render::render_resource::CachedRenderPipelineId;
-        use bevy::render::view::RetainedViewEntity;
-
-        let bin = |pipeline| {
-            (
-                Opaque3dBatchSetKey {
-                    draw_function: DrawFunctionId(0),
-                    pipeline: CachedRenderPipelineId::new(pipeline),
-                    material_bind_group_index: None,
-                    slabs: MeshSlabs::default(),
-                    lightmap_slab: None,
-                },
-                Opaque3dBinKey {
-                    asset_id: AssetId::<Mesh>::invalid().into(),
-                },
-            )
-        };
-        let view = RetainedViewEntity::new(Entity::PLACEHOLDER.into(), None, 0);
-        let tile = MainEntity::from(Entity::PLACEHOLDER);
-        let ids = (Entity::PLACEHOLDER, tile);
-
-        let mut phases = ViewBinnedRenderPhases::<Opaque3d>::default();
-        phases.prepare_for_new_frame(view, GpuPreprocessingMode::None);
-        let phase = phases.get_mut(&view).unwrap();
-        rebin_tile(phase, None, ids, bin(0), InputUniformIndex::default());
-
-        phases.prepare_for_new_frame(view, GpuPreprocessingMode::None);
-        let phase = phases.get_mut(&view).unwrap();
-        rebin_tile(
-            phase,
-            Some(&bin(0)),
-            ids,
-            bin(1),
-            InputUniformIndex::default(),
-        );
-
-        let placed: Vec<_> = phase
-            .non_mesh_items
-            .iter()
-            .filter(|(_, items)| items.entities.contains_key(&tile))
-            .map(|(key, _)| key.clone())
-            .collect();
-        assert_eq!(placed.len(), 1, "the tile is left in its old bin as well");
-        assert!(placed[0] == bin(1), "the tile is not in its new bin");
-    }
-
-    #[test]
-    fn the_shader_bends_blade_normals_as_far_as_the_rust_mirror() {
-        assert!(SHADER_SOURCE.contains(&format!("const NORMAL_BEND: f32 = {DETAIL_NORMAL_BEND};")));
-    }
-
-    #[test]
-    fn a_shadowed_blade_under_trilight_ambient_takes_the_grounds_shadowed_colour() {
-        use jackdaw_scene_types::{Ambient, AmbientMode};
-        let ambient = Ambient {
-            mode: AmbientMode::Trilight,
-            sky: Color::srgb(0.622, 0.639, 0.657),
-            equator: Color::srgb(0.114, 0.125, 0.133),
-            ground: Color::srgb(0.047, 0.043, 0.035),
-            ..Ambient::default()
-        };
-        let albedo = Vec3::new(0.1, 0.35, 0.05);
-        let lit_by = |normal: Vec3| {
-            let light = ambient.color_facing(normal.y);
-            albedo * Vec3::new(light.red, light.green, light.blue)
-        };
-        for ground in [Vec3::Y, Vec3::new(0.3, 0.95, 0.0).normalize()] {
-            let ground_shade = lit_by(ground);
-            for yaw in [0.0_f32, 1.1, 2.4, 4.0] {
-                let blade = Vec3::new(yaw.cos(), 0.0, yaw.sin());
-                for front in [true, false] {
-                    let blade_shade = lit_by(blade_shading_normal(blade, ground, front));
-                    let off = (blade_shade - ground_shade).abs().max_element();
-                    assert!(
-                        off <= ground_shade.max_element() * 0.1,
-                        "a blade at yaw {yaw} facing {front} is lit {blade_shade} against the ground's {ground_shade}",
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn the_shader_reads_the_same_presser_count_the_bindings_write() {
-        assert!(SHADER_SOURCE.contains(&format!(
-            "const MAX_PRESSERS: u32 = {MAX_DETAIL_PRESSERS}u;"
-        )));
-        assert!(SHADER_SOURCE.contains(&format!(
-            "pressers: array<vec4<f32>, {MAX_DETAIL_PRESSERS}>,"
-        )));
+    fn a_baked_card_stands_at_its_instance_and_tapers_to_a_point() {
+        let mut grass = layer("grass", "grass");
+        grass.height = [2.0, 2.0];
+        grass.width = [0.5, 0.5];
+        grass.bend = 0.0;
+        let instances = [
+            DetailInstance {
+                position: Vec3::new(3.0, 1.0, 4.0),
+                packed: DetailInstance::pack(0, 0, 0, 255),
+                tilt: Vec2::ZERO,
+            },
+            DetailInstance {
+                position: Vec3::new(-2.0, 0.0, 0.0),
+                packed: DetailInstance::pack(0, 0, 0, 255),
+                tilt: Vec2::ZERO,
+            },
+        ];
+        let card = card_mesh(2);
+        let baked = bake_tile(&card, &instances, &grass).expect("two instances bake");
+        assert_eq!(baked.count_vertices(), card.count_vertices() * 2);
+        let positions = baked
+            .attribute(Mesh::ATTRIBUTE_POSITION)
+            .and_then(|values| values.as_float3())
+            .expect("positions");
+        assert_eq!(positions[0], [3.0 - 0.25, 1.0, 4.0], "the foot is full width");
+        let tip = positions[card.count_vertices() - 1];
+        assert!((tip[0] - 3.0).abs() < 1e-5, "the tip tapers to the stem");
+        assert!((tip[1] - 3.0).abs() < 1e-5, "the tip stands the layer's height up");
+        assert!(bake_tile(&card, &[], &grass).is_none(), "an empty tile bakes nothing");
     }
 }

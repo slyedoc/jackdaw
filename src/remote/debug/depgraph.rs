@@ -225,13 +225,7 @@ pub(crate) fn rebuild_depgraph(
             .collect();
         let ambiguities: Vec<(usize, usize)> =
             info.ambiguities.iter().map(|a| (a.a, a.b)).collect();
-        graph::spawn_graph(
-            &mut commands,
-            container,
-            &nodes,
-            &info.edges,
-            &ambiguities,
-        );
+        graph::spawn_graph(&mut commands, container, &nodes, &info.edges, &ambiguities);
     }
 }
 

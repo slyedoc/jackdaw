@@ -199,7 +199,7 @@ fn the_switch_is_a_radio_group_and_checks_the_current_mode() {
             "a segment is a radio button",
         );
         assert!(
-            app.world().get::<Interaction>(entity).is_none(),
+            !util::has_legacy_interaction(app.world(), entity),
             "and not a hand-rolled interaction control",
         );
         let bar = app
@@ -647,7 +647,7 @@ fn a_ui_scene_routes_into_the_panel_showing_the_canvas() {
 #[test]
 fn the_viewport_capture_aims_at_the_surface_the_mode_is_showing() {
     use bevy::camera::RenderTarget;
-    use bevy::render::view::screenshot::Screenshot;
+    use jackdaw::image_capture::ImageCapture;
 
     let mut app = util::editor_test_app();
     let panel = panel(&mut app);
@@ -683,15 +683,15 @@ fn the_viewport_capture_aims_at_the_surface_the_mode_is_showing() {
             Some(RenderTarget::Image(target)) => target.handle.clone(),
             other => panic!("a presentation camera renders into an image, got {other:?}"),
         };
-        let aimed: Vec<(Entity, RenderTarget)> = app
+        let aimed: Vec<(Entity, Handle<Image>)> = app
             .world_mut()
-            .query::<(Entity, &Screenshot)>()
+            .query::<(Entity, &ImageCapture)>()
             .iter(app.world())
             .map(|(entity, shot)| (entity, shot.0.clone()))
             .collect();
         assert_eq!(aimed.len(), 1, "one queued capture per call");
         assert!(
-            matches!(&aimed[0].1, RenderTarget::Image(image) if image.handle == expected),
+            aimed[0].1 == expected,
             "in {mode} the capture aims at that presentation's image, got {:?}",
             aimed[0].1,
         );
@@ -899,20 +899,20 @@ fn click(app: &mut App, segment: Entity) {
         .expect("the 3D presentation's state")
         .camera;
 
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target,
-            position: Vec2::ZERO,
-        },
-        Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-            duration: core::time::Duration::ZERO,
-            count: 1,
-        },
-        segment,
-    ));
+    app.world_mut().trigger(PointerClick {
+        entity: segment,
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target,
+                position: Vec2::ZERO,
+            },
+        ),
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+        duration: core::time::Duration::ZERO,
+        count: 1,
+    });
 }
 
 /// The panel is carried on the segment rather than looked up, so a switch in

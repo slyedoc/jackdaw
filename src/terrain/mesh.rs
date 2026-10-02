@@ -2,6 +2,7 @@ use bevy::ecs::system::EntityCommands;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use jackdaw_terrain::ClipmapLevel;
+use jackdaw_terrain::render::TerrainSplat3d;
 
 use super::regions::{TerrainRegionView, region_of};
 use super::{CHUNK_SIZE, TerrainDataStore, TerrainDirtyChunks, TerrainPaintState, TerrainSurface};
@@ -327,15 +328,11 @@ fn point_at_material(
 ) {
     match splat {
         Some(handle) => {
-            // TerrainSplatMaterial is parked raster (AURORA.md item 2), so this stays a
-            // `MeshMaterial3d` until the terrain render port swaps it for a SurfaceClass.
-            entity
-                .remove::<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>()
-                .insert(MeshMaterial3d(handle.clone()));
+            entity.insert(TerrainSplat3d(handle.clone()));
         }
         None => {
             entity
-                .remove::<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>()
+                .remove::<TerrainSplat3d>()
                 .insert(AuroraMaterial3d(fallback.clone()));
         }
     }
@@ -540,9 +537,7 @@ mod tests {
 
     /// Levels holding the splat material, in level order.
     fn surfaces_on_splat(world: &mut World) -> Vec<u32> {
-        let mut query = world.query_filtered::<&TerrainSurface, With<
-            MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>,
-        >>();
+        let mut query = world.query_filtered::<&TerrainSurface, With<TerrainSplat3d>>();
         let mut levels: Vec<u32> = query.iter(world).map(|surface| surface.level).collect();
         levels.sort_unstable();
         levels
@@ -896,7 +891,7 @@ mod tests {
             &TerrainSurface,
             &Mesh3d,
             Has<AuroraMaterial3d>,
-            Has<MeshMaterial3d<jackdaw_terrain::render::TerrainSplatMaterial>>,
+            Has<TerrainSplat3d>,
         )>();
         let held: Vec<(u32, Handle<Mesh>, bool)> = query
             .iter(world)

@@ -6,20 +6,11 @@
 use bevy::prelude::*;
 
 fn make_app() -> App {
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -48,7 +39,7 @@ bevy_ecs::hierarchy::Children [
 
 #[test]
 fn scene_with_assets_and_prefab_instance_round_trips_to_a_fixpoint() {
-    use bevy::pbr::StandardMaterial;
+    use bevy_aurora::material::AuroraMaterial;
     use jackdaw_scene_types::Brush;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -62,8 +53,8 @@ fn scene_with_assets_and_prefab_instance_round_trips_to_a_fixpoint() {
     let color = Color::srgb(0.2, 0.7, 0.3);
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial {
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial {
             base_color: color,
             ..Default::default()
         });
@@ -111,7 +102,7 @@ fn scene_with_assets_and_prefab_instance_round_trips_to_a_fixpoint() {
         std::path::Path::new(""),
     );
     assert!(
-        text1.contains("StandardMaterial"),
+        text1.contains("AuroraMaterial"),
         "the runtime material must embed into the emitted scene:\n{text1}"
     );
 
@@ -159,7 +150,7 @@ fn scene_with_assets_and_prefab_instance_round_trips_to_a_fixpoint() {
         .material
         .clone();
     let material = world
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&face_handle)
         .expect("face material asset survived the round trip");
     let want = color.to_linear();

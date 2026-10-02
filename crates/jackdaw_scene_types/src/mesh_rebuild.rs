@@ -8,7 +8,7 @@ use bevy::{
 
 use crate::types::Brush;
 use jackdaw_geometry::compute_brush_geometry_from_planes;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora_material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 pub struct MeshRebuildPlugin;
 
@@ -226,7 +226,7 @@ mod tests {
     use bevy::app::App;
     use bevy::asset::AssetPlugin;
     use bevy::image::ImagePlugin;
-    use bevy::pbr::AuroraMaterial;
+    use aurora_material::AuroraMaterial;
     use jackdaw_geometry::{
         BrushFaceData, BrushPlane, MeshMirror, Modifier, ModifierEntry, ModifierStack,
         compute_brush_topology, compute_face_tangent_axes,

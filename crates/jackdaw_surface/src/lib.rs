@@ -29,24 +29,29 @@ pub mod foliage;
 pub mod water;
 pub mod worn;
 
-pub use environment::{EnvironmentPlugin, SkyMaterial};
+pub use environment::EnvironmentPlugin;
 pub use foliage::{Foliage, FoliageMaterial, FoliagePlugin};
 pub use water::{Water, WaterMaterial, WaterPlugin};
 pub use worn::WornMaterial;
 
-use bevy::asset::embedded_asset;
 use bevy::color::ColorToComponents;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderType};
-use bevy::render::texture::GpuImage;
-use bevy::shader::ShaderRef;
+use bevy_aurora::material::AuroraMaterial;
+use bevy_aurora::surface_group::{LayeredParams, layered_flags};
 
-const SHADER_PATH: &str = "embedded://jackdaw_surface/shaders/layered_surface.wgsl";
+pub use surface_class::{LayeredSurface3d, LayeredSurfacePlugin};
 
-/// The material an entity wears to carry a layer over its base surface.
-pub type LayeredSurfaceMaterial = ExtendedMaterial<StandardMaterial, LayeredSurface>;
+mod surface_class;
+
+/// The material an entity wears to carry a layer over its base surface: a base PBR surface
+/// plus the layer that gathers on its upward faces. The field names are
+/// `ExtendedMaterial`'s, which this replaced.
+#[derive(Asset, Reflect, Clone, Debug, Default)]
+#[reflect(Default, Clone)]
+pub struct LayeredSurfaceMaterial {
+    pub base: AuroraMaterial,
+    pub extension: LayeredSurface,
+}
 
 /// Which vertex colour channel the layer mask is read from.
 #[derive(Reflect, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -143,9 +148,8 @@ impl LayerBlend {
 
 /// A second surface blended over a standard material's upward faces, and a
 /// detail surface multiplied over the result.
-#[derive(Asset, AsBindGroup, Reflect, Clone, Debug)]
-#[reflect(Default, Clone)]
-#[uniform(100, LayeredSurfaceUniform)]
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component, Default, Clone)]
 pub struct LayeredSurface {
     /// Tints the layer's base colour.
     pub layer_color: Color,
@@ -159,25 +163,17 @@ pub struct LayeredSurface {
     pub layer_metallic: f32,
     /// Scales the roughness the layer's map reports.
     pub layer_perceptual_roughness: f32,
-    #[texture(101)]
-    #[sampler(102)]
     pub layer_base_color_texture: Option<Handle<Image>>,
-    #[texture(103)]
     pub layer_normal_map_texture: Option<Handle<Image>>,
     /// Occlusion in red, roughness in green, metallic in blue.
-    #[texture(104)]
     pub layer_orm_texture: Option<Handle<Image>>,
     /// Tints the detail surface, which multiplies over base and layer alike.
     pub detail_color: Color,
     pub detail_uv_scale: f32,
     pub detail_normal_strength: f32,
-    #[texture(105)]
-    #[sampler(106)]
     pub detail_base_color_texture: Option<Handle<Image>>,
-    #[texture(107)]
     pub detail_normal_map_texture: Option<Handle<Image>>,
     /// Occlusion in red, roughness in green, metallic in blue.
-    #[texture(108)]
     pub detail_orm_texture: Option<Handle<Image>>,
     pub blend: LayerBlend,
 }
@@ -208,50 +204,22 @@ impl LayeredSurface {
     fn bound_maps(&self) -> u32 {
         let mut bound = 0;
         if self.layer_normal_map_texture.is_some() {
-            bound |= flags::LAYER_NORMAL_MAP;
+            bound |= layered_flags::LAYER_NORMAL_MAP;
         }
         if self.detail_normal_map_texture.is_some() {
-            bound |= flags::DETAIL_NORMAL_MAP;
+            bound |= layered_flags::DETAIL_NORMAL_MAP;
         }
         bound
     }
 }
 
-/// The layered half of the material's bind group, as the shader reads it.
-#[derive(Clone, Default, ShaderType)]
-pub struct LayeredSurfaceUniform {
-    pub layer_color: Vec4,
-    pub detail_color: Vec4,
-    pub layer_uv_scale: f32,
-    pub layer_normal_strength: f32,
-    pub layer_metallic: f32,
-    pub layer_perceptual_roughness: f32,
-    pub detail_uv_scale: f32,
-    pub detail_normal_strength: f32,
-    pub blend_amount: f32,
-    pub blend_power: f32,
-    pub blend_threshold: f32,
-    pub blend_position: f32,
-    pub blend_contrast: f32,
-    pub vertex_color_channel: u32,
-    pub use_vertex_color: u32,
-    pub flags: u32,
-}
-
-/// Bits of [`LayeredSurfaceUniform::flags`], telling the shader which maps are
-/// bound. Only the normal maps need it: an unbound colour or
-/// occlusion-roughness-metallic map falls back to white, which is what a set
-/// without one should contribute, while white read as a normal is a slant.
-pub mod flags {
-    pub const LAYER_NORMAL_MAP: u32 = 1;
-    pub const DETAIL_NORMAL_MAP: u32 = 2;
-}
-
-impl AsBindGroupShaderType<LayeredSurfaceUniform> for LayeredSurface {
-    fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> LayeredSurfaceUniform {
-        LayeredSurfaceUniform {
-            layer_color: LinearRgba::from(self.layer_color).to_vec4(),
-            detail_color: LinearRgba::from(self.detail_color).to_vec4(),
+impl LayeredSurface {
+    /// The parameter row, minus the texture indices: those are bindless slots the plugin
+    /// resolves against the loaded images.
+    pub fn params(&self) -> LayeredParams {
+        LayeredParams {
+            layer_color: LinearRgba::from(self.layer_color).to_f32_array(),
+            detail_color: LinearRgba::from(self.detail_color).to_f32_array(),
             layer_uv_scale: self.layer_uv_scale,
             layer_normal_strength: self.layer_normal_strength,
             layer_metallic: self.layer_metallic,
@@ -263,107 +231,17 @@ impl AsBindGroupShaderType<LayeredSurfaceUniform> for LayeredSurface {
             blend_threshold: self.blend.threshold,
             blend_position: self.blend.position,
             blend_contrast: self.blend.contrast,
-            vertex_color_channel: self.blend.vertex_color_channel.index() as u32,
             use_vertex_color: u32::from(self.blend.use_vertex_color),
+            vertex_color_channel: self.blend.vertex_color_channel.index() as u32,
             flags: self.bound_maps(),
+            ..Default::default()
         }
-    }
-}
-
-impl MaterialExtension for LayeredSurface {
-    fn fragment_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
-}
-
-/// Registers the layered material, its shader and its reflected types, so a
-/// scene naming one renders it.
-pub struct LayeredSurfacePlugin;
-
-impl Plugin for LayeredSurfacePlugin {
-    fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/layered_surface.wgsl");
-        app.add_plugins(MaterialPlugin::<LayeredSurfaceMaterial>::default())
-            .register_type::<LayeredSurface>()
-            .register_type::<LayerBlend>()
-            .register_type::<VertexColorChannel>()
-            .register_asset_reflect::<LayeredSurfaceMaterial>()
-            .register_type_data::<LayeredSurfaceMaterial, bevy::reflect::std_traits::ReflectDefault>(
-            );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The shader source, for the binding checks below.
-    ///
-    /// It cannot be compiled here: it is naga-oil input, not WGSL. The checks
-    /// are textual, and catch binding numbers drifting between the
-    /// `AsBindGroup` derive and the shader that reads them.
-    const SHADER_SOURCE: &str = include_str!("shaders/layered_surface.wgsl");
-
-    #[test]
-    fn every_material_binding_is_declared_in_the_shader_at_its_derive_index() {
-        for (binding, declaration) in [
-            (100, "var<uniform> layered: LayeredSurfaceUniform"),
-            (101, "var layer_base_color_texture: texture_2d<f32>"),
-            (102, "var layer_sampler: sampler"),
-            (103, "var layer_normal_texture: texture_2d<f32>"),
-            (104, "var layer_orm_texture: texture_2d<f32>"),
-            (105, "var detail_base_color_texture: texture_2d<f32>"),
-            (106, "var detail_sampler: sampler"),
-            (107, "var detail_normal_texture: texture_2d<f32>"),
-            (108, "var detail_orm_texture: texture_2d<f32>"),
-        ] {
-            let expected =
-                format!("@group(#{{MATERIAL_BIND_GROUP}}) @binding({binding}) {declaration};");
-            assert!(
-                SHADER_SOURCE.contains(&expected),
-                "the AsBindGroup derive binds {binding} as `{declaration}`, \
-                 but the shader does not declare it that way"
-            );
-        }
-    }
-
-    /// The uniform is one buffer built from [`LayeredSurfaceUniform`]'s fields
-    /// in declaration order, so the WGSL struct has to list them in the same
-    /// order or every field reads its neighbour's bytes.
-    #[test]
-    fn the_uniform_struct_matches_the_rust_field_order() {
-        let start = SHADER_SOURCE
-            .find("struct LayeredSurfaceUniform {")
-            .expect("LayeredSurfaceUniform is declared");
-        let body = &SHADER_SOURCE[start..];
-        let end = body.find('}').expect("LayeredSurfaceUniform is closed");
-        let body = &body[..end];
-
-        let mut at = 0usize;
-        for field in [
-            "layer_color: vec4<f32>",
-            "detail_color: vec4<f32>",
-            "layer_uv_scale: f32",
-            "layer_normal_strength: f32",
-            "layer_metallic: f32",
-            "layer_perceptual_roughness: f32",
-            "detail_uv_scale: f32",
-            "detail_normal_strength: f32",
-            "blend_amount: f32",
-            "blend_power: f32",
-            "blend_threshold: f32",
-            "blend_position: f32",
-            "blend_contrast: f32",
-            "vertex_color_channel: u32",
-            "use_vertex_color: u32",
-            "flags: u32",
-        ] {
-            let found = body[at..].find(field).unwrap_or_else(|| {
-                panic!("the shader declares `{field}` after the field above it")
-            });
-            at += found + field.len();
-        }
-    }
 
     #[test]
     fn a_material_reports_which_normal_maps_are_bound() {
@@ -374,7 +252,7 @@ mod tests {
             layer_normal_map_texture: Some(Handle::default()),
             ..default()
         };
-        assert_eq!(mapped.bound_maps(), flags::LAYER_NORMAL_MAP);
+        assert_eq!(mapped.bound_maps(), layered_flags::LAYER_NORMAL_MAP);
     }
 
     fn painted(channel: f32) -> LinearRgba {

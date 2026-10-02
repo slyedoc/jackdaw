@@ -88,8 +88,8 @@ fn item_path(tmp: &tempfile::TempDir, name: &str) -> PathBuf {
 /// The material type as a game registering it as an asset would report it.
 fn material_schema() -> jackdaw_schema::TypeSchema {
     jackdaw_schema::TypeSchema {
-        type_path: "bevy_pbr::pbr_material::StandardMaterial".to_string(),
-        short_name: "StandardMaterial".to_string(),
+        type_path: "bevy_aurora::material::AuroraMaterial".to_string(),
+        short_name: "AuroraMaterial".to_string(),
         module_path: "bevy_pbr::pbr_material".to_string(),
         category: String::new(),
         description: String::new(),

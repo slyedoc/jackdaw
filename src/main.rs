@@ -91,7 +91,7 @@ fn main() -> AppExit {
     // something asked for a `DrawFunctions<TransparentUi>` that was never created.
     //
     // Dropped along with it:
-    // * `RenderPlugin` + `render_diagnostics::wgpu_settings()` -- GPU timestamps are a wgpu
+    // * `RenderPlugin` and its wgpu timestamp diagnostics -- GPU timestamps are a wgpu
     //   device feature. Aurora has its own timing.
     // * `.set(ImagePlugin { .. })` -- it was there to make the default sampler REPEAT on
     //   all three axes, and aurora's one global linear sampler already does exactly that

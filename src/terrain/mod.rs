@@ -64,22 +64,14 @@ impl Plugin for TerrainPlugin {
                     .before(jackdaw_terrain::render::DetailSystems::Rebuild)
                     .run_if(in_state(crate::AppState::Editor)),
             )
-            .add_systems(
-                Update,
-                scatter_data::resolve_scatter_prefabs
-                    .before(jackdaw_terrain::render::ScatterSystems::Rebuild),
-            )
             .add_observer(scatter_data::hide_drawn_scatter)
             .add_observer(detail::hide_drawn_detail)
-            // TODO(aurora): `ScatterRenderPlugin` normally creates this. The editor's
-            // `resolve_scatter_prefabs` answers stored scatter names with the prefabs they
-            // draw -- authoring work that stands on its own -- so the resource exists
-            // without the renderer. AURORA.md item 2; `init_resource` is idempotent, so the
-            // plugin can take it back unchanged.
-            .init_resource::<jackdaw_terrain::render::ScatterPrefabs>()
             .add_plugins((
-                // TODO(aurora): Scatter/Detail render plugins call `add_render_command`
-                // against Opaque3d, which needs a RenderApp. AURORA.md item 2.
+                jackdaw_terrain::render::TerrainRenderPlugin,
+                jackdaw_terrain::render::ScatterRenderPlugin,
+                jackdaw_terrain::render::DetailRenderPlugin,
+            ))
+            .add_plugins((
                 mesh::plugin,
                 sculpt::plugin,
                 paint::plugin,
@@ -314,7 +306,8 @@ fn prune_terrain_heightmaps(
 #[require(
     crate::EditorHidden,
     crate::NonSerializable,
-    crate::ViewDependentBounds
+    crate::ViewDependentBounds,
+    jackdaw_terrain::render::MirrorToAurora
 )]
 pub struct TerrainSurface {
     pub terrain_entity: Entity,

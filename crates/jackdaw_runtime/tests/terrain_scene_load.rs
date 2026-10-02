@@ -44,7 +44,7 @@ fn project(sidecar_bytes: Option<Vec<u8>>) -> tempfile::TempDir {
     std::fs::write(assets.join("catalog.bsn"), "// no catalog entries\n").expect("catalog");
     std::fs::write(
         assets.join("materials/grass.material.bsn"),
-        "#grass\nbevy_pbr::pbr_material::StandardMaterial {\n    \
+        "#grass\nbevy_aurora::material::AuroraMaterial {\n    \
          base_color_texture: \"textures/grass.png\",\n}\n",
     )
     .expect("material");

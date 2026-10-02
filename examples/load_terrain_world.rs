@@ -3,7 +3,7 @@
 //! ground rather than through it.
 //!
 //! The game side is an asset folder with the files the editor wrote,
-//! `JackdawPlugin` added after `DefaultPlugins`, and a `JackdawSceneRoot`
+//! `JackdawPlugin` added after `AuroraDefaultPlugins`, and a `JackdawSceneRoot`
 //! pointed at the scene. Nothing registers anything, nothing exports anything,
 //! and no code here knows how a `.jdterrain` or a `.jdnav` is laid out.
 //!
@@ -25,6 +25,9 @@ use std::path::{Path, PathBuf};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_aurora::AuroraDefaultPlugins;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_runtime::prelude::*;
 use jackdaw_terrain::navmesh::{self, NO_NEIGHBOR, NavPolygon, NavmeshArtifact};
 use jackdaw_terrain::sidecar::{self, RegionTerrainData, TerrainMaterialSlot};
@@ -54,7 +57,7 @@ jackdaw_scene_types::types::Terrain {
 /// beside it; a bare colour is enough to show the catalog resolving.
 const GRASS: &str = "\
 #grass
-bevy_pbr::pbr_material::StandardMaterial {
+bevy_aurora::material::AuroraMaterial {
     base_color: bevy_color::color::Color::Srgba(bevy_color::srgba::Srgba { red: 0.35, green: 0.5, blue: 0.25, alpha: 1.0 }),
 }
 ";
@@ -91,11 +94,13 @@ fn main() -> AppExit {
                 .add_plugins(bevy::transform::TransformPlugin)
                 .add_plugins(asset_plugin)
                 .init_asset::<Mesh>()
+                .init_asset::<AuroraMesh>()
+                .init_asset::<AuroraMaterial>()
                 .insert_resource(FramesLeft(frames))
                 .add_systems(Update, count_down);
         }
         None => {
-            app.add_plugins(DefaultPlugins.set(asset_plugin));
+            app.add_plugins(AuroraDefaultPlugins.set(asset_plugin));
         }
     }
 
@@ -213,8 +218,8 @@ fn baked_navmesh(data: &RegionTerrainData) -> NavmeshArtifact {
 fn open_scene(
     mut commands: Commands,
     assets: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
 ) {
     commands.spawn(JackdawSceneRoot(assets.load("scene.bsn")));
     commands.spawn((
@@ -229,8 +234,11 @@ fn open_scene(
         // A sphere rolls down any gradient and nothing here damps rolling;
         // held upright it slides, and friction settles it.
         LockedAxes::ROTATION_LOCKED,
-        Mesh3d(meshes.add(Sphere::new(BALL_RADIUS))),
-        MeshMaterial3d(materials.add(Color::srgb(0.9, 0.4, 0.2))),
+        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(Sphere::new(BALL_RADIUS)))),
+        AuroraMaterial3d(materials.add(AuroraMaterial {
+            base_color: Color::srgb(0.9, 0.4, 0.2),
+            ..default()
+        })),
         Transform::from_xyz(128.0, DROP, 128.0),
     ));
     commands.spawn((

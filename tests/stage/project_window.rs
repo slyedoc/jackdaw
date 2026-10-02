@@ -2,6 +2,7 @@
 //! selects a file into the inspector and the kind filter stands in for the
 //! catalog listing that used to be a window of its own.
 
+use bevy_aurora::material::AuroraMaterial;
 use std::path::{Path, PathBuf};
 
 use bevy::asset::{Asset, Assets};
@@ -117,8 +118,8 @@ fn tiles(app: &App) -> Vec<String> {
 fn save_material(app: &mut App, name: &'static str) -> PathBuf {
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     app.world_mut()
         .resource_mut::<jackdaw::material_assets::MaterialRegistry>()
         .add(name.to_string(), handle.clone());

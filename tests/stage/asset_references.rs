@@ -6,6 +6,7 @@
 //! kept rather than blanked.
 
 use crate::util;
+use bevy_aurora::material::AuroraMaterial;
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +22,7 @@ use jackdaw_scene_types::PropertyValue;
 #[derive(Asset, Reflect, Clone, Default)]
 #[reflect(Default)]
 struct OutfitDef {
-    material: Handle<StandardMaterial>,
+    material: Handle<AuroraMaterial>,
 }
 
 /// A component holding one material, so a scene can spell a reference without
@@ -29,7 +30,7 @@ struct OutfitDef {
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 struct Painted {
-    material: Handle<StandardMaterial>,
+    material: Handle<AuroraMaterial>,
 }
 
 fn editor_with_outfits() -> (App, tempfile::TempDir) {
@@ -74,11 +75,11 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 
 /// A material of the project's own, filed where the caller asks for it, as the
 /// index holds it once the walk has read the file back.
-fn file_material(app: &mut App, relative: &str) -> Handle<StandardMaterial> {
+fn file_material(app: &mut App, relative: &str) -> Handle<AuroraMaterial> {
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial {
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial {
             metallic: 0.5,
             ..default()
         });
@@ -109,7 +110,7 @@ fn file_material(app: &mut App, relative: &str) -> Handle<StandardMaterial> {
         .and_then(|entry| entry.value.handle())
         .expect("the walk indexed the material")
         .clone()
-        .typed::<StandardMaterial>()
+        .typed::<AuroraMaterial>()
 }
 
 /// Write a scene naming one material, open it, and emit it again.
@@ -130,7 +131,7 @@ fn round_trip_scene(app: &mut App, tmp: &tempfile::TempDir, reference: &str) -> 
     )
 }
 
-fn painted_material(app: &mut App) -> Handle<StandardMaterial> {
+fn painted_material(app: &mut App) -> Handle<AuroraMaterial> {
     let world = app.world_mut();
     let mut query = world.query::<&Painted>();
     query

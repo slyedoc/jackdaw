@@ -3,6 +3,10 @@
 //! names. Behind the `render` feature, so the data model below it stays
 //! buildable with no GPU crate in the graph.
 //!
+//! TODO(aurora): the splat shader was a raster `Material`; aurora has no terrain surface class
+//! yet. [`TerrainSplatMaterial`] keeps every input the shader read, and a terrain wearing one
+//! ([`TerrainSplat3d`]) traces as a plain stand-in [`AuroraMaterial`] until the class exists.
+//!
 //! A terrain's material names become the three texture arrays the shader binds
 //! in two steps: [`resolve_with`] maps each slot onto a [`TextureSetEntry`], and
 //! [`splat_images`] stacks the entries' images into arrays. Finding the material
@@ -11,20 +15,20 @@
 //!
 //! The blend is height-weighted rather than a cross-fade: a layer's weight is
 //! `pow(corner_weight + layer_weight + height, sharpness)`, normalized across
-//! every contributing layer. See `shaders/terrain_splat.wgsl`.
+//! every contributing layer. The raster shader that did it (`shaders/terrain_splat.wgsl`) is the
+//! reference for the aurora terrain class.
 
-use bevy::asset::{RenderAssetUsages, embedded_asset};
+use bevy::asset::RenderAssetUsages;
 use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor};
 use bevy::prelude::*;
 // `resolve_with` and the splat cache read a plain PBR material for its texture handles;
-// on this branch that is aurora's. `TerrainSplatMaterial` below is still a raster
-// `Material` and is parked with the rest of AURORA.md item 2.
-use bevy_aurora::material::AuroraMaterial;
-use bevy::render::render_resource::{
-    AsBindGroup, Extent3d, TextureDataOrder, TextureDimension, TextureFormat,
-    TextureViewDescriptor, TextureViewDimension,
+// on this branch that is aurora's.
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use wgpu_types::{
+    Extent3d, TextureDataOrder, TextureDimension, TextureFormat, TextureViewDescriptor,
+    TextureViewDimension,
 };
-use bevy::shader::ShaderRef;
 use path_slash::PathExt as _;
 
 pub mod detail;
@@ -32,15 +36,14 @@ pub mod scatter;
 
 pub use detail::{
     ATTRIBUTE_HEIGHT_FRACTION, BuiltDetailMesh, DETAIL_TILE_BUDGET, DETAIL_TILE_CELLS,
-    DetailAssets, DetailBindings, DetailDirty, DetailInstanceBuffer, DetailKey, DetailLayerSource,
-    DetailLooks, DetailMeshes, DetailPipeline, DetailPressers, DetailRenderPlugin, DetailSettings,
-    DetailSource, DetailSystems, DetailTile, DetailViewer, MAX_DETAIL_PRESSERS,
-    TerrainDetailSource, card_mesh, detail_instance_layout, white_image, wind_noise_image,
+    DetailAssets, DetailDirty, DetailLayerSource, DetailMeshes, DetailPressers,
+    DetailRenderPlugin, DetailSettings, DetailSource, DetailSystems, DetailTile, DetailViewer,
+    MAX_DETAIL_PRESSERS, TerrainDetailSource, card_mesh,
 };
 pub use scatter::{
     GROUND_COVER_CULL_DISTANCE, GROUND_COVER_HEIGHT, ScatterAssetPlugin, ScatterAssets,
-    ScatterChunk, ScatterDirty, ScatterPrefab, ScatterPrefabs, ScatterPrimitive, ScatterRegion,
-    ScatterRenderPlugin, ScatterRendered, ScatterSystems, TerrainScatter, palette_entry_bounds,
+    ScatterChunk, ScatterDirty, ScatterPrimitive, ScatterRegion, ScatterRenderPlugin,
+    ScatterRendered, ScatterSystems, TerrainScatter, palette_entry_bounds,
 };
 
 use crate::heightmap::Heightmap;
@@ -50,7 +53,6 @@ use crate::texture_set::{
     MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError, check_layer_sizes,
 };
 
-const SHADER_PATH: &str = "embedded://jackdaw_terrain/render/shaders/terrain_splat.wgsl";
 
 pub use crate::sidecar::DEFAULT_BLEND_SHARPNESS;
 
@@ -890,91 +892,60 @@ pub fn slope_image(map: &Heightmap) -> Image {
 /// One material per terrain: the control map and terrain size live here rather
 /// than per chunk, so every chunk of a terrain shares one material and one
 /// upload.
-#[derive(Asset, AsBindGroup, TypePath, Clone, Debug)]
+#[derive(Asset, TypePath, Clone, Debug)]
 pub struct TerrainSplatMaterial {
     /// Per-id UV scales, four to a `Vec4`. The shader unpacks by id.
-    #[uniform(0)]
     pub uv_scales: [Vec4; MAX_TEXTURES / 4],
     /// Per-id detiling strengths, packed the same way. 0 leaves a layer
     /// sampled exactly where its UV scale puts it.
-    #[uniform(0)]
     pub detile_strengths: [Vec4; MAX_TEXTURES / 4],
     /// Terrain XZ extent in world units.
-    #[uniform(0)]
     pub terrain_size: Vec2,
     /// `0..1`, remapped by the shader onto a `4..64` power exponent. Low is
     /// a soft cross-fade, high a near-binary height cutout.
-    #[uniform(0)]
     pub blend_sharpness: f32,
-    #[uniform(0)]
     pub perceptual_roughness: f32,
     /// Grid points per terrain edge; the control map's side length.
-    #[uniform(0)]
     pub control_resolution: u32,
     /// Texture ids the bound set defines. Ids past it clamp to the last.
-    #[uniform(0)]
     pub layer_count: u32,
     /// Nonzero where this terrain textures the cells no hand has claimed
     /// from their slope. 0 leaves every cell to its own control word.
-    #[uniform(0)]
     pub autoterrain_enabled: u32,
     /// Texture id flat ground draws where autoterrain is on.
-    #[uniform(0)]
     pub autoterrain_base_slot: u32,
     /// Texture id steep ground draws where autoterrain is on.
-    #[uniform(0)]
     pub autoterrain_slope_slot: u32,
     /// Slope at which the base texture starts giving way, in radians.
     /// Converted from the authored degrees here so the shader carries no
     /// conversion of its own.
-    #[uniform(0)]
     pub autoterrain_slope_start: f32,
     /// Slope at which the slope texture has fully taken over, in radians.
-    #[uniform(0)]
     pub autoterrain_slope_end: f32,
     /// How much of the tint texture reaches the finished albedo, `0..1`. 0 draws
     /// the textures untinted.
-    #[uniform(0)]
     pub tint_strength: f32,
     /// Bit `i` is set where texture id `i` has an occlusion map. An id
     /// without one shades unoccluded.
-    #[uniform(0)]
     pub occlusion_slots: u32,
     /// Bit `i` is set where texture id `i` has a roughness map. An id
     /// without one takes [`Self::perceptual_roughness`].
-    #[uniform(0)]
     pub roughness_slots: u32,
-    #[texture(1, dimension = "2d_array")]
-    #[sampler(2)]
     pub albedo: Handle<Image>,
-    #[texture(3, dimension = "2d_array")]
     pub normal: Handle<Image>,
-    #[texture(4, dimension = "2d_array")]
     pub height: Handle<Image>,
-    #[texture(5, sample_type = "u_int")]
     pub control: Handle<Image>,
     /// Slope per grid point, in radians. Only autoterrain reads it.
-    #[texture(6, sample_type = "float", filterable = false)]
     pub slope: Handle<Image>,
     /// The colour layer the finished albedo is multiplied by. Filtered,
     /// so it has a sampler of its own rather than sharing the layer
     /// arrays'.
-    #[texture(7)]
-    #[sampler(8)]
     pub tint: Handle<Image>,
     /// Ambient occlusion per slot, read from the red channel.
-    #[texture(9, dimension = "2d_array")]
     pub occlusion: Handle<Image>,
     /// Roughness per slot, read from the green channel the way a
     /// metallic-roughness texture stores it.
-    #[texture(10, dimension = "2d_array")]
     pub roughness: Handle<Image>,
-}
-
-impl Material for TerrainSplatMaterial {
-    fn fragment_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
 }
 
 impl TerrainSplatMaterial {
@@ -1082,14 +1053,86 @@ pub struct SplatArrayHandles {
     pub roughness: Handle<Image>,
 }
 
-/// Registers the texture-set asset, its loader, the splat material and its
-/// shader.
+/// The splat material a terrain chunk wears.
+#[derive(Component, Clone, Debug, Default, Reflect, PartialEq, Eq)]
+#[reflect(Component, Default, Clone, PartialEq)]
+pub struct TerrainSplat3d(pub Handle<TerrainSplatMaterial>);
+
+/// Give every chunk that starts wearing a splat the one stand-in material it
+/// traces with, until aurora has a terrain class.
+fn wear_splat_stand_in(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<AuroraMaterial>>,
+    mut stand_in: Local<Option<Handle<AuroraMaterial>>>,
+    worn: Query<Entity, Added<TerrainSplat3d>>,
+) {
+    for entity in &worn {
+        let material = stand_in.get_or_insert_with(|| {
+            materials.add(AuroraMaterial {
+                base_color: Color::srgb(0.32, 0.36, 0.25),
+                perceptual_roughness: 0.9,
+                ..default()
+            })
+        });
+        commands
+            .entity(entity)
+            .insert(AuroraMaterial3d(material.clone()));
+    }
+}
+
+/// A surface whose [`Mesh3d`] stays the authored mesh -- remeshed, re-indexed
+/// and read back by its host -- traced through an [`AuroraMesh3d`] rebuilt
+/// from it whenever it changes.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct MirrorToAurora;
+
+fn mirror_to_aurora(
+    mut commands: Commands,
+    mut events: MessageReader<AssetEvent<Mesh>>,
+    meshes: Res<Assets<Mesh>>,
+    mut traced: ResMut<Assets<AuroraMesh>>,
+    mirrored: Query<(Entity, Ref<Mesh3d>, Has<AuroraMesh3d>), With<MirrorToAurora>>,
+) {
+    let touched: Vec<AssetId<Mesh>> = events
+        .read()
+        .filter_map(|event| match event {
+            AssetEvent::Added { id } | AssetEvent::Modified { id } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    for (entity, mesh, mirrored) in &mirrored {
+        if mirrored && !mesh.is_changed() && !touched.contains(&mesh.id()) {
+            continue;
+        }
+        let Some(built) = meshes
+            .get(&mesh.0)
+            .and_then(|source| AuroraMesh::from_mesh(source).ok())
+        else {
+            continue;
+        };
+        commands
+            .entity(entity)
+            .insert(AuroraMesh3d(traced.add(built)));
+    }
+}
+
+/// Registers the splat material asset, and traces terrain wearing one with a stand-in.
 pub struct TerrainRenderPlugin;
 
 impl Plugin for TerrainRenderPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/terrain_splat.wgsl");
-        app.add_plugins(MaterialPlugin::<TerrainSplatMaterial>::default());
+        if !app.world().contains_resource::<Assets<TerrainSplatMaterial>>() {
+            app.init_asset::<TerrainSplatMaterial>();
+        }
+        app.register_type::<TerrainSplat3d>().add_systems(
+            PostUpdate,
+            (
+                wear_splat_stand_in.run_if(resource_exists::<Assets<AuroraMaterial>>),
+                mirror_to_aurora
+                    .run_if(resource_exists::<Assets<Mesh>>)
+                    .run_if(resource_exists::<Assets<AuroraMesh>>),
+            ),
+        );
     }
 }
 
@@ -1102,6 +1145,7 @@ mod resolve_tests {
     use bevy::app::App;
     use bevy::asset::{AssetPlugin, AssetServer, Assets};
     use bevy::prelude::*;
+    use bevy_aurora::material::AuroraMaterial;
 
     use super::{ResolvedSlots, resolve_with};
     use crate::sidecar::TerrainMaterialSlot;
@@ -2134,31 +2178,6 @@ mod tests {
         assert_eq!(image.data.as_ref().unwrap().len(), 4);
     }
 
-    /// The control-word layout the shader unpacks by hand rather than
-    /// through an accessor. A drift in the manual bit would silently
-    /// shade painted cells as unclaimed ground; a drift in a shift or a
-    /// mask would hand every cell the wrong texture id.
-    #[test]
-    fn the_shaders_control_layout_matches_the_control_words() {
-        use crate::control::{
-            BASE_MASK, BASE_SHIFT, BLEND_MASK, BLEND_SHIFT, MANUAL_BIT, OVERLAY_MASK, OVERLAY_SHIFT,
-        };
-
-        let pinned = |line: String| {
-            assert!(
-                SHADER_SOURCE.contains(&line),
-                "the shader drifted from control.rs: expected `{line}`"
-            );
-        };
-        pinned(format!("const BASE_SHIFT: u32 = {BASE_SHIFT}u;"));
-        pinned(format!("const BASE_MASK: u32 = 0x{BASE_MASK:X}u;"));
-        pinned(format!("const OVERLAY_SHIFT: u32 = {OVERLAY_SHIFT}u;"));
-        pinned(format!("const OVERLAY_MASK: u32 = 0x{OVERLAY_MASK:X}u;"));
-        pinned(format!("const BLEND_SHIFT: u32 = {BLEND_SHIFT}u;"));
-        pinned(format!("const BLEND_MASK: u32 = 0x{BLEND_MASK:X}u;"));
-        pinned(format!("const MANUAL_BIT: u32 = 0x{MANUAL_BIT:X}u;"));
-    }
-
     fn test_material(autoterrain: AutoTerrainSettings) -> TerrainSplatMaterial {
         TerrainSplatMaterial::new(
             &TextureSet {
@@ -2332,225 +2351,6 @@ mod tests {
         assert_eq!(material.roughness_slots, 0b100);
     }
 
-    /// The shader source, for the binding checks below.
-    ///
-    /// It cannot be compiled here: it is naga-oil input, not WGSL. The checks
-    /// are textual, and catch binding numbers drifting between the
-    /// `AsBindGroup` derive and the shader that reads them.
-    const SHADER_SOURCE: &str = include_str!("shaders/terrain_splat.wgsl");
-
-    #[test]
-    fn every_material_binding_is_declared_in_the_shader_at_its_derive_index() {
-        for (binding, declaration) in [
-            (0, "var<uniform> splat: SplatUniform"),
-            (1, "var albedo_array: texture_2d_array<f32>"),
-            (2, "var layer_sampler: sampler"),
-            (3, "var normal_array: texture_2d_array<f32>"),
-            (4, "var height_array: texture_2d_array<f32>"),
-            (5, "var control_map: texture_2d<u32>"),
-            (7, "var tint_map: texture_2d<f32>"),
-            (9, "var occlusion_array: texture_2d_array<f32>"),
-            (10, "var roughness_array: texture_2d_array<f32>"),
-        ] {
-            let expected =
-                format!("@group(#{{MATERIAL_BIND_GROUP}}) @binding({binding}) {declaration};");
-            assert!(
-                SHADER_SOURCE.contains(&expected),
-                "the AsBindGroup derive binds {binding} as `{declaration}`, \
-                 but the shader does not declare it that way"
-            );
-        }
-    }
-
-    /// The uniform is one buffer built from the `#[uniform(0)]` fields in
-    /// declaration order, so the WGSL struct has to list them in the same
-    /// order or every field reads its neighbour's bytes.
-    #[test]
-    fn the_uniform_struct_matches_the_materials_field_order() {
-        let start = SHADER_SOURCE
-            .find("struct SplatUniform {")
-            .expect("SplatUniform is declared");
-        let body = &SHADER_SOURCE[start..];
-        let end = body.find('}').expect("SplatUniform is closed");
-        let body = &body[..end];
-
-        let mut at = 0usize;
-        for field in [
-            "uv_scales: array<vec4<f32>, 4>",
-            "detile_strengths: array<vec4<f32>, 4>",
-            "terrain_size: vec2<f32>",
-            "blend_sharpness: f32",
-            "perceptual_roughness: f32",
-            "control_resolution: u32",
-            "layer_count: u32",
-            "autoterrain_enabled: u32",
-            "autoterrain_base_slot: u32",
-            "autoterrain_slope_slot: u32",
-            "autoterrain_slope_start: f32",
-            "autoterrain_slope_end: f32",
-            "tint_strength: f32",
-            "occlusion_slots: u32",
-            "roughness_slots: u32",
-        ] {
-            let found = body[at..]
-                .find(field)
-                .unwrap_or_else(|| panic!("`{field}` is missing or out of order in SplatUniform"));
-            at += found + field.len();
-        }
-    }
-
-    /// Detiling turns the UV, so the tangent-space normal stored in the texture
-    /// has to turn back with it. With one rotation per tile, the turn has to be
-    /// applied per tap, before the taps are blended.
-    #[test]
-    fn the_shader_turns_each_sampled_normal_with_its_own_tile_rotation() {
-        assert!(
-            SHADER_SOURCE.contains("turn: vec2<f32>,"),
-            "`TileTap` must carry the rotation it applied to the UV"
-        );
-        let start = SHADER_SOURCE
-            .find("fn accumulate(")
-            .expect("accumulate is declared");
-        let body = &SHADER_SOURCE[start..];
-        let packed = body
-            .find("normal_array")
-            .expect("accumulate samples the normals");
-        let turned = body
-            .find("turned_by(unpacked.xy, vec2<f32>(tap.turn.x, -tap.turn.y))")
-            .expect("accumulate must turn each tap's normal back by that tap's rotation");
-        assert!(
-            turned > packed,
-            "the rotation must be applied after the sample, not before"
-        );
-    }
-
-    /// Detiling samples once per tile and blends the samples, rather than
-    /// blending the tiles' coordinates and sampling once.
-    ///
-    /// Interpolating between four rigid transforms is not a rigid transform: the
-    /// blended coordinate field stretches and shears between tile centres, and a
-    /// texture read through it comes back marbled.
-    #[test]
-    fn detiling_samples_once_per_tile_and_blends_the_samples() {
-        assert!(
-            SHADER_SOURCE.contains("taps: array<TileTap, 4>"),
-            "detile must hand back one frame per tile, not one blended UV"
-        );
-        let start = SHADER_SOURCE
-            .find("fn accumulate(")
-            .expect("accumulate is declared");
-        let body = &SHADER_SOURCE[start..];
-        let loop_at = body
-            .find("for (var t = 0u; t < tiled.count; t++)")
-            .expect("accumulate must walk the taps");
-        for array in ["albedo_array", "height_array", "normal_array"] {
-            let sampled = body
-                .find(&format!(
-                    "textureSampleGrad({array}, layer_sampler, tap.uv, layer, tap.ddx, tap.ddy)"
-                ))
-                .unwrap_or_else(|| panic!("{array} must be sampled at a tap's own rigid UV"));
-            assert!(
-                sampled > loop_at,
-                "{array} must be sampled inside the per-tile loop"
-            );
-        }
-        assert!(
-            !body.contains("tiled.uv"),
-            "no sample may read a blended coordinate"
-        );
-    }
-
-    /// Detiling off is one sample, not four of the same one.
-    #[test]
-    fn detiling_off_leaves_a_single_tap() {
-        let start = SHADER_SOURCE
-            .find("fn detile(")
-            .expect("detile is declared");
-        let body = &SHADER_SOURCE[start..];
-        let single = body
-            .find("out.count = 1u;")
-            .expect("detile starts at one tap");
-        let guard = body
-            .find("if strength <= 0.0 {")
-            .expect("detile short-circuits at strength 0");
-        let four = body
-            .find("out.count = 4u;")
-            .expect("detile opens to four taps");
-        assert!(
-            single < guard && guard < four,
-            "strength 0 must return before the four tiles are built"
-        );
-    }
-
-    /// Tint strength 0 has to leave the albedo exactly as the layers accumulated
-    /// it. Two halves: the uniform carries the 0, and the fragment mixes from
-    /// white, so `mix(white, tint, 0)` is white and multiplying by white is the
-    /// identity.
-    #[test]
-    fn a_tint_strength_of_zero_leaves_the_albedo_alone() {
-        let mut material = TerrainSplatMaterial::new(
-            &TextureSet::default(),
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
-            Handle::default(),
-            Handle::default(),
-            Handle::default(),
-            Vec2::splat(100.0),
-            256,
-            AutoTerrainSettings::default(),
-            SurfaceSettings::default(),
-        );
-        assert_eq!(material.tint_strength, 1.0, "the default is the full layer");
-
-        material.set_surface(SurfaceSettings {
-            blend_sharpness: 0.25,
-            tint_strength: 0.0,
-        });
-        assert_eq!(material.tint_strength, 0.0);
-        assert_eq!(material.blend_sharpness, 0.25);
-
-        assert!(
-            SHADER_SOURCE.contains("mix(vec3<f32>(1.0), tint, splat.tint_strength)"),
-            "the fragment must mix the tint up from white, so strength 0 is the identity"
-        );
-    }
-
-    /// A cell painted at control grid point `i` has to shade from tint texel `i`
-    /// at both ends of the terrain and in the middle. Sampling raw UV0 misses by
-    /// half a cell, in opposite directions at the two ends.
-    #[test]
-    fn a_tint_texel_is_sampled_at_the_grid_point_it_was_painted_at() {
-        const RESOLUTION: u32 = 64;
-        let res = f32::from(RESOLUTION as u16);
-        // Which texel a linear sampler reads the centre of at `v`.
-        let texel = |v: f32| (v * res - 0.5).round() as i64;
-        let mut raw_misses = 0;
-        for i in 0..RESOLUTION {
-            let uv = i as f32 / (res - 1.0);
-            assert_eq!(
-                texel(tint_uv(uv, RESOLUTION)),
-                i64::from(i),
-                "grid point {i} must land on its own texel"
-            );
-            if texel(uv) != i64::from(i) {
-                raw_misses += 1;
-            }
-        }
-        assert!(
-            raw_misses > 0,
-            "raw UV0 must be the wrong convention, or the remap is pointless"
-        );
-
-        assert!(
-            SHADER_SOURCE.contains("(in.uv * (tint_res - 1.0) + 0.5) / tint_res"),
-            "the fragment must sample the tint at texel centres, as `tint_uv` does"
-        );
-    }
 
     /// A NaN reaches the fragment's `pow` and its `mix` unguarded, so the
     /// uniform write clamps rather than trusting its caller.
@@ -2578,19 +2378,5 @@ mod tests {
         );
         assert_eq!(material.blend_sharpness, DEFAULT_BLEND_SHARPNESS);
         assert_eq!(material.tint_strength, 1.0);
-    }
-
-    /// `MAX_TEXTURES` sizes the UV-scale array on both sides.
-    #[test]
-    fn the_shaders_layer_ceiling_matches_the_rust_one() {
-        assert_eq!(MAX_TEXTURES, 16);
-        assert!(
-            SHADER_SOURCE.contains("const MAX_LAYERS: u32 = 16u;"),
-            "the shader's layer ceiling drifted from MAX_TEXTURES"
-        );
-        assert!(
-            SHADER_SOURCE.contains("uv_scales: array<vec4<f32>, 4>"),
-            "the UV-scale array must hold MAX_TEXTURES / 4 vec4s"
-        );
     }
 }

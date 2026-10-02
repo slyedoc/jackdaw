@@ -15,9 +15,8 @@ use bevy::asset::{AssetEvent, LoadState};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use jackdaw_terrain::render::{
-    SplatArrayHandles, SplatBuildError, TerrainSplatMaterial,
-    TextureSetImages, control_image_from_bytes, resolve_with, slope_image, splat_images,
-    tint_image_from_bytes,
+    SplatArrayHandles, SplatBuildError, TerrainSplatMaterial, TextureSetImages,
+    control_image_from_bytes, resolve_with, slope_image, splat_images, tint_image_from_bytes,
 };
 use jackdaw_terrain::sidecar::{AutoTerrainSettings, SurfaceSettings, TerrainMaterialSlot};
 use jackdaw_terrain::splat::ControlTexels;
@@ -34,23 +33,21 @@ use bevy_aurora::material::AuroraMaterial;
 pub(super) fn plugin(app: &mut App) {
     // TODO(aurora): TerrainRenderPlugin is MaterialPlugin<TerrainSplatMaterial>.
     // AURORA.md item 2.
-    app
-        .init_resource::<TerrainSplatMaterials>()
-        .add_systems(
-            Update,
-            (
-                invalidate_on_asset_change,
-                resolve_terrain_materials,
-                build_ready_materials,
-                refresh_autoterrain,
-                refresh_surface,
-                refresh_control_maps,
-                refresh_tint_maps,
-                refresh_slope_maps,
-            )
-                .chain()
-                .run_if(in_state(crate::AppState::Editor)),
-        );
+    app.init_resource::<TerrainSplatMaterials>().add_systems(
+        Update,
+        (
+            invalidate_on_asset_change,
+            resolve_terrain_materials,
+            build_ready_materials,
+            refresh_autoterrain,
+            refresh_surface,
+            refresh_control_maps,
+            refresh_tint_maps,
+            refresh_slope_maps,
+        )
+            .chain()
+            .run_if(in_state(crate::AppState::Editor)),
+    );
 }
 
 /// What the editor knows about one terrain's splat rendering.

@@ -6,7 +6,7 @@ use bevy::prelude::Handle;
 use bevy::prelude::{Reflect, ReflectDefault};
 use glam::{Quat, Vec2, Vec3};
 #[cfg(feature = "render")]
-use bevy_aurora::material::AuroraMaterial;
+use aurora_material::AuroraMaterial;
 
 pub mod mirror;
 pub use mirror::{

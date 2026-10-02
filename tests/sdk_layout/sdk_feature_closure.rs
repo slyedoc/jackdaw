@@ -59,12 +59,19 @@ fn sdk_requests(dependency: &str) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// Runtime features the SDK leaves off on purpose: each pulls `bevy_render`, which an
+/// aurora build never links.
+const RASTER_ONLY: [&str; 1] = ["pie_frames"];
+
 #[test]
 fn the_sdk_enables_every_runtime_feature() {
     let declared = declared_features("crates/jackdaw_runtime/Cargo.toml");
     let requested = sdk_requests("jackdaw_runtime");
 
-    let missing: Vec<&String> = declared.difference(&requested).collect();
+    let missing: Vec<&String> = declared
+        .difference(&requested)
+        .filter(|feature| !RASTER_ONLY.contains(&feature.as_str()))
+        .collect();
     assert!(
         missing.is_empty(),
         "jackdaw_sdk does not enable jackdaw_runtime features {missing:?}. A project that \

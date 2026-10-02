@@ -43,9 +43,10 @@ pub mod game_panel;
 pub mod gizmo_ops;
 pub mod gizmos;
 pub mod grid_ops;
-pub mod infinite_grid;
 pub mod hierarchy;
 pub mod history_ops;
+pub mod image_capture;
+pub mod infinite_grid;
 pub mod input_contexts;
 pub mod inspector;
 pub mod io_pool;
@@ -122,7 +123,6 @@ pub mod reference_image;
 pub mod reflect_default;
 pub mod remote;
 pub mod remote_ops;
-pub mod render_diagnostics;
 pub mod restart;
 pub mod run_config;
 pub mod scaffold;
@@ -177,6 +177,7 @@ use bevy::{
     platform::collections::HashMap,
     prelude::*,
 };
+use bevy_aurora::material::AuroraMaterial;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::{
     ToAnchorId as _,
@@ -190,7 +191,6 @@ use jackdaw_feathers::dialog::EditorDialog;
 pub use jackdaw_loader::DylibLoaderPlugin;
 use jackdaw_widgets::menu_bar::MenuAction;
 use selection::Selection;
-use bevy_aurora::material::AuroraMaterial;
 
 /// Everything needed to start using Jackdaw.
 pub mod prelude {
@@ -444,8 +444,6 @@ impl Plugin for EditorCorePlugin {
         // gives exactly that -- data, no draw.
         .init_asset::<AuroraMaterial>()
         .init_asset::<jackdaw_terrain::render::TerrainSplatMaterial>()
-        // TODO(aurora): EnvironmentPlugin owns SkyMaterial, an `AsBindGroup`. Aurora has
-        // its own sky/atmosphere (`sky.rs`, `atmosphere.rs`); AURORA.md item 2.
         .add_plugins(jackdaw_runtime::MaterialOverridesPlugin)
         .add_plugins(file_ops::FileOpsPlugin)
         .add_plugins(keybinds::KeybindsPlugin)
@@ -498,7 +496,6 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(thumbnail::plugin)
         .add_plugins(boot_ops::plugin)
         .add_plugins(fps_overlay::plugin)
-        .add_plugins(render_diagnostics::plugin)
         .add_plugins(perf_probe::plugin)
         .add_systems(Update, view_ops::drive_dolly)
         .add_systems(Last, view_ops::track_pointer_focus)

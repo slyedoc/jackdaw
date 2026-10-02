@@ -11,15 +11,14 @@ bevy_aurora.workspace = true
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
     "std",
     "bevy_asset",
-    "bevy_pbr",
-    "bevy_render",
     "bevy_image",
     "bevy_log",
-    "bevy_core_pipeline",
-    "bevy_post_process",
-    "bevy_anti_alias",
 ] }
 jackdaw_scene_types = { version = "0.19.0", path = "../jackdaw_scene_types", default-features = false }
+# Same versions aurora links: the surface group's parameter row is written through
+# aurora's buffer API and read by its shader.
+ash = { version = "0.38.0", features = ["linked"] }
+bytemuck = { version = "1.14.3", features = ["derive"] }
 
 [lints]
 workspace = true

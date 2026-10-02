@@ -11,8 +11,8 @@
 use bevy::math::Vec3;
 use bevy::prelude::*;
 
-use jackdaw_geometry::{BrushTopology, triangulate_polygon};
 use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use jackdaw_geometry::{BrushTopology, triangulate_polygon};
 
 #[derive(Resource, Default)]
 pub struct ActivePreview {

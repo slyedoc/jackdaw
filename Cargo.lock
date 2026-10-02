@@ -556,9 +556,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora_cluster_mesh"
+name = "aurora_material"
 version = "0.1.0"
 dependencies = [
+ "bevy",
+]
+
+[[package]]
+name = "aurora_mesh"
+version = "0.1.0"
+dependencies = [
+ "aurora_material",
  "bevy",
  "bytemuck",
  "lz4_flex",
@@ -574,7 +582,6 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 [[package]]
 name = "avian3d"
 version = "0.8.0-dev"
-source = "git+https://github.com/slyedoc/avian?branch=aurora#d07d66ed3b6cb0d653a559ed29b3415abfe6281c"
 dependencies = [
  "approx",
  "avian_derive",
@@ -598,19 +605,12 @@ dependencies = [
 [[package]]
 name = "avian_derive"
 version = "0.2.3"
-source = "git+https://github.com/slyedoc/avian?branch=aurora#d07d66ed3b6cb0d653a559ed29b3415abfe6281c"
 dependencies = [
  "proc-macro-error3",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "base64"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
@@ -805,12 +805,12 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "ash-window",
- "aurora_cluster_mesh",
+ "aurora_material",
+ "aurora_mesh",
  "bevy",
  "bytemuck",
  "crossbeam",
  "glam",
- "gltf",
  "gpu-allocator",
  "half",
  "log",
@@ -864,7 +864,6 @@ dependencies = [
  "bevy_math",
  "bevy_picking",
  "bevy_platform",
- "bevy_render",
  "bevy_time",
  "bevy_transform",
  "bevy_window",
@@ -1213,7 +1212,6 @@ dependencies = [
  "bevy_material",
  "bevy_math",
  "bevy_mesh",
- "bevy_pbr",
  "bevy_reflect",
  "bevy_render",
  "bevy_shader",
@@ -3769,13 +3767,10 @@ version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3ce1918195723ce6ac74e80542c5a96a40c2b26162c1957a5cd70799b8cacf7"
 dependencies = [
- "base64 0.13.1",
  "byteorder",
  "gltf-json",
- "image",
  "lazy_static",
  "serde_json",
- "urlencoding",
 ]
 
 [[package]]
@@ -4227,8 +4222,6 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
- "zune-core",
- "zune-jpeg",
 ]
 
 [[package]]
@@ -4473,6 +4466,7 @@ dependencies = [
  "toml",
  "toml_edit 0.22.27",
  "webbrowser",
+ "wgpu-types",
  "windows 0.61.3",
  "winit",
 ]
@@ -4686,8 +4680,8 @@ dependencies = [
 name = "jackdaw_geometry"
 version = "0.19.0"
 dependencies = [
+ "aurora_material",
  "bevy",
- "bevy_aurora",
  "bitflags 2.13.1",
  "cdt",
  "earcutr",
@@ -4702,7 +4696,6 @@ dependencies = [
 name = "jackdaw_hull"
 version = "0.19.0"
 dependencies = [
- "bevy_aurora",
  "glam",
  "jackdaw_geometry",
  "parry3d",
@@ -4899,6 +4892,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
+ "wgpu-types",
 ]
 
 [[package]]
@@ -4913,8 +4907,8 @@ dependencies = [
 name = "jackdaw_scene_types"
 version = "0.19.0"
 dependencies = [
+ "aurora_material",
  "bevy",
- "bevy_aurora",
  "dunce",
  "glam",
  "jackdaw_geometry",
@@ -4965,8 +4959,10 @@ dependencies = [
 name = "jackdaw_surface"
 version = "0.19.0"
 dependencies = [
+ "ash",
  "bevy",
  "bevy_aurora",
+ "bytemuck",
  "jackdaw_scene_types",
 ]
 
@@ -4983,6 +4979,7 @@ dependencies = [
  "path-slash",
  "rand 0.10.2",
  "tempfile",
+ "wgpu-types",
 ]
 
 [[package]]

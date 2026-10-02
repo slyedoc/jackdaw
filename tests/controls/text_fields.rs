@@ -55,11 +55,11 @@ fn a_text_field_is_a_feathers_text_input() {
         "the input carries the editing model",
     );
     assert!(
-        app.world().get::<Interaction>(frame).is_none(),
+        !util::has_legacy_interaction(app.world(), frame),
         "the frame is not a hand-rolled control",
     );
     assert!(
-        app.world().get::<Interaction>(input).is_none(),
+        !util::has_legacy_interaction(app.world(), input),
         "and neither is the input",
     );
 }

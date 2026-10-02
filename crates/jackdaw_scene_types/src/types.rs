@@ -824,6 +824,11 @@ pub struct GltfSource {
     pub scene_index: usize,
 }
 
+/// The material name a model part was authored with: what [`MaterialOverrides`] keys by.
+#[derive(Component, Reflect, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[reflect(Component, Default)]
+pub struct MaterialSlot(pub String);
+
 /// Materials a placed model's parts wear in place of their own, by the model's material name.
 #[derive(Component, Reflect, Clone, Debug, Default, PartialEq)]
 #[reflect(Component, Default, @crate::EditorCategory::new("Rendering"))]

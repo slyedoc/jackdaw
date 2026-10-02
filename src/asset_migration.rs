@@ -543,8 +543,8 @@ fn version_of(bytes: &[u8]) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy_aurora::material::AuroraMaterial;
     use bevy::asset::AssetPlugin;
+    use bevy_aurora::material::AuroraMaterial;
     use jackdaw_api_internal::operator::OperatorReports;
 
     // What the editor writes today; the catalog indexes material files by this path.

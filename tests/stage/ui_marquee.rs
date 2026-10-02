@@ -129,11 +129,13 @@ fn screen_position_of(app: &mut App, panel: Entity, authored: Vec2) -> Vec2 {
     logical * app.world().resource::<UiScale>().0
 }
 
-fn pointer_at<E: std::fmt::Debug + Clone + Reflect>(
+/// Each picking event now carries its own `entity` and `pointer`, so there is no wrapper to
+/// put an arbitrary event inside: the caller builds the event from the two.
+fn pointer_at<'a, E: EntityEvent<Trigger<'a>: Default>>(
     app: &mut App,
     target: Entity,
     position: Vec2,
-    event: E,
+    event: impl FnOnce(Entity, Pointer) -> E,
 ) {
     let window = app
         .world_mut()
@@ -143,15 +145,14 @@ fn pointer_at<E: std::fmt::Debug + Clone + Reflect>(
     let render_target: NormalizedRenderTarget = RenderTarget::Window(WindowRef::Primary)
         .normalize(Some(window))
         .expect("the primary window normalizes");
-    app.world_mut().trigger(Pointer::new(
+    let pointer = Pointer::new(
         PointerId::Mouse,
         Location {
             target: render_target,
             position,
         },
-        event,
-        target,
-    ));
+    );
+    app.world_mut().trigger(event(target, pointer));
 }
 
 /// The whole band gesture: press, drag, release, in authored pixels.
@@ -160,15 +161,14 @@ fn band(app: &mut App, panel: Entity, from: Vec2, to: Vec2) {
     let stage = stage_of(app, panel);
     let start = screen_position_of(app, panel, from);
     let distance = screen_position_of(app, panel, to) - start;
-    pointer_at(
-        app,
-        stage,
-        start + distance,
-        DragEnd {
+    pointer_at(app, stage, start + distance, |entity, pointer| {
+        PointerDragEnd {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
-        },
-    );
+        }
+    });
     settle(app);
 }
 
@@ -182,38 +182,31 @@ fn band_to(app: &mut App, panel: Entity, from: Vec2, to: Vec2) {
         .expect("host on panel parent")
         .camera;
     let start = screen_position_of(app, panel, from);
-    pointer_at(
-        app,
-        stage,
-        start,
-        Press {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-            count: 1,
-        },
-    );
+    pointer_at(app, stage, start, |entity, pointer| PointerPress {
+        entity,
+        pointer,
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+        count: 1,
+    });
     settle(app);
-    pointer_at(
-        app,
-        stage,
-        start,
-        DragStart {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-        },
-    );
+    pointer_at(app, stage, start, |entity, pointer| PointerDragStart {
+        entity,
+        pointer,
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+    });
     settle(app);
     let distance = screen_position_of(app, panel, to) - start;
-    pointer_at(
-        app,
-        stage,
-        start + distance,
-        Drag {
+    pointer_at(app, stage, start + distance, |entity, pointer| {
+        PointerDrag {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
             delta: distance,
-        },
-    );
+        }
+    });
     settle(app);
 }
 
@@ -478,37 +471,34 @@ fn a_drag_on_the_backdrops_own_outline_is_still_a_band() {
         .get::<Viewport2dPanelHost>(panel)
         .expect("host on panel parent")
         .camera;
-    pointer_at(
-        &mut app,
-        outline,
-        start,
-        DragStart {
+    pointer_at(&mut app, outline, start, |entity, pointer| {
+        PointerDragStart {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             hit: HitData::new(camera, 0.0, None, None),
-        },
-    );
+        }
+    });
     settle(&mut app);
     let distance = screen_position_of(&mut app, panel, Vec2::new(400.0, 400.0)) - start;
-    pointer_at(
-        &mut app,
-        outline,
-        start + distance,
-        Drag {
+    pointer_at(&mut app, outline, start + distance, |entity, pointer| {
+        PointerDrag {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
             delta: distance,
-        },
-    );
+        }
+    });
     settle(&mut app);
-    pointer_at(
-        &mut app,
-        outline,
-        start + distance,
-        DragEnd {
+    pointer_at(&mut app, outline, start + distance, |entity, pointer| {
+        PointerDragEnd {
+            entity,
+            pointer,
             button: PointerButton::Primary,
             distance,
-        },
-    );
+        }
+    });
     settle(&mut app);
 
     assert_eq!(

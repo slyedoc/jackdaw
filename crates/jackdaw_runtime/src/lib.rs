@@ -97,7 +97,7 @@ pub use jackdaw_scene_types::{
 
 #[cfg(feature = "pie")]
 mod pie;
-#[cfg(feature = "pie")]
+#[cfg(feature = "pie_frames")]
 mod pie_frames;
 #[cfg(feature = "pie")]
 mod pie_windowless;
@@ -1213,9 +1213,9 @@ fn preload_linear_textures(world: &mut World, ast: &SceneBsnAst) -> Vec<UntypedH
 /// so binding either one fails the whole bind group.
 #[cfg(feature = "render")]
 fn filterable_twin(
-    format: bevy::render::render_resource::TextureFormat,
-) -> Option<bevy::render::render_resource::TextureFormat> {
-    use bevy::render::render_resource::TextureFormat;
+    format: wgpu_types::TextureFormat,
+) -> Option<wgpu_types::TextureFormat> {
+    use wgpu_types::TextureFormat;
     match format {
         TextureFormat::R16Uint => Some(TextureFormat::R16Unorm),
         TextureFormat::Rg16Uint => Some(TextureFormat::Rg16Unorm),
@@ -1689,7 +1689,7 @@ mod asset_file_tests {
     }
 
     const GRASS: &str =
-        "#grass\nbevy_pbr::pbr_material::StandardMaterial {\n    perceptual_roughness: 0.25,\n}\n";
+        "#grass\nbevy_aurora::material::AuroraMaterial {\n    perceptual_roughness: 0.25,\n}\n";
 
     fn write(root: &Path, relative: &str, text: &str) {
         let path = root.join(relative);
@@ -1852,7 +1852,7 @@ mod asset_file_tests {
             .clone();
 
         // The catalog file is read second and must not displace it.
-        let inline = "#grass\nbevy_pbr::pbr_material::StandardMaterial {\n    perceptual_roughness: 0.9,\n}\n";
+        let inline = "#grass\nbevy_aurora::material::AuroraMaterial {\n    perceptual_roughness: 0.9,\n}\n";
         let entries = load_bsn_assets(app.world_mut(), inline).expect("parse");
         let mut catalog = app.world_mut().resource_mut::<JackdawCatalog>();
         for entry in entries {
@@ -1879,7 +1879,7 @@ mod material_texture_format_tests {
     use super::*;
     use bevy::app::App;
     use bevy::asset::{AssetApp, AssetPlugin, RenderAssetUsages};
-    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
     fn promotion_app() -> App {
         let mut app = App::new();

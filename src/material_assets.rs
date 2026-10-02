@@ -39,11 +39,8 @@ use bevy_aurora::material::AuroraMaterial;
 /// Directory under `assets/` holding saved material files.
 pub const MATERIALS_DIR: &str = "materials";
 
-// The type path a saved material file carries. Now aurora's: the editor authors
-// `AuroraMaterial`, so that is what `material_to_bsn` writes and what the loader must
-// look up. Files written before the port still say
-// `bevy_pbr::pbr_material::StandardMaterial` -- see `scene_io::stamp`'s migration table,
-// which is where that rename belongs rather than here.
+// The type path a saved material file carries: the editor authors `AuroraMaterial`, so that
+// is what `material_to_bsn` writes and what the loader looks up.
 const STANDARD_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial";
 
 /// Material texture slots holding linear (non-color) data. These must be
@@ -663,9 +660,10 @@ pub(crate) fn plugin(app: &mut App) {
     // the built game agree on it.
     app.add_plugins((
         jackdaw_runtime::MaterialTextureFormatPlugin,
-        // TODO(aurora): LayeredSurfacePlugin / FoliagePlugin / WaterPlugin are
-        // `AsBindGroup` materials and need a RenderApp. AURORA.md item 2 -- they come back
-        // as AuroraMaterial. Until then a scene's surfaces render with no material.
+        jackdaw_surface::LayeredSurfacePlugin,
+        jackdaw_surface::FoliagePlugin,
+        jackdaw_surface::WaterPlugin,
+        jackdaw_surface::EnvironmentPlugin,
     ))
     .init_resource::<PendingMaterialDelete>()
     .init_resource::<EditedMaterials>()
@@ -1974,7 +1972,7 @@ mod tests {
     /// editor.
     #[test]
     fn the_editor_plugin_registers_the_runtime_texture_format_retag() {
-        use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+        use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
         let mut app = material_app();
         app.add_plugins(plugin);

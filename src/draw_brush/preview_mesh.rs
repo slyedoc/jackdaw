@@ -9,9 +9,9 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 use jackdaw_geometry::build_face_render_buffers;
 use jackdaw_scene_types::Brush;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 #[derive(Component)]
 pub(crate) struct DrawPreviewMesh;

@@ -6,6 +6,7 @@
 //! order: removal marker, then regenerate.
 
 use crate::util;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 use bevy::prelude::*;
 use jackdaw::brush::{
@@ -370,7 +371,7 @@ fn symmetrize_x_bakes_authored_topology() {
 
 /// Collect each chunk's (`uses_default_material`, current material
 /// handle) for the given brush.
-fn chunk_materials(app: &mut App, entity: Entity) -> Vec<(bool, Handle<StandardMaterial>)> {
+fn chunk_materials(app: &mut App, entity: Entity) -> Vec<(bool, Handle<AuroraMaterial>)> {
     let chunk_entities = app
         .world()
         .entity(entity)
@@ -389,7 +390,7 @@ fn chunk_materials(app: &mut App, entity: Entity) -> Vec<(bool, Handle<StandardM
             let mat = app
                 .world()
                 .entity(chunk_entity)
-                .get::<MeshMaterial3d<StandardMaterial>>()
+                .get::<AuroraMaterial3d>()
                 .expect("chunk entity has MeshMaterial3d");
             (chunk.uses_default_material, mat.0.clone())
         })
@@ -413,8 +414,8 @@ fn xray_overrides_every_chunk_and_restores_on_toggle_off() {
     let entity = spawn_half_cube(&mut app);
     let red = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     app.world_mut()
         .entity_mut(entity)
         .get_mut::<Brush>()
@@ -772,13 +773,13 @@ fn reference_image_maintenance_installs_placeholder_for_empty_path() {
     let material_handle = app
         .world()
         .entity(entity)
-        .get::<MeshMaterial3d<StandardMaterial>>()
+        .get::<AuroraMaterial3d>()
         .expect("maintenance attaches a material")
         .0
         .clone();
     let material = app
         .world()
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&material_handle)
         .expect("placeholder material exists");
     assert!(
@@ -851,13 +852,13 @@ fn reference_image_opacity_change_updates_alpha_without_clobbering_scale() {
     let material_handle = app
         .world()
         .entity(entity)
-        .get::<MeshMaterial3d<StandardMaterial>>()
+        .get::<AuroraMaterial3d>()
         .expect("material still attached")
         .0
         .clone();
     let material = app
         .world()
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&material_handle)
         .expect("material exists in Assets");
     assert_eq!(

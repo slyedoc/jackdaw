@@ -23,7 +23,6 @@ pub struct RemoteDebugPlugin;
 
 impl Plugin for RemoteDebugPlugin {
     fn build(&self, app: &mut App) {
-
         app.add_plugins(poll::BrpPollPlugin::<diagnostics::DiagnosticsSample>::new(
             "jackdaw/diagnostics",
             0.25,

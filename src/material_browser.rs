@@ -20,6 +20,7 @@ use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
+use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 use jackdaw_commands::{CommandGroup, EditorCommand};
 use jackdaw_feathers::{
     button::{ButtonOperatorCall, ButtonVariant, IconButtonProps, icon_button},
@@ -29,7 +30,6 @@ use jackdaw_feathers::{
     tokens,
 };
 use path_slash::PathExt as _;
-use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 
 pub struct MaterialBrowserPlugin;
 

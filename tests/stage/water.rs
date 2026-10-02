@@ -1,6 +1,8 @@
 //! The water material: a material asset of its own that a mesh wears in place
 //! of its standard one.
 
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use jackdaw_surface::water::Water3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -144,14 +146,14 @@ fn a_water_file_round_trips_through_save_and_load() {
 fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
     let standard = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     let mesh = app
         .world_mut()
         .spawn((
             Name::new("lake surface"),
             Mesh3d::default(),
-            MeshMaterial3d(standard),
+            AuroraMaterial3d(standard),
         ))
         .id();
     jackdaw::scene_io::register_entity_in_ast(app.world_mut(), mesh);
@@ -175,38 +177,12 @@ fn applying_water_replaces_the_meshs_material_component() {
     let chosen = handle_at(&app, &relative);
     let worn = app
         .world()
-        .get::<MeshMaterial3d<WaterMaterial>>(mesh)
+        .get::<Water3d>(mesh)
         .expect("the mesh wears the water material");
     assert_eq!(worn.0.id().untyped(), chosen.id());
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
-            .is_none(),
+        app.world().get::<AuroraMaterial3d>(mesh).is_none(),
         "and no longer wears a standard material as well",
     );
 }
 
-#[test]
-fn the_cameras_take_a_depth_prepass_once_a_scene_holds_water() {
-    let (mut app, _tmp) = editor();
-    let camera = app
-        .world_mut()
-        .spawn((Camera3d::default(), Camera::default()))
-        .id();
-    settle(&mut app);
-    assert!(
-        app.world()
-            .get::<bevy::core_pipeline::prepass::DepthPrepass>(camera)
-            .is_none(),
-        "a scene with no water leaves the camera as it is",
-    );
-
-    a_water_material(&mut app, "lake");
-
-    assert!(
-        app.world()
-            .get::<bevy::core_pipeline::prepass::DepthPrepass>(camera)
-            .is_some(),
-        "and water gives it the depth the surface reads behind itself",
-    );
-}

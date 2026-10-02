@@ -8,7 +8,8 @@
 
 use crate::util;
 
-use bevy::{dev_tools::infinite_grid::InfiniteGrid, prelude::*};
+use bevy::prelude::*;
+use jackdaw::infinite_grid::InfiniteGrid;
 use jackdaw::viewport::{ActiveViewport, MainViewportCamera, ViewportConfig, ViewportGrid};
 use jackdaw_api::prelude::*;
 use jackdaw_scene_types::PropertyValue;

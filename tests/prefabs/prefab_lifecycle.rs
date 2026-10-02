@@ -303,20 +303,11 @@ fn resolver_rejects_isa_cycle() {
 
 fn make_app_for_prefab_tests() -> bevy::prelude::App {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());

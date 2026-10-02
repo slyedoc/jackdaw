@@ -11,7 +11,7 @@
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
-use bevy::render::render_resource::TextureFormat;
+use wgpu_types::TextureFormat;
 
 use crate::selection::Selection;
 

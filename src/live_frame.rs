@@ -3,8 +3,8 @@
 
 use bevy::asset::RenderAssetUsages;
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use std::time::Instant;
+use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
 /// Latest streamed frame from the focused instance.
 #[derive(Resource, Default)]

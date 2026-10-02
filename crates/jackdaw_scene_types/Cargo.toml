@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
-bevy_aurora.workspace = true
+aurora_material = { workspace = true, optional = true }
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
     "reflect_auto_register",
     "std",
@@ -30,8 +30,8 @@ rand.workspace = true
 [features]
 default = ["render"]
 render = [
-    "bevy/bevy_pbr",
-    "bevy/bevy_render",
+    "dep:aurora_material",
+    "bevy/bevy_mesh",
     "bevy/bevy_image",
     "bevy/bevy_asset",
     "jackdaw_geometry/render",

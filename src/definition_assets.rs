@@ -1331,7 +1331,7 @@ fn compiled_kinds() -> [AssetKind; 6] {
         AssetKind::compiled(
             MATERIAL_KIND,
             "Material",
-            "bevy_pbr::pbr_material::StandardMaterial",
+            <bevy_aurora::material::AuroraMaterial as bevy::reflect::TypePath>::type_path(),
         )
         .with_icon(Icon::Palette),
         AssetKind::compiled(

@@ -1,13 +1,8 @@
 use std::borrow::Cow;
 
-use bevy::{
-    prelude::*,
-    render::{
-        RenderPlugin,
-        settings::{RenderCreation, WgpuSettings},
-    },
-    winit::WinitPlugin,
-};
+use bevy::app::PluginGroup as _;
+use bevy::prelude::*;
+use bevy_aurora::AuroraMinimalPlugins;
 use jackdaw::prelude::*;
 use jackdaw_api_internal::lifecycle::{ExtensionAppExt as _, OperatorEntity, enable_extension};
 use jackdaw_api_internal::snapshot::{ActiveSnapshotter, SceneSnapshot};
@@ -37,21 +32,20 @@ pub fn headless_app() -> App {
 pub fn ambient_app() -> App {
     skip_setup_check();
     let mut app = App::new();
+    // The same aurora group the editor boots on, minus the device: the editor reads
+    // `Assets<AuroraMaterial>` and the surface-class registry, and bevy's `DefaultPlugins`
+    // carries neither. It has no window or audio backend to disable.
+    //
+    // The two additions mirror `src/main.rs`: aurora carries no state machinery, and
+    // CPU transform propagation is what the editor's picking and handles read.
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
-            // Headless integration tests never exercise sound. Disabling the
-            // backend avoids attempts to connect to host ALSA/JACK services,
-            // which can otherwise block an otherwise-complete test process.
-            .disable::<bevy::audio::AudioPlugin>()
-            .disable::<WinitPlugin>()
-            .disable::<bevy::dev_tools::render_debug::RenderDebugOverlayPlugin>(),
+        AuroraMinimalPlugins
+            .build()
+            .add(bevy::state::app::StatesPlugin)
+            .add(bevy::gizmos::GizmoPlugin)
+            .set(bevy_aurora::transform::TransformPlugin {
+                propagate_on_cpu: true,
+            }),
     )
     // Ambient plugins moved to the binary entry point (matches
     // the launcher's `src/main.rs` and the static template's
@@ -71,14 +65,6 @@ pub fn ambient_app() -> App {
 #[allow(dead_code, reason = "shared across test binaries")]
 pub fn add_editor_plugins(app: &mut App) {
     app.add_plugins(JackdawEditorPlugins::default());
-    // Bevy 0.19's component-sync hooks (`On<Remove<SyncToRenderWorld>>`) read the
-    // main-world `PendingSyncEntity` resource that `SyncWorldPlugin` installs.
-    // The headless `RenderPlugin` (no backend) never spins up the render world,
-    // so that plugin isn't pulled in here; add it explicitly so despawning a
-    // sync-component entity (e.g. through `scene.new`) doesn't panic.
-    if !app.is_plugin_added::<bevy::render::sync_world::SyncWorldPlugin>() {
-        app.add_plugins(bevy::render::sync_world::SyncWorldPlugin);
-    }
 }
 
 /// Like [`headless_app`] but also runs the startup pass and ticks one
@@ -374,4 +360,19 @@ pub fn ensure_sdk_metadata(sdk: &jackdaw::sdk_paths::SdkPaths) {
     let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     SdkManifest::generate(&workspace, sdk, &["-p", "jackdaw", "--features", "dylib"])
         .expect("generate the SDK manifest for the fixture");
+}
+
+/// Whether `entity` carries bevy_ui's legacy `Interaction`, the marker of a hand-rolled
+/// control rather than a `bevy_ui_widgets` one.
+///
+/// By name, because the fork made the type behind the `Interaction` alias private, so it
+/// cannot be named in a turbofish any more.
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn has_legacy_interaction(world: &World, entity: Entity) -> bool {
+    world.inspect_entity(entity).is_ok_and(|components| {
+        components
+            .into_iter()
+            .any(|info| info.name().to_string().ends_with("::Interaction"))
+    })
 }

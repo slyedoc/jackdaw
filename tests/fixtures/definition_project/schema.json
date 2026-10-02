@@ -179,14 +179,14 @@
       "fields": [
         {
           "name": "material",
-          "type_path": "bevy_asset::handle::Handle<bevy_pbr::pbr_material::StandardMaterial>",
+          "type_path": "bevy_asset::handle::Handle<bevy_aurora::material::AuroraMaterial>",
           "item_type_path": "",
           "asset_type_path": ""
         },
         {
           "name": "materials",
-          "type_path": "alloc::vec::Vec<bevy_asset::handle::Handle<bevy_pbr::pbr_material::StandardMaterial>>",
-          "item_type_path": "bevy_asset::handle::Handle<bevy_pbr::pbr_material::StandardMaterial>",
+          "type_path": "alloc::vec::Vec<bevy_asset::handle::Handle<bevy_aurora::material::AuroraMaterial>>",
+          "item_type_path": "bevy_asset::handle::Handle<bevy_aurora::material::AuroraMaterial>",
           "asset_type_path": ""
         },
         {

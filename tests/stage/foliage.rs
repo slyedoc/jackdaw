@@ -1,6 +1,8 @@
 //! The foliage material: an asset of its own that a mesh wears in place of its
 //! standard one, and that blows with the scene's wind.
 
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use jackdaw_surface::foliage::Foliage3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -149,14 +151,14 @@ fn a_foliage_material_file_round_trips_through_save_and_load() {
 fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
     let standard = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     let mesh = app
         .world_mut()
         .spawn((
             Name::new("pine"),
             Mesh3d::default(),
-            MeshMaterial3d(standard),
+            AuroraMaterial3d(standard),
         ))
         .id();
     jackdaw::scene_io::register_entity_in_ast(app.world_mut(), mesh);
@@ -180,22 +182,18 @@ fn applying_a_foliage_material_replaces_the_meshs_material_component() {
     let chosen = handle_at(&app, &relative);
     let worn = app
         .world()
-        .get::<MeshMaterial3d<FoliageMaterial>>(mesh)
+        .get::<Foliage3d>(mesh)
         .expect("the mesh wears the foliage material");
     assert_eq!(worn.0.id().untyped(), chosen.id());
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
-            .is_none(),
+        app.world().get::<AuroraMaterial3d>(mesh).is_none(),
         "and no longer wears a standard material as well",
     );
 
     call(&mut app, "history.undo", &[]);
 
     assert!(
-        app.world()
-            .get::<MeshMaterial3d<StandardMaterial>>(mesh)
-            .is_some(),
+        app.world().get::<AuroraMaterial3d>(mesh).is_some(),
         "and the undo puts the standard material back",
     );
 }

@@ -8,10 +8,10 @@ use bevy::{
     asset::RenderAssetUsages,
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureSampleType},
 };
 use jackdaw_api::prelude::*;
 use path_slash::PathExt as _;
+use wgpu_types::{Extent3d, TextureDimension, TextureSampleType};
 
 use crate::{
     brush::{Brush, BrushEditMode, BrushSelection, EditMode, LastUsedMaterial},

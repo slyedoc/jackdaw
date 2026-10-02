@@ -18,6 +18,7 @@ bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-fe
 ] }
 path-slash = { workspace = true, optional = true }
 jackdaw_scene_types = { version = "0.19.0", path = "../jackdaw_scene_types", default-features = false, optional = true }
+wgpu-types = { version = "30", default-features = false, optional = true }
 
 [features]
 default = ["render", "procgen"]
@@ -26,7 +27,7 @@ default = ["render", "procgen"]
 # wasm32-unknown-unknown - out of the graph for consumers that only read baked
 # artifacts (a game server validating movement against a navmesh).
 procgen = ["dep:noise", "dep:rand"]
-# The splat material and its shader. Without it no GPU crate is in the graph.
+# The splat material, scatter and detail, drawn by aurora.
 # `--no-default-features` drops `procgen` too, leaving the data model, sidecar,
 # mesher, scatter, navmesh and texture-set validation: enough to read and query
 # a baked artifact, and the only configuration that builds for
@@ -36,11 +37,11 @@ render = [
     "dep:path-slash",
     "dep:bytemuck",
     "dep:jackdaw_scene_types",
+    "dep:wgpu-types",
     "jackdaw_scene_types/render",
-    "bevy/bevy_pbr",
-    "bevy/bevy_render",
     "bevy/bevy_image",
-    "bevy/bevy_gltf",
+    "bevy/bevy_mesh",
+    "bevy/bevy_camera",
     "bevy/bevy_scene",
     "bevy/bevy_log",
 ]

@@ -6,6 +6,7 @@
 //! with no viewport.
 
 use crate::util;
+use bevy_aurora::material::AuroraMaterial;
 
 use std::path::PathBuf;
 
@@ -96,7 +97,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 /// Save a live material through the operator that owns it, which is what puts
 /// it in the index, the catalog and the panel's list at once.
 #[track_caller]
-fn save_material(app: &mut App, name: &'static str, handle: &Handle<StandardMaterial>) {
+fn save_material(app: &mut App, name: &'static str, handle: &Handle<AuroraMaterial>) {
     app.world_mut()
         .resource_mut::<jackdaw::material_assets::MaterialRegistry>()
         .add(name.to_string(), handle.clone());
@@ -594,8 +595,8 @@ fn a_material_file_is_not_deleted_through_the_definition_operator() {
     let (mut app, tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     jackdaw::material_assets::write_material_file(app.world(), "slate", &handle)
         .expect("the material file is written");
     let path = tmp.path().join("assets/materials/slate.bsn");
@@ -649,8 +650,8 @@ fn a_material_file_is_indexed_alongside_every_other_kind() {
     let (mut app, tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial {
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial {
             perceptual_roughness: 0.31,
             ..default()
         });
@@ -679,8 +680,8 @@ fn a_material_saved_by_its_own_operator_carries_what_asset_set_wrote() {
     let (mut app, tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     save_material(&mut app, "slate", &handle);
 
     call(
@@ -708,8 +709,8 @@ fn a_material_is_opened_and_its_fields_set_through_the_definition_operators() {
     let (mut app, tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     save_material(&mut app, "slate", &handle);
 
     call(
@@ -729,7 +730,7 @@ fn a_material_is_opened_and_its_fields_set_through_the_definition_operators() {
 
     let roughness = app
         .world()
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
         .expect("the material the scene is using")
         .perceptual_roughness;
@@ -752,8 +753,8 @@ fn asset_set_fills_a_texture_slot_from_a_path_and_the_save_keeps_it() {
     let (mut app, tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     save_material(&mut app, "slate", &handle);
 
     call(
@@ -774,7 +775,7 @@ fn asset_set_fills_a_texture_slot_from_a_path_and_the_save_keeps_it() {
 
     let texture = app
         .world()
-        .resource::<Assets<StandardMaterial>>()
+        .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
         .expect("the material the scene is using")
         .base_color_texture
@@ -803,8 +804,8 @@ fn asset_set_takes_a_colour_as_channels_and_undo_puts_the_old_one_back() {
     let (mut app, _tmp) = editor_with_items();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
     save_material(&mut app, "slate", &handle);
 
     call(
@@ -823,7 +824,7 @@ fn asset_set_takes_a_colour_as_channels_and_undo_puts_the_old_one_back() {
 
     let base_color = |app: &App| {
         app.world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .expect("the material the scene is using")
             .base_color

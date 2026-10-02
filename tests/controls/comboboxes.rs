@@ -74,7 +74,7 @@ fn a_combobox_opens_a_feathers_menu_popup_of_menu_items() {
             "each row is a menu item the widget knows",
         );
         assert!(
-            app.world().get::<Interaction>(*row).is_none(),
+            !util::has_legacy_interaction(app.world(), *row),
             "and not a hand-rolled interaction control",
         );
     }

@@ -28,8 +28,6 @@ thiserror = "2"
 [features]
 default = ["render"]
 render = [
-    "bevy/bevy_pbr",
-    "bevy/bevy_render",
     "bevy/bevy_image",
     "jackdaw_geometry/render",
     "jackdaw_scene_types/render",

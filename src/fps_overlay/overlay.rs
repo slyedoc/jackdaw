@@ -16,10 +16,10 @@ use core::time::Duration;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::math::ops::log2;
 use bevy::prelude::*;
-use bevy::time::common_conditions::on_timer;
 use bevy::text::RemSize;
-use bevy::ui::widget::TextUiWriter;
+use bevy::time::common_conditions::on_timer;
 use bevy::ui::ComputedUiRenderTargetInfo;
+use bevy::ui::widget::TextUiWriter;
 
 /// [`GlobalZIndex`] the overlay renders at. Slightly under `i32::MAX` so something can
 /// still be put on top of it.

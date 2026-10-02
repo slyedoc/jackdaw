@@ -19,13 +19,13 @@ use core::time::Duration;
 
 mod overlay;
 
-use overlay::{FPS_OVERLAY_ZINDEX, FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig};
 use bevy::diagnostic::{Diagnostic, DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::time::common_conditions::on_timer;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::keymap::PresetInput;
 use jackdaw_feathers::tokens;
+use overlay::{FPS_OVERLAY_ZINDEX, FpsOverlayConfig, FpsOverlayPlugin, FrameTimeGraphConfig};
 
 use crate::core_extension::CoreExtensionInputContext;
 
@@ -152,19 +152,8 @@ mod tests {
     #[test]
     fn the_operator_toggles_what_the_overlay_displays() {
         let mut app = App::new();
-        // The stock overlay pulls in a UI material for its frame-time graph, so this needs
-        // the render plugins; no backend is required to hold the assets they register.
         app.add_plugins(
-            DefaultPlugins
-                .set(bevy::render::RenderPlugin {
-                    render_creation: bevy::render::settings::RenderCreation::Automatic(Box::new(
-                        bevy::render::settings::WgpuSettings {
-                            backends: None,
-                            ..default()
-                        },
-                    )),
-                    ..default()
-                })
+            bevy::app::PluginGroup::build(DefaultPlugins)
                 .disable::<bevy::audio::AudioPlugin>()
                 .disable::<bevy::winit::WinitPlugin>(),
         )

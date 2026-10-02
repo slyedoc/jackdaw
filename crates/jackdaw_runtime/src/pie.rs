@@ -69,6 +69,7 @@ struct PieStreamState {
 /// Kept separate from [`pie_config`] so tests can supply any
 /// [`IpcChannelTransport`] directly.
 pub fn attach_pie(app: &mut App, transport: IpcChannelTransport) {
+    #[cfg(feature = "pie_frames")]
     app.insert_resource(crate::pie_frames::spawn_frame_sender_thread(
         transport.lane_sender(jackdaw_pie_protocol::PieChannel::Frames),
     ));
@@ -84,10 +85,9 @@ pub fn attach_pie(app: &mut App, transport: IpcChannelTransport) {
             .chain()
             .before(bevy::input::InputSystems),
     );
-    app.add_systems(
-        Update,
-        (stream_state, crate::pie_frames::pace_frame_capture),
-    );
+    app.add_systems(Update, stream_state);
+    #[cfg(feature = "pie_frames")]
+    app.add_systems(Update, crate::pie_frames::pace_frame_capture);
 
     if crate::pie_windowless::windowless_active(app) {
         crate::pie_windowless::setup_windowless(app);
@@ -158,10 +158,16 @@ fn stream_state(world: &mut World) {
     // Derived face meshes are excluded (the editor regenerates faces from the
     // streamed `Brush`), as is the frame-capture camera (pure capture
     // infrastructure the editor must never project).
+    #[cfg(feature = "pie_frames")]
     type StreamFilter = (
         With<Transform>,
         Without<jackdaw_scene_types::DerivedFaceMesh>,
         Without<crate::pie_frames::FrameCaptureCamera>,
+    );
+    #[cfg(not(feature = "pie_frames"))]
+    type StreamFilter = (
+        With<Transform>,
+        Without<jackdaw_scene_types::DerivedFaceMesh>,
     );
     let entities: Vec<Entity> = world
         .query_filtered::<Entity, StreamFilter>()
@@ -330,11 +336,17 @@ fn apply_control(world: &mut World) {
             ControlEvent::RemoveComponent { entity, type_path } => {
                 apply_remove_component(world, entity, &type_path);
             }
+            #[cfg(feature = "pie_frames")]
             ControlEvent::StartFrameStream { width, height } => {
                 crate::pie_frames::start_frame_stream(world, width, height);
             }
+            #[cfg(feature = "pie_frames")]
             ControlEvent::StopFrameStream => {
                 crate::pie_frames::stop_frame_stream(world);
+            }
+            #[cfg(not(feature = "pie_frames"))]
+            ControlEvent::StartFrameStream { .. } | ControlEvent::StopFrameStream => {
+                warn!("PIE: this game was built without `pie_frames`; no frames to stream");
             }
             ControlEvent::Input(event) => apply_input(world, event),
             ControlEvent::Pick => {

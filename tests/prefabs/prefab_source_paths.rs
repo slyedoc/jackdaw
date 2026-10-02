@@ -19,20 +19,11 @@ Children [
 "#;
 
 fn make_app() -> App {
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());

@@ -11,17 +11,17 @@ use bevy::{
         backend::HitData,
         events::{Pointer, PointerClick, PointerPress},
         hover::PickingInteraction,
-        pointer::{Location, PointerAction, PointerButton, PointerId, PointerInput, PointerPress},
+        pointer::{
+            Location, PointerAction, PointerButton, PointerId, PointerInput, PointerPressState,
+        },
     },
     prelude::*,
-    render::{
-        render_resource::{TextureDimension, TextureFormat},
-        view::screenshot::{Screenshot, ScreenshotCaptured},
-    },
     window::{PrimaryWindow, WindowRef},
 };
 use jackdaw_api::{op::OperatorWorldExt as _, prelude::JackdawExtension as _};
+use jackdaw::image_capture::{ImageCapture, ImageCaptured};
 use jackdaw_scene_types::UiSceneRoot;
+use wgpu_types::{TextureDimension, TextureFormat};
 
 use jackdaw::{
     selection::Selection,
@@ -1367,7 +1367,7 @@ fn the_mode_control_is_a_radio_group_and_checks_the_current_mode() {
             "a segment is a radio button",
         );
         assert!(
-            app.world().get::<Interaction>(segment).is_none(),
+            !util::has_legacy_interaction(app.world(), segment),
             "and not a hand-rolled interaction control",
         );
         let bar = app
@@ -1512,18 +1512,14 @@ fn press_over_authored(app: &mut App, panel: Entity, authored: Vec2) {
         .get::<Viewport2dPanelHost>(panel)
         .map(|host| (host.stage, host.camera))
         .expect("host on panel parent");
-    let event = Press {
+    let target = window_target(app);
+    app.world_mut().trigger(PointerPress {
+        entity: stage,
+        pointer: Pointer::new(PointerId::Mouse, Location { target, position }),
         button: PointerButton::Primary,
         hit: HitData::new(camera, 0.0, None, None),
         count: 1,
-    };
-    let target = window_target(app);
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location { target, position },
-        event,
-        stage,
-    ));
+    });
     settle(app);
 }
 
@@ -1535,8 +1531,8 @@ fn pointer_is_pressed(app: &App, panel: Entity) -> bool {
         .expect("host on panel parent")
         .pointer;
     app.world()
-        .get::<PointerPress>(pointer)
-        .is_some_and(PointerPress::is_any_pressed)
+        .get::<PointerPressState>(pointer)
+        .is_some_and(PointerPressState::is_any_pressed)
 }
 
 fn moved() -> PointerAction {
@@ -1737,20 +1733,20 @@ fn click_grid_step(app: &mut App, panel: Entity, steps: i32) {
     assert_eq!(found.len(), 1, "one stepper end per direction per panel");
     let camera = camera_of(app, panel);
     let target = window_target(app);
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target,
-            position: Vec2::ZERO,
-        },
-        Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-            duration: core::time::Duration::ZERO,
-            count: 1,
-        },
-        found[0],
-    ));
+    app.world_mut().trigger(PointerClick {
+        entity: found[0],
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target,
+                position: Vec2::ZERO,
+            },
+        ),
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+        duration: core::time::Duration::ZERO,
+        count: 1,
+    });
 }
 
 fn window_target(app: &mut App) -> NormalizedRenderTarget {
@@ -1817,20 +1813,20 @@ fn click_segment(app: &mut App, panel: Entity, mode: Viewport2dMode) {
         .expect("host on panel parent")
         .camera;
     let target = window_target(app);
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target,
-            position: Vec2::ZERO,
-        },
-        Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(camera, 0.0, None, None),
-            duration: core::time::Duration::ZERO,
-            count: 1,
-        },
-        segment,
-    ));
+    app.world_mut().trigger(PointerClick {
+        entity: segment,
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target,
+                position: Vec2::ZERO,
+            },
+        ),
+        button: PointerButton::Primary,
+        hit: HitData::new(camera, 0.0, None, None),
+        duration: core::time::Duration::ZERO,
+        count: 1,
+    });
 }
 
 /// The fit is pure: the largest zoom that leaves the canvas and its margin
@@ -2042,24 +2038,20 @@ fn the_header_names_the_scene_and_reads_the_zoom_back() {
     );
 }
 
-/// The panel's two captures: the whole editor window, and the panel's own
-/// render target. A headless app has no render device, so `ScreenshotCaptured`
-/// is triggered directly in place of the frame the renderer would hand back.
+/// The panel's capture of its own render target. A headless app has no render
+/// device, so `ImageCaptured` is triggered directly in place of the frame the
+/// renderer would hand back. The window capture is aurora's swapchain read.
 #[test]
-fn the_screenshot_ops_aim_at_the_window_and_the_panel_and_write_pngs() {
+fn the_panel_screenshot_aims_at_the_panel_and_writes_a_png() {
     let mut app = util::editor_test_app();
     let parent = fit_panel(&mut app);
     app.update();
 
     let dir = std::env::temp_dir().join(format!("jackdaw-shot-ops-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let window_png = dir.join("window.png");
     let panel_png = dir.join("nested/panel.png");
 
-    for (id, path) in [
-        ("window.screenshot", &window_png),
-        ("viewport2d.screenshot", &panel_png),
-    ] {
+    for (id, path) in [("viewport2d.screenshot", &panel_png)] {
         app.world_mut()
             .operator(id)
             .param("path", path.to_string_lossy().to_string())
@@ -2077,34 +2069,26 @@ fn the_screenshot_ops_aim_at_the_window_and_the_panel_and_write_pngs() {
         RenderTarget::Image(target) => target.handle.clone(),
         other => panic!("the 2D viewport camera must render into an image, got {other:?}"),
     };
-    let mut aimed: Vec<(Entity, RenderTarget)> = app
+    let mut aimed: Vec<(Entity, Handle<Image>)> = app
         .world_mut()
-        .query::<(Entity, &Screenshot)>()
+        .query::<(Entity, &ImageCapture)>()
         .iter(app.world())
         .map(|(entity, shot)| (entity, shot.0.clone()))
         .collect();
-    assert_eq!(aimed.len(), 2, "one queued capture per operator");
+    assert_eq!(aimed.len(), 1, "one queued capture");
     assert!(
-        aimed
-            .iter()
-            .any(|(_, target)| matches!(target, RenderTarget::Window(WindowRef::Primary))),
-        "window.screenshot captures the primary window, not a camera's target",
-    );
-    assert!(
-        aimed.iter().any(
-            |(_, target)| matches!(target, RenderTarget::Image(image) if image.handle == panel_image)
-        ),
+        aimed[0].1 == panel_image,
         "viewport2d.screenshot captures exactly the image the panel's camera draws into",
     );
 
     for (entity, _) in aimed.drain(..) {
-        app.world_mut().trigger(ScreenshotCaptured {
+        app.world_mut().trigger(ImageCaptured {
             entity,
             image: captured_frame(),
         });
     }
 
-    for path in [&window_png, &panel_png] {
+    for path in [&panel_png] {
         let bytes = std::fs::read(path)
             .unwrap_or_else(|err| panic!("no capture at {}: {err}", path.display()));
         assert!(!bytes.is_empty(), "{} is empty", path.display());

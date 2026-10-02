@@ -1,37 +1,33 @@
 //! Drawing a terrain's stored scatter.
 //!
 //! A placement is data, not an entity: what is spawned is the least a draw needs
-//! -- a mesh, a material and a transform -- so bevy's automatic instancing
-//! batches every placement of the same asset into one draw.
+//! -- an [`AuroraMesh3d`], an [`AuroraMaterial3d`] and a transform -- so every
+//! placement of the same asset shares one BLAS.
 //!
-//! A glTF is resolved once per palette entry rather than once per placement: the
-//! file's node graph is flattened into a list of [`ScatterPrimitive`]s, each a
-//! mesh, a material and the transform that node sat at inside the file.
+//! A palette entry names a baked `.bsn` scene. It is resolved once rather than
+//! once per placement: the scene is spawned, its hierarchy flattened into a list
+//! of [`ScatterPrimitive`]s (a mesh, a material and the transform that part sat
+//! at inside the scene) and despawned again.
 //!
-//! Placements are spawned under one chunk entity per region. Bevy frustum culls
-//! per entity and skips a hidden parent's children, so hiding an off-screen
-//! chunk keeps the per-frame visibility cost proportional to the regions in view
-//! rather than to the placements in the document.
+//! Placements are spawned under one chunk entity per region. Nothing is culled:
+//! a tracer sees what is off screen in its shadows and reflections.
 //!
 //! Both hosts -- an editor holding its documents in a store, a game holding one
 //! per terrain -- write [`TerrainScatter`] onto the terrain entity and mark what
 //! changed in [`ScatterDirty`].
-//!
-//! A palette entry may name a prefab rather than a glTF. The renderer reads no
-//! prefab documents: it lists the ones it meets in [`ScatterPrefabs`], and the
-//! host answers each with the model the prefab draws.
 
 use bevy::asset::LoadState;
-use bevy::camera::primitives::{Aabb, Frustum, MeshAabb};
+use bevy::camera::primitives::Aabb;
 use bevy::camera::visibility::VisibilityRange;
-use bevy::gltf::{Gltf, GltfMaterialName, GltfMesh, GltfNode};
 use bevy::log::warn;
-use bevy::math::Affine3A;
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
+use bevy::scene::ScenePatch;
+use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::collections::BTreeMap;
 
-use jackdaw_scene_types::MaterialOverrides;
+use jackdaw_scene_types::{MaterialOverrides, MaterialSlot};
 
 use crate::placement::{ScatterPalette, ScatterPaletteEntry, ScatterPlacement, is_prefab_asset};
 use crate::region::RegionCoord;
@@ -70,7 +66,6 @@ pub struct ScatterRegion {
     pub origin: Vec3,
     pub placements: Vec<ScatterPlacement>,
 }
-
 impl TerrainScatter {
     /// The scatter a document holds, in the space of the terrain it sits
     /// on.
@@ -155,12 +150,10 @@ impl ScatterDirty {
     }
 }
 
-/// One region's placements, as one parent whose visibility the chunk cull
-/// toggles.
+/// One region's placements, as one parent.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct ScatterChunk {
-    /// The terrain this belongs to, kept so a cull can look it up without
-    /// walking the hierarchy.
+    /// The terrain this belongs to.
     pub terrain: Entity,
     pub coord: RegionCoord,
     /// Bounds of everything drawn under this chunk, in the terrain's local
@@ -179,26 +172,26 @@ pub struct ScatterRendered {
     pub index: usize,
 }
 
-/// One drawable part of a palette asset: the smallest thing a batch can be.
+/// One drawable part of a palette asset.
 #[derive(Clone, Debug)]
 pub struct ScatterPrimitive {
-    pub mesh: Handle<Mesh>,
-    pub material: Handle<StandardMaterial>,
-    /// The glTF's name for the material, which a palette entry's overrides are keyed by.
+    pub mesh: Handle<AuroraMesh>,
+    pub material: Handle<AuroraMaterial>,
+    /// The part's material name, which a palette entry's overrides are keyed by.
     pub material_name: Option<String>,
-    /// Where this part sat inside the glTF, flattened through the node
-    /// graph above it.
+    /// Where this part sat inside the scene, flattened through the hierarchy
+    /// above it.
     pub local: Transform,
 }
 
 /// What one palette asset resolved to.
 #[derive(Clone, Debug)]
 enum ScatterAsset {
-    /// The glTF is loading.
-    Loading(Handle<Gltf>),
+    /// The scene is loading.
+    Loading(Handle<ScenePatch>),
     Ready(ReadyAsset),
-    /// The glTF failed to load. Placements of it draw nothing, and the
-    /// failure is reported once.
+    /// The scene failed to load, or the entry names something other than a
+    /// scene. Placements of it draw nothing, and the failure is reported once.
     Failed,
 }
 
@@ -231,9 +224,16 @@ impl ScatterAssets {
         if self.entries.contains_key(asset) {
             return;
         }
-        let asset = asset.to_string();
-        let handle = server.load(asset.clone());
-        self.entries.insert(asset, ScatterAsset::Loading(handle));
+        let entry = if is_prefab_asset(asset) {
+            ScatterAsset::Loading(server.load(asset.to_string()))
+        } else {
+            warn!(
+                "terrain scatter: {asset} is not a .bsn scene; glTF is an import format, bake it with prop_import"
+            );
+            self.settled.push(asset.to_string());
+            ScatterAsset::Failed
+        };
+        self.entries.insert(asset.to_string(), entry);
     }
 
     /// The primitives a palette entry draws, or `None` while it is loading
@@ -261,124 +261,14 @@ impl ScatterAssets {
     }
 }
 
-/// A prefab a palette entry names, as the model it draws.
-#[derive(Clone, Debug, PartialEq)]
-pub struct ScatterPrefab {
-    /// The glTF drawn, relative to the assets directory.
-    pub model: String,
-    /// Where the model stands under the prefab's root.
-    pub local: Transform,
-    /// Material asset path the prefab dresses each glTF material name in.
-    pub materials: BTreeMap<String, String>,
-}
-
-/// The prefabs palette entries name, and the models they resolved to.
-///
-/// Filled by the host, which is what can read a prefab document: it answers
-/// each name in [`Self::wanted`] through [`Self::resolve`], and resolves a
-/// name again when the prefab changes.
-#[derive(Resource, Default)]
-pub struct ScatterPrefabs {
-    resolved: HashMap<String, Option<ScatterPrefab>>,
-    wanted: HashSet<String>,
-    /// Prefabs whose model changed since the last rebuild.
-    changed: Vec<String>,
-}
-
-impl ScatterPrefabs {
-    /// Prefabs a palette names that have not been resolved yet.
-    pub fn wanted(&self) -> impl Iterator<Item = &str> {
-        self.wanted.iter().map(String::as_str)
-    }
-
-    /// Every prefab resolved so far, drawing or not.
-    pub fn known(&self) -> impl Iterator<Item = &str> {
-        self.resolved.keys().map(String::as_str)
-    }
-
-    /// The model `prefab` draws, or `None` while it is unresolved or when it
-    /// draws nothing.
-    pub fn get(&self, prefab: &str) -> Option<&ScatterPrefab> {
-        self.resolved.get(prefab).and_then(Option::as_ref)
-    }
-
-    /// Record what `prefab` draws, `None` for a prefab that draws no single
-    /// model. Placements of it redraw only when this differs from before.
-    pub fn resolve(&mut self, prefab: &str, model: Option<ScatterPrefab>) {
-        self.wanted.remove(prefab);
-        if self.resolved.get(prefab) == Some(&model) {
-            return;
-        }
-        if model.is_none() {
-            warn!(
-                "terrain scatter: the prefab {prefab} draws no single model; its placements draw nothing"
-            );
-        }
-        self.resolved.insert(prefab.to_string(), model);
-        self.changed.push(prefab.to_string());
-    }
-
-    fn want(&mut self, prefab: &str) {
-        if !self.resolved.contains_key(prefab) {
-            self.wanted.insert(prefab.to_string());
-        }
-    }
-}
-
-/// What one palette entry draws: the glTF, where it stands under the
-/// placement, and the materials it wears.
-struct EntryModel<'a> {
-    model: &'a str,
-    local: Transform,
-    materials: BTreeMap<String, String>,
-}
-
-impl<'a> EntryModel<'a> {
-    /// `None` for a prefab entry that is unresolved or draws nothing.
-    fn of(entry: &'a ScatterPaletteEntry, prefabs: Option<&'a ScatterPrefabs>) -> Option<Self> {
-        if !is_prefab_asset(&entry.asset) {
-            return Some(Self {
-                model: &entry.asset,
-                local: Transform::IDENTITY,
-                materials: entry.materials.clone(),
-            });
-        }
-        let prefab = prefabs?.get(&entry.asset)?;
-        let mut materials = prefab.materials.clone();
-        materials.extend(
-            entry
-                .materials
-                .iter()
-                .map(|(name, path)| (name.clone(), path.clone())),
-        );
-        Some(Self {
-            model: &prefab.model,
-            local: prefab.local,
-            materials,
-        })
-    }
-}
-
 /// The bounding box a palette entry's placement stands in at scale 1, or
 /// `None` while what it draws is unresolved. What a navmesh bake stands an
 /// obstacle in.
-pub fn palette_entry_bounds(
-    assets: &ScatterAssets,
-    prefabs: Option<&ScatterPrefabs>,
-    entry: &ScatterPaletteEntry,
-) -> Option<Aabb> {
-    let drawn = EntryModel::of(entry, prefabs)?;
-    let bounds = assets.bounds(drawn.model)?;
-    let affine = drawn.local.compute_affine();
-    let centre = affine.transform_point3(Vec3::from(bounds.center));
-    let radius = affine
-        .matrix3
-        .abs()
-        .mul_vec3(Vec3::from(bounds.half_extents));
-    Some(Aabb::from_min_max(centre - radius, centre + radius))
+pub fn palette_entry_bounds(assets: &ScatterAssets, entry: &ScatterPaletteEntry) -> Option<Aabb> {
+    assets.bounds(&entry.asset)
 }
 
-/// Resolves palette assets, draws stored scatter, and culls it by chunk.
+/// Resolves palette assets and draws stored scatter.
 ///
 /// Independent of [`super::TerrainRenderPlugin`]: a host that draws the ground
 /// without scatter adds one and not the other.
@@ -390,47 +280,33 @@ pub enum ScatterSystems {
     /// Resolving palette assets and respawning the chunks a dirty mark
     /// names. A host that writes [`TerrainScatter`] runs before this.
     Rebuild,
-    /// Flattening the glTFs that have finished loading, which both the
+    /// Flattening the scenes that have finished loading, which both the
     /// scatter and the detail renderers read the results of.
     Resolve,
-    /// Hiding the chunks no camera can see.
-    Cull,
 }
 
-fn init_asset_if_absent<A: Asset>(app: &mut App) {
-    if !app.world().contains_resource::<Assets<A>>() {
-        app.init_asset::<A>();
-    }
-}
-
-/// The glTF store, shared by everything that draws a flattened asset. Added by
-/// [`ScatterRenderPlugin`] and [`super::detail::DetailRenderPlugin`] alike.
+/// The resolved palette store, shared by everything that draws a flattened
+/// asset. Added by [`ScatterRenderPlugin`] and [`super::detail::DetailRenderPlugin`] alike.
 pub struct ScatterAssetPlugin;
 
 impl Plugin for ScatterAssetPlugin {
     fn build(&self, app: &mut App) {
-        // A headless build has no glTF loader to register these; a rendering
-        // build already owns them, and registering again would replace the
-        // stores under every handle minted so far.
-        init_asset_if_absent::<Gltf>(app);
-        init_asset_if_absent::<GltfNode>(app);
-        init_asset_if_absent::<GltfMesh>(app);
-        init_asset_if_absent::<Mesh>(app);
-        init_asset_if_absent::<StandardMaterial>(app);
         app.init_resource::<ScatterAssets>()
-            .init_resource::<ScatterPrefabs>()
             .configure_sets(
                 Update,
                 ScatterSystems::Resolve.in_set(ScatterSystems::Rebuild),
             )
             .add_systems(
                 Update,
-                resolve_palette_assets.in_set(ScatterSystems::Resolve),
+                resolve_palette_assets
+                    .in_set(ScatterSystems::Resolve)
+                    .run_if(resource_exists::<Assets<ScenePatch>>)
+                    .run_if(resource_exists::<Assets<AuroraMesh>>),
             );
     }
 }
 
-/// Add the shared glTF store unless a sibling renderer already did.
+/// Add the shared store unless a sibling renderer already did.
 pub(super) fn add_asset_plugin(app: &mut App) {
     if !app.is_plugin_added::<ScatterAssetPlugin>() {
         app.add_plugins(ScatterAssetPlugin);
@@ -448,169 +324,121 @@ impl Plugin for ScatterRenderPlugin {
             )
                 .in_set(ScatterSystems::Rebuild),
         );
-        // After the frusta are written and before they are read: culling against
-        // last frame's frustum pops chunks in at the screen edge.
-        app.configure_sets(
-            PostUpdate,
-            ScatterSystems::Cull
-                .after(bevy::camera::visibility::VisibilitySystems::UpdateFrusta)
-                .before(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
-        );
-        app.add_systems(PostUpdate, cull_chunks.in_set(ScatterSystems::Cull));
     }
 }
 
-/// Start loading every palette asset no terrain has asked for yet, and list
-/// the prefabs no host has resolved.
+/// Start loading every palette asset no terrain has asked for yet.
 fn request_palette_assets(
-    assets: ResMut<ScatterAssets>,
-    prefabs: Option<ResMut<ScatterPrefabs>>,
+    mut assets: ResMut<ScatterAssets>,
     server: Res<AssetServer>,
-    terrains: Query<Ref<TerrainScatter>>,
+    terrains: Query<&TerrainScatter, Changed<TerrainScatter>>,
 ) {
-    let assets = assets.into_inner();
-    let mut prefabs = prefabs;
-    let resolved = prefabs.as_ref().is_some_and(DetectChanges::is_changed);
     for scatter in &terrains {
-        if !resolved && !scatter.is_changed() {
-            continue;
-        }
         for entry in &scatter.palette.assets {
-            if entry.is_tombstone() {
-                continue;
-            }
-            if !is_prefab_asset(&entry.asset) {
+            if !entry.is_tombstone() {
                 assets.request(&server, &entry.asset);
-                continue;
-            }
-            let Some(prefabs) = prefabs.as_mut() else {
-                continue;
-            };
-            match prefabs.get(&entry.asset) {
-                Some(prefab) => assets.request(&server, &prefab.model),
-                None => prefabs.bypass_change_detection().want(&entry.asset),
             }
         }
     }
 }
 
-/// Flatten every glTF that has finished loading into primitives.
-fn resolve_palette_assets(
-    assets: ResMut<ScatterAssets>,
-    server: Res<AssetServer>,
-    gltfs: Res<Assets<Gltf>>,
-    nodes: Res<Assets<GltfNode>>,
-    meshes: Res<Assets<GltfMesh>>,
-    mesh_assets: Res<Assets<Mesh>>,
-) {
-    let assets = assets.into_inner();
-    let mut settled = Vec::new();
-    for (path, entry) in assets.entries.iter_mut() {
-        let ScatterAsset::Loading(handle) = entry else {
-            continue;
-        };
-        if matches!(server.load_state(handle.id()), LoadState::Failed(_)) {
-            warn!("terrain scatter: {path} failed to load; its placements draw nothing");
-            *entry = ScatterAsset::Failed;
-            settled.push(path.clone());
-            continue;
-        }
-        let Some(gltf) = gltfs.get(handle) else {
-            continue;
-        };
-        let Some(ready) = flatten(gltf, &nodes, &meshes, &mesh_assets, &server) else {
-            continue;
-        };
-        *entry = ScatterAsset::Ready(ready);
-        settled.push(path.clone());
-    }
-    assets.settled = settled;
-}
-
-/// Every drawable part of a glTF, with the transform of the node it hung under
-/// folded in.
-///
-/// `None` while any part is still loading: a half-resolved asset would have to
-/// be rebuilt when the rest arrived, moving the placements under the camera.
-fn flatten(
-    gltf: &Gltf,
-    nodes: &Assets<GltfNode>,
-    meshes: &Assets<GltfMesh>,
-    mesh_assets: &Assets<Mesh>,
-    server: &AssetServer,
-) -> Option<ReadyAsset> {
-    // The roots are the nodes nothing lists as a child; glTF holds the node
-    // table flat.
-    let mut child_ids = HashSet::new();
-    for handle in &gltf.nodes {
-        let node = nodes.get(handle)?;
-        for child in &node.children {
-            child_ids.insert(child.id());
-        }
-    }
-
-    let material_names: HashMap<AssetId<bevy::gltf::GltfMaterial>, String> = gltf
-        .named_materials
+/// Flatten every scene that has finished loading into primitives: spawn it,
+/// read its parts, despawn it.
+fn resolve_palette_assets(world: &mut World) {
+    let loading: Vec<(String, Handle<ScenePatch>)> = world
+        .resource::<ScatterAssets>()
+        .entries
         .iter()
-        .map(|(name, handle)| (handle.id(), name.to_string()))
+        .filter_map(|(path, entry)| match entry {
+            ScatterAsset::Loading(handle) => Some((path.clone(), handle.clone())),
+            _ => None,
+        })
         .collect();
+    for (path, handle) in loading {
+        let failed = matches!(
+            world.resource::<AssetServer>().load_state(handle.id()),
+            LoadState::Failed(_)
+        );
+        let resolved = world
+            .resource::<Assets<ScenePatch>>()
+            .get(&handle)
+            .and_then(|patch| patch.resolved.clone());
+        let outcome = match (failed, resolved) {
+            (true, _) => {
+                warn!("terrain scatter: {path} failed to load; its placements draw nothing");
+                ScatterAsset::Failed
+            }
+            (false, None) => continue,
+            (false, Some(resolved)) => {
+                let root = match resolved.spawn(world) {
+                    Ok(root) => root.id(),
+                    Err(err) => {
+                        warn!("terrain scatter: {path} does not spawn: {err}");
+                        settle(world, path, ScatterAsset::Failed);
+                        continue;
+                    }
+                };
+                let ready = flatten(world, root);
+                world.entity_mut(root).despawn();
+                match ready {
+                    Some(ready) => ScatterAsset::Ready(ready),
+                    None => continue,
+                }
+            }
+        };
+        settle(world, path, outcome);
+    }
+}
+
+fn settle(world: &mut World, path: String, outcome: ScatterAsset) {
+    let mut assets = world.resource_mut::<ScatterAssets>();
+    assets.settled.push(path.clone());
+    assets.entries.insert(path, outcome);
+}
+
+/// Every drawable part under `root`, with the transforms above it folded in.
+///
+/// `None` while a part's mesh is still loading: a half-resolved asset would
+/// have to be rebuilt when the rest arrived.
+fn flatten(world: &World, root: Entity) -> Option<ReadyAsset> {
+    let meshes = world.resource::<Assets<AuroraMesh>>();
     let mut primitives = Vec::new();
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
-    let mut pending: Vec<(Handle<GltfNode>, Transform)> = gltf
-        .nodes
-        .iter()
-        .filter(|handle| !child_ids.contains(&handle.id()))
-        .map(|handle| (handle.clone(), Transform::IDENTITY))
-        .collect();
-
-    while let Some((handle, parent)) = pending.pop() {
-        let node = nodes.get(&handle)?;
-        let local = parent * node.transform;
-        for child in &node.children {
-            pending.push((child.clone(), local));
+    let mut pending = vec![(root, Transform::IDENTITY)];
+    while let Some((entity, parent)) = pending.pop() {
+        let entity_ref = world.entity(entity);
+        let local = match entity == root {
+            true => Transform::IDENTITY,
+            false => parent * entity_ref.get::<Transform>().copied().unwrap_or_default(),
+        };
+        if let Some(children) = entity_ref.get::<Children>() {
+            pending.extend(children.iter().map(|child| (child, local)));
         }
-        let Some(mesh_handle) = &node.mesh else {
+        let Some(mesh) = entity_ref.get::<AuroraMesh3d>() else {
             continue;
         };
-        let mesh = meshes.get(mesh_handle)?;
-        for primitive in &mesh.primitives {
-            let material = primitive
-                .material
-                .as_ref()
-                .and_then(|handle| standard_material(server, handle))
-                .unwrap_or_default();
-            // A mesh with no positions has no size to stand a placement in, so
-            // it is left out rather than waited for: waiting would re-walk the
-            // graph every frame for a bound that never arrives.
-            let Some(bounds) = mesh_assets.get(&primitive.mesh)?.get_aabb() else {
-                warn!(
-                    "terrain scatter: a primitive of {:?} has no positions and draws nothing",
-                    gltf.default_scene
-                );
-                continue;
-            };
-            let affine = local.compute_affine();
-            let centre = affine.transform_point3(Vec3::from(bounds.center));
-            let radius = affine
-                .matrix3
-                .abs()
-                .mul_vec3(Vec3::from(bounds.half_extents));
-            min = min.min(centre - radius);
-            max = max.max(centre + radius);
-            let material_name = primitive
-                .material
-                .as_ref()
-                .and_then(|handle| material_names.get(&handle.id()).cloned());
-            primitives.push(ScatterPrimitive {
-                mesh: primitive.mesh.clone(),
-                material,
-                material_name,
-                local,
-            });
-        }
+        let aabb = meshes.get(&mesh.0)?.aabb;
+        let centre = Vec3::from_slice(&aabb.center[..3]);
+        let half = Vec3::from_slice(&aabb.half_extent[..3]);
+        let affine = local.compute_affine();
+        let centre = affine.transform_point3(centre);
+        let radius = affine.matrix3.abs().mul_vec3(half);
+        min = min.min(centre - radius);
+        max = max.max(centre + radius);
+        primitives.push(ScatterPrimitive {
+            mesh: mesh.0.clone(),
+            material: entity_ref
+                .get::<AuroraMaterial3d>()
+                .map(|material| material.0.clone())
+                .unwrap_or_default(),
+            material_name: entity_ref
+                .get::<MaterialSlot>()
+                .map(|slot| slot.0.clone())
+                .or_else(|| material_name_of(entity_ref.get::<Name>()?)),
+            local,
+        });
     }
-
     if primitives.is_empty() {
         min = Vec3::ZERO;
         max = Vec3::ZERO;
@@ -621,25 +449,17 @@ fn flatten(
     })
 }
 
-/// The `StandardMaterial` the glTF loader wrote beside a primitive's
-/// `GltfMaterial`, under the same asset path with a `/std` label.
-///
-/// `None` for a primitive whose material has no path to hang that label on,
-/// which the caller draws with the default material.
-fn standard_material(
-    server: &AssetServer,
-    material: &Handle<bevy::gltf::GltfMaterial>,
-) -> Option<Handle<StandardMaterial>> {
-    let path = material.path()?;
-    let label = path.label()?;
-    Some(server.load(path.clone_owned().with_label(format!("{label}/std"))))
+/// The material half of a baked part's `node.material` name.
+fn material_name_of(name: &Name) -> Option<String> {
+    name.as_str()
+        .rsplit_once('.')
+        .map(|(_, material)| material.to_string())
 }
 
 /// Respawn the chunks a terrain's dirty regions name.
 fn rebuild_chunks(
     mut commands: Commands,
     mut assets: ResMut<ScatterAssets>,
-    prefabs: Option<ResMut<ScatterPrefabs>>,
     mut terrains: Query<(
         Entity,
         &TerrainScatter,
@@ -649,24 +469,15 @@ fn rebuild_chunks(
     chunks: Query<&ScatterChunk>,
 ) {
     let settled = std::mem::take(&mut assets.settled);
-    let mut prefabs = prefabs;
-    let changed = prefabs
-        .as_mut()
-        .map(|prefabs| std::mem::take(&mut prefabs.bypass_change_detection().changed))
-        .unwrap_or_default();
-    let prefabs = prefabs.as_deref();
     for (terrain, scatter, mut dirty, children) in &mut terrains {
-        // An asset that has just resolved makes every chunk drawing it
-        // stale, and a chunk that drew nothing is exactly the one waiting
-        // for it. A prefab that resolved again may draw something else.
-        if (!settled.is_empty() || !changed.is_empty())
-            && scatter.palette.assets.iter().any(|entry| {
-                changed.contains(&entry.asset)
-                    || settled.contains(&entry.asset)
-                    || prefabs
-                        .and_then(|prefabs| prefabs.get(&entry.asset))
-                        .is_some_and(|prefab| settled.contains(&prefab.model))
-            })
+        // An asset that has just resolved makes every chunk drawing it stale,
+        // and a chunk that drew nothing is exactly the one waiting for it.
+        if !settled.is_empty()
+            && scatter
+                .palette
+                .assets
+                .iter()
+                .any(|entry| settled.contains(&entry.asset))
         {
             dirty.all = true;
         }
@@ -692,7 +503,7 @@ fn rebuild_chunks(
             if !dirty.all && !dirty.regions.contains(&region.coord) {
                 continue;
             }
-            spawn_chunk(&mut commands, &assets, prefabs, terrain, scatter, region);
+            spawn_chunk(&mut commands, &assets, terrain, scatter, region);
         }
 
         *dirty = ScatterDirty::default();
@@ -702,7 +513,6 @@ fn rebuild_chunks(
 fn spawn_chunk(
     commands: &mut Commands,
     assets: &ScatterAssets,
-    prefabs: Option<&ScatterPrefabs>,
     terrain: Entity,
     scatter: &TerrainScatter,
     region: &ScatterRegion,
@@ -710,49 +520,38 @@ fn spawn_chunk(
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     let mut instances = Vec::new();
-    let drawn_by_entry: Vec<Option<EntryModel>> = scatter
-        .palette
-        .assets
-        .iter()
-        .map(|entry| EntryModel::of(entry, prefabs))
-        .collect();
 
     for (index, placement) in region.placements.iter().enumerate() {
         let Some(entry) = scatter.palette.asset(placement.asset) else {
             continue;
         };
-        let Some(drawn) = drawn_by_entry
-            .get(usize::from(placement.asset))
-            .and_then(Option::as_ref)
-        else {
+        let Some(ScatterAsset::Ready(ready)) = assets.entries.get(&entry.asset) else {
             continue;
         };
-        let Some(ScatterAsset::Ready(ready)) = assets.entries.get(drawn.model) else {
-            continue;
-        };
+        let materials: &BTreeMap<String, String> = &entry.materials;
         let stand = Transform {
             translation: region.origin + placement.offset(),
             rotation: Quat::from_rotation_y(placement.yaw),
             scale: Vec3::splat(placement.scale),
-        } * drawn.local;
+        };
         let range = cull_range(entry.cull_distance, ready.height() * stand.scale.y);
         for primitive in &ready.primitives {
             let dressed = primitive
                 .material_name
                 .as_ref()
-                .filter(|name| drawn.materials.contains_key(*name))
+                .filter(|name| materials.contains_key(*name))
                 .map(|name| {
                     (
-                        GltfMaterialName(name.clone()),
+                        MaterialSlot(name.clone()),
                         MaterialOverrides {
-                            materials: drawn.materials.clone(),
+                            materials: materials.clone(),
                         },
                     )
                 });
             instances.push((
                 (
-                    Mesh3d(primitive.mesh.clone()),
-                    MeshMaterial3d(primitive.material.clone()),
+                    AuroraMesh3d(primitive.mesh.clone()),
+                    AuroraMaterial3d(primitive.material.clone()),
                     stand * primitive.local,
                     ScatterRendered {
                         region: region.coord,
@@ -806,8 +605,7 @@ fn spawn_chunk(
 ///
 /// A palette entry that states a cutoff is taken at its word. One that does not
 /// gets the ground-cover default when the asset is short enough to be ground
-/// cover, and no cutoff otherwise; nothing is attached in that case, which keeps
-/// the instance out of the render world's visibility-range bookkeeping.
+/// cover, and no cutoff otherwise.
 ///
 /// The cutoff fades rather than snaps, so a batch of ground cover does not pop
 /// in as the camera creeps over the distance.
@@ -830,41 +628,6 @@ fn cull_range(cull_distance: f32, height: f32) -> Option<VisibilityRange> {
     })
 }
 
-/// Hide the chunks no camera can see.
-///
-/// Bevy's own frustum test is per entity and skips the children of a hidden
-/// parent, so this keeps the cost proportional to the regions in view.
-fn cull_chunks(
-    mut chunks: Query<(&ScatterChunk, &mut Visibility)>,
-    terrains: Query<&GlobalTransform>,
-    cameras: Query<(&Frustum, &Camera)>,
-) {
-    let frustums: Vec<&Frustum> = cameras
-        .iter()
-        .filter(|(_, camera)| camera.is_active)
-        .map(|(frustum, _)| frustum)
-        .collect();
-    if frustums.is_empty() {
-        return;
-    }
-    for (chunk, mut visibility) in &mut chunks {
-        let world_from_local = terrains
-            .get(chunk.terrain)
-            .map_or(Affine3A::IDENTITY, GlobalTransform::affine);
-        let seen = frustums
-            .iter()
-            .any(|frustum| frustum.intersects_obb(&chunk.bounds, &world_from_local, true, false));
-        let wanted = if seen {
-            Visibility::Inherited
-        } else {
-            Visibility::Hidden
-        };
-        if *visibility != wanted {
-            *visibility = wanted;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -875,7 +638,7 @@ mod tests {
         let mut data = RegionTerrainData {
             regions: TerrainRegions::new(RegionSize::new(4).unwrap()),
             scatter: ScatterPalette {
-                assets: vec![ScatterPaletteEntry::new("models/tree.gltf")],
+                assets: vec![ScatterPaletteEntry::new("models/tree.bsn")],
                 groups: vec!["woods".to_string()],
             },
             ..RegionTerrainData::default()
@@ -914,20 +677,20 @@ mod tests {
     fn a_chunk_spawns_one_entity_per_primitive_per_placement_and_names_none_of_them() {
         let mut app = App::new();
         app.add_plugins(bevy::asset::AssetPlugin::default())
-            .init_asset::<Mesh>()
-            .init_asset::<StandardMaterial>();
+            .init_asset::<AuroraMesh>()
+            .init_asset::<AuroraMaterial>();
 
         let (bark, leaves) = {
-            let meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+            let meshes = app.world_mut().resource_mut::<Assets<AuroraMesh>>();
             (meshes.reserve_handle(), meshes.reserve_handle())
         };
         let material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .reserve_handle();
         let mut assets = ScatterAssets::default();
         assets.entries.insert(
-            "models/tree.gltf".to_string(),
+            "models/tree.bsn".to_string(),
             ScatterAsset::Ready(ReadyAsset {
                 primitives: vec![
                     ScatterPrimitive {
@@ -980,7 +743,7 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(drawn.len(), placements * 2, "one entity per primitive");
         for entity in drawn {
-            assert!(app.world().get::<Mesh3d>(entity).is_some());
+            assert!(app.world().get::<AuroraMesh3d>(entity).is_some());
             assert!(app.world().get::<ScatterRendered>(entity).is_some());
             assert!(
                 app.world().get::<Name>(entity).is_none(),
@@ -993,19 +756,19 @@ mod tests {
     fn a_palette_entrys_overrides_ride_on_every_placement_of_the_parts_they_name() {
         let mut app = App::new();
         app.add_plugins(bevy::asset::AssetPlugin::default())
-            .init_asset::<Mesh>()
-            .init_asset::<StandardMaterial>();
+            .init_asset::<AuroraMesh>()
+            .init_asset::<AuroraMaterial>();
         let (bark, leaves) = {
-            let meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+            let meshes = app.world_mut().resource_mut::<Assets<AuroraMesh>>();
             (meshes.reserve_handle(), meshes.reserve_handle())
         };
         let material = app
             .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
+            .resource_mut::<Assets<AuroraMaterial>>()
             .reserve_handle();
         let mut assets = ScatterAssets::default();
         assets.entries.insert(
-            "models/tree.gltf".to_string(),
+            "models/tree.bsn".to_string(),
             ScatterAsset::Ready(ReadyAsset {
                 primitives: vec![
                     ScatterPrimitive {
@@ -1043,7 +806,7 @@ mod tests {
 
         let mut dressed = app
             .world_mut()
-            .query::<(&Mesh3d, &GltfMaterialName, &MaterialOverrides)>();
+            .query::<(&AuroraMesh3d, &MaterialSlot, &MaterialOverrides)>();
         let dressed: Vec<_> = dressed.iter(app.world()).collect();
         assert_eq!(
             dressed.len(),
@@ -1058,132 +821,6 @@ mod tests {
                 Some("materials/pine.bsn")
             );
         }
-    }
-
-    /// The leaves every drawn placement wears, as its overrides name them.
-    fn worn_leaves(app: &mut App) -> Vec<String> {
-        let mut dressed = app
-            .world_mut()
-            .query::<(&GltfMaterialName, &MaterialOverrides)>();
-        dressed
-            .iter(app.world())
-            .filter(|(name, _)| name.0 == "Leaves")
-            .filter_map(|(_, overrides)| overrides.materials.get("Leaves").cloned())
-            .collect()
-    }
-
-    #[test]
-    fn a_prefab_entry_draws_the_prefabs_model_and_redresses_when_the_prefab_changes() {
-        let mut app = App::new();
-        app.add_plugins(bevy::asset::AssetPlugin::default())
-            .init_asset::<Mesh>()
-            .init_asset::<StandardMaterial>();
-        let leaves = app
-            .world_mut()
-            .resource_mut::<Assets<Mesh>>()
-            .reserve_handle();
-        let material = app
-            .world_mut()
-            .resource_mut::<Assets<StandardMaterial>>()
-            .reserve_handle();
-        let mut assets = ScatterAssets::default();
-        assets.entries.insert(
-            "models/tree.gltf".to_string(),
-            ScatterAsset::Ready(ReadyAsset {
-                primitives: vec![ScatterPrimitive {
-                    mesh: leaves,
-                    material,
-                    material_name: Some("Leaves".to_string()),
-                    local: Transform::IDENTITY,
-                }],
-                bounds: Aabb::from_min_max(Vec3::new(-1.0, 0.0, -1.0), Vec3::new(1.0, 4.0, 1.0)),
-            }),
-        );
-        app.insert_resource(assets);
-        let prefab = |leaves: &str| ScatterPrefab {
-            model: "models/tree.gltf".to_string(),
-            local: Transform::from_scale(Vec3::splat(2.0)),
-            materials: BTreeMap::from([("Leaves".to_string(), leaves.to_string())]),
-        };
-        let mut prefabs = ScatterPrefabs::default();
-        prefabs.resolve("prefabs/tree.bsn", Some(prefab("materials/pine.bsn")));
-        app.insert_resource(prefabs);
-
-        let mut data = document();
-        data.scatter.assets[0] = ScatterPaletteEntry::new("prefabs/tree.bsn");
-        let scatter = TerrainScatter::from_document(&data);
-        let placements = scatter.placement_count();
-        app.world_mut().spawn((
-            Transform::IDENTITY,
-            Visibility::default(),
-            scatter,
-            ScatterDirty::default(),
-        ));
-        app.add_systems(Update, rebuild_chunks);
-        app.update();
-
-        assert_eq!(
-            worn_leaves(&mut app),
-            vec!["materials/pine.bsn".to_string(); placements],
-            "every placement wears the prefab's leaves"
-        );
-        let mut drawn = app
-            .world_mut()
-            .query_filtered::<&Transform, With<ScatterRendered>>();
-        let scales: Vec<f32> = drawn.iter(app.world()).map(|at| at.scale.y).collect();
-        assert_eq!(
-            scales,
-            vec![2.0, 4.0],
-            "the prefab's own scale rides under each placement's"
-        );
-
-        app.world_mut()
-            .resource_mut::<ScatterPrefabs>()
-            .resolve("prefabs/tree.bsn", Some(prefab("materials/larch.bsn")));
-        app.update();
-        assert_eq!(
-            worn_leaves(&mut app),
-            vec!["materials/larch.bsn".to_string(); placements],
-            "a prefab dressed anew redresses every placement of it"
-        );
-    }
-
-    #[test]
-    fn an_entrys_own_override_lies_over_its_prefabs() {
-        let mut prefabs = ScatterPrefabs::default();
-        prefabs.resolve(
-            "prefabs/tree.bsn",
-            Some(ScatterPrefab {
-                model: "models/tree.gltf".to_string(),
-                local: Transform::IDENTITY,
-                materials: BTreeMap::from([
-                    ("Leaves".to_string(), "materials/pine.bsn".to_string()),
-                    ("Bark".to_string(), "materials/bark.bsn".to_string()),
-                ]),
-            }),
-        );
-        let mut entry = ScatterPaletteEntry::new("prefabs/tree.bsn");
-        entry
-            .materials
-            .insert("Leaves".to_string(), "materials/autumn.bsn".to_string());
-        let drawn = EntryModel::of(&entry, Some(&prefabs)).expect("the prefab is resolved");
-        assert_eq!(drawn.model, "models/tree.gltf");
-        assert_eq!(
-            drawn.materials.get("Leaves").map(String::as_str),
-            Some("materials/autumn.bsn")
-        );
-        assert_eq!(
-            drawn.materials.get("Bark").map(String::as_str),
-            Some("materials/bark.bsn")
-        );
-        assert!(
-            EntryModel::of(
-                &ScatterPaletteEntry::new("prefabs/unknown.bsn"),
-                Some(&prefabs)
-            )
-            .is_none(),
-            "an unresolved prefab draws nothing yet"
-        );
     }
 
     /// A region marked dirty is the only one respawned, so a stroke costs

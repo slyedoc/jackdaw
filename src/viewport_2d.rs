@@ -18,7 +18,6 @@ use bevy::{
         pointer::{Location, PointerId, PointerInput, PointerLocation, PointerPressState},
     },
     prelude::*,
-    render::render_resource::{Extent3d, TextureDimension, TextureUsages},
     ui::{Checked, UiGlobalTransform, UiSystems, UiTargetCamera},
     ui_widgets::{ValueChange, observe},
 };
@@ -31,6 +30,7 @@ use jackdaw_feathers::{
     segmented, tokens,
 };
 use jackdaw_scene_types::{CanvasGuides, UiSceneRoot};
+use wgpu_types::{Extent3d, TextureDimension, TextureUsages};
 
 use crate::{
     canvas_snap::{CanvasGuidesOp, CanvasRulersOp, CanvasSnap, CanvasSnapKind, CanvasSnapOp},
@@ -763,7 +763,6 @@ fn park_ui_scene_roots(commands: &mut Commands, images: &mut Assets<Image>) -> E
                 ..default()
             },
             RenderTarget::Image(handle.into()),
-            Msaa::Off,
         ))
         .id()
 }
@@ -1579,7 +1578,6 @@ pub(crate) fn build_2d_presentation(world: &mut World, parent: Entity) -> Entity
                 ..default()
             },
             RenderTarget::Image(image_handle.clone().into()),
-            Msaa::Off,
             camera_layers,
         ))
         .id();

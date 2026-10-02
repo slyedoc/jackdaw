@@ -5,9 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::image_capture::{ImageCapture, ImageCaptured};
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 
 use crate::prelude::*;
 use crate::viewport::MainViewportCamera;
@@ -34,9 +34,14 @@ pub(crate) fn plugin(app: &mut App) {
         });
     }
     app.init_resource::<CaptureLog>();
+    app.init_resource::<ExitAfterCapture>();
     app.add_systems(
         Update,
-        drive_shot_probe.run_if(in_state(crate::AppState::Editor)),
+        (
+            drive_shot_probe.run_if(in_state(crate::AppState::Editor)),
+            // Aurora publishes the queue; a headless app has no render loop to fill it.
+            drain_window_captures.run_if(resource_exists::<bevy_aurora::util::ScreenshotRequests>),
+        ),
     );
     crate::camera_capture::plugin(app);
 }
@@ -205,29 +210,60 @@ fn queue_capture_of(
         .cloned()
         .ok_or(CaptureError::NotAnImageTarget)?;
 
-    spawn_capture(world, Screenshot::image(handle), path, exit_when_done);
+    spawn_capture(world, ImageCapture::image(handle), path, exit_when_done);
     Ok(())
 }
 
 /// Queue a capture of the whole primary window, written to `path` as a PNG
 /// once the GPU readback lands.
 ///
-/// Unlike [`queue_capture`] this cannot fail up front; with no primary window
-/// the observer never fires.
+/// Aurora reads the swapchain back itself; bevy's `Screenshot` needs a render app this
+/// branch has no wgpu stack for. [`drain_window_captures`] answers for the file.
 pub fn queue_window_capture(world: &mut World, path: PathBuf, exit_when_done: bool) {
-    spawn_capture(world, Screenshot::primary_window(), path, exit_when_done);
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if exit_when_done {
+        world.get_resource_or_init::<ExitAfterCapture>().0 = Some(path.clone());
+    }
+    world
+        .get_resource_or_init::<bevy_aurora::util::ScreenshotRequests>()
+        .request(path);
 }
 
-/// Spawn the [`Screenshot`] entity shared by every capture path.
-fn spawn_capture(world: &mut World, screenshot: Screenshot, path: PathBuf, exit_when_done: bool) {
+/// The window capture whose landing ends the process, for `JACKDAW_SHOT`-style runs.
+#[derive(Resource, Default)]
+struct ExitAfterCapture(Option<PathBuf>);
+
+/// Moves aurora's finished swapchain captures into [`CaptureLog`], which is what the
+/// remote screenshot method and the unattended run both poll.
+fn drain_window_captures(
+    mut requests: ResMut<bevy_aurora::util::ScreenshotRequests>,
+    mut log: ResMut<CaptureLog>,
+    mut exit_after: ResMut<ExitAfterCapture>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    for capture in requests.take_written() {
+        log.record(capture.path.clone(), (capture.width, capture.height));
+        if exit_after.0.as_deref() == Some(capture.path.as_path()) {
+            exit_after.0 = None;
+            exit.write(AppExit::Success);
+        }
+    }
+}
+
+/// Spawn the [`ImageCapture`] entity shared by every capture path.
+fn spawn_capture(world: &mut World, capture: ImageCapture, path: PathBuf, exit_when_done: bool) {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    world.spawn(screenshot).observe(
-        move |capture: On<ScreenshotCaptured>,
+    world.spawn(capture).observe(
+        move |capture: On<ImageCaptured>,
               mut exit: MessageWriter<AppExit>,
               log: Option<ResMut<CaptureLog>>| {
             // Writing here rather than through bevy's `save_to_disk` keeps

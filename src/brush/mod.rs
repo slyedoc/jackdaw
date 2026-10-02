@@ -497,19 +497,9 @@ impl Plugin for BrushPlugin {
             .init_resource::<LastUsedMaterial>()
             .add_plugins(mesh::MeshPlugin)
             .add_plugins(preview::PreviewPlugin)
-            // TODO(aurora): the gizmo overlay's two materials are `AsBindGroup`, so their
-            // `MaterialPlugin`s are off (AURORA.md item 2). The asset collections still have
-            // to exist -- the overlay systems mint handles into them -- so register the
-            // assets without the draw. Aurora's gizmo_render may cover this outright.
-            .init_asset::<gizmo_overlay::OccludedHandleMaterial>()
-            .init_asset::<gizmo_overlay::FrontEdgeMaterial>()
             .add_systems(
                 OnEnter(crate::AppState::Editor),
-                (
-                    mesh::setup_default_materials,
-                    gizmo_overlay::setup_vertex_handle_assets,
-                    gizmo_overlay::setup_edge_overlay,
-                ),
+                mesh::setup_default_materials,
             )
             .add_systems(
                 Update,
@@ -555,8 +545,8 @@ impl Plugin for BrushPlugin {
                 PostUpdate,
                 (
                     gizmo_overlay::draw_brush_edit_gizmos,
-                    gizmo_overlay::update_vertex_handles,
-                    gizmo_overlay::update_edge_overlay,
+                    gizmo_overlay::draw_vertex_handles,
+                    gizmo_overlay::draw_edit_edges,
                     gizmo_overlay::draw_loop_cut_preview,
                     topology_ops::loop_cut::update_loop_cut_mid_label,
                     knife_mode::draw_knife_overlay,

@@ -2,13 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::image_capture::{ImageCapture, ImageCaptured};
 use bevy::camera::RenderTarget;
 use bevy::camera::visibility::RenderLayers;
-use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
-use bevy::render::render_resource::{TextureFormat, TextureUsages};
-use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use jackdaw_api::prelude::*;
+use wgpu_types::{TextureFormat, TextureUsages};
 
 use crate::project::ProjectRoot;
 use crate::viewport::MainViewportCamera;
@@ -62,7 +61,6 @@ pub fn spawn_capture_camera(
         .or_else(|| node.get::<Transform>().copied())?;
     let projection = node.get::<Projection>().cloned().unwrap_or_default();
     let light = node.get::<EnvironmentMapLight>().cloned();
-    let tonemapping = node.get::<Tonemapping>().copied();
 
     let mut image = Image::new_target_texture(width, height, TextureFormat::Rgba8UnormSrgb, None);
     image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
@@ -87,9 +85,6 @@ pub fn spawn_capture_camera(
     if let Some(light) = light {
         camera.insert(light);
     }
-    if let Some(tonemapping) = tonemapping {
-        camera.insert(tonemapping);
-    }
     Some(camera.id())
 }
 
@@ -108,8 +103,8 @@ fn settle_captures(
         };
         let path = capture.path.clone();
         commands.entity(camera).remove::<PendingCapture>();
-        commands.spawn(Screenshot::image(image)).observe(
-            move |captured: On<ScreenshotCaptured>,
+        commands.spawn(ImageCapture::image(image)).observe(
+            move |captured: On<ImageCaptured>,
                   mut commands: Commands,
                   log: Option<ResMut<crate::screenshot::CaptureLog>>| {
                 if let Some(parent) = path.parent() {

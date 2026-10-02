@@ -250,7 +250,6 @@ fn a_camera_the_environment_dresses_saves_as_it_was_authored() {
     assert_eq!(result, OperatorResult::Finished);
     let lookout = named(&mut app, "lookout").expect("the scene spawned its camera");
     let dressed = app.world().entity(lookout);
-    assert!(dressed.contains::<bevy::pbr::DistanceFog>());
     assert!(dressed.contains::<bevy::light::EnvironmentMapLight>());
 
     assert!(

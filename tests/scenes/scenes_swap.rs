@@ -58,21 +58,12 @@ fn view_state_default_has_empty_selection_and_no_sub_selection() {
 #[test]
 fn document_capture_includes_brushes() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
     use jackdaw_scene_types::Brush;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -96,21 +87,12 @@ fn document_capture_includes_brushes() {
 #[test]
 fn swap_round_trips_a_single_brush() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
     use jackdaw_scene_types::Brush;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -168,8 +150,6 @@ fn swap_round_trips_a_single_brush() {
 #[test]
 fn swap_preserves_a_sculpted_terrain() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
     use jackdaw::terrain::TerrainDataStore;
     use jackdaw_scene_types::Terrain;
@@ -179,14 +159,7 @@ fn swap_preserves_a_sculpted_terrain() {
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -271,8 +244,6 @@ fn swap_preserves_a_sculpted_terrain() {
 #[test]
 fn scene_tabs_keep_same_named_terrain_sidecars_isolated() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
     use jackdaw::terrain::TerrainDataStore;
     use jackdaw_scene_types::Terrain;
@@ -282,14 +253,7 @@ fn scene_tabs_keep_same_named_terrain_sidecars_isolated() {
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -391,20 +355,11 @@ fn scene_tabs_keep_same_named_terrain_sidecars_isolated() {
 #[test]
 fn swap_preserves_camera_transform_per_tab() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -442,24 +397,14 @@ fn swap_preserves_camera_transform_per_tab() {
 #[test]
 fn scene_new_appends_an_untitled_tab() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
-    app.add_plugins(bevy::render::sync_world::SyncWorldPlugin);
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
     app.init_resource::<jackdaw_bsn::SceneBsnAst>();
@@ -498,24 +443,14 @@ fn scene_new_appends_an_untitled_tab() {
 #[test]
 fn scene_open_dedupes_by_path() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
-    app.add_plugins(bevy::render::sync_world::SyncWorldPlugin);
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
     app.init_resource::<jackdaw_bsn::SceneBsnAst>();
@@ -560,20 +495,11 @@ fn scene_open_dedupes_by_path() {
 
 fn make_app_with_n_tabs(n: usize) -> bevy::app::App {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -970,20 +896,11 @@ fn swap_does_not_keep_a_jsn_scene_snapshot_field() {
 #[test]
 fn tab_swap_preserves_entity_ordering_and_components() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
@@ -1102,24 +1019,14 @@ fn open_prefab_file_sets_tab_kind_prefab() {
 #[test]
 fn scene_open_flags_dirty_when_ids_need_migration() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
-    app.add_plugins(bevy::render::sync_world::SyncWorldPlugin);
     app.init_resource::<jackdaw::scenes::Scenes>();
     app.init_resource::<jackdaw::commands::CommandHistory>();
     app.init_resource::<jackdaw_bsn::SceneBsnAst>();
@@ -1272,20 +1179,11 @@ fn each_tab_has_its_own_undo_stack() {
 #[test]
 fn finish_load_scene_entities_and_ast_share_ids_after_heal() {
     use bevy::prelude::*;
-    use bevy::render::RenderPlugin;
-    use bevy::render::settings::{RenderCreation, WgpuSettings};
     use bevy::winit::WinitPlugin;
 
     let mut app = App::new();
     app.add_plugins(
-        DefaultPlugins
-            .set(RenderPlugin {
-                render_creation: RenderCreation::Automatic(Box::new(WgpuSettings {
-                    backends: None,
-                    ..default()
-                })),
-                ..default()
-            })
+        bevy::app::PluginGroup::build(DefaultPlugins)
             .disable::<WinitPlugin>(),
     );
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());

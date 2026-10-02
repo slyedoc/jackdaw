@@ -3,8 +3,8 @@ use bevy::{
     camera::{RenderTarget, visibility::RenderLayers},
     ecs::error::BevyError,
     prelude::*,
-    render::render_resource::TextureFormat,
 };
+use wgpu_types::TextureFormat;
 
 use crate::default_style;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};

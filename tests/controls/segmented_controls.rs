@@ -31,20 +31,20 @@ fn click(app: &mut App, entity: Entity) {
     let target: NormalizedRenderTarget = RenderTarget::Window(WindowRef::Primary)
         .normalize(Some(window))
         .expect("the primary window normalizes");
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target,
-            position: Vec2::ZERO,
-        },
-        Click {
-            button: PointerButton::Primary,
-            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            duration: core::time::Duration::ZERO,
-            count: 1,
-        },
-        entity,
-    ));
+    app.world_mut().trigger(PointerClick {
+        entity: entity,
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target,
+                position: Vec2::ZERO,
+            },
+        ),
+        button: PointerButton::Primary,
+        hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        duration: core::time::Duration::ZERO,
+        count: 1,
+    });
     app.update();
 }
 
@@ -66,7 +66,7 @@ fn assert_is_a_segment(app: &App, segment: Entity) {
         "a segment is a radio button",
     );
     assert!(
-        app.world().get::<Interaction>(segment).is_none(),
+        !util::has_legacy_interaction(app.world(), segment),
         "and not a hand-rolled interaction control",
     );
     let bar = app

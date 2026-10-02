@@ -58,7 +58,7 @@ fn a_list_is_a_list_box_and_its_rows_are_list_items() {
         "so the row is a list item the widget knows",
     );
     assert!(
-        app.world().get::<Interaction>(row).is_none(),
+        !util::has_legacy_interaction(app.world(), row),
         "and not a hand-rolled interaction control",
     );
 }
@@ -174,21 +174,21 @@ fn scrolling_a_scroll_area_moves_its_scroll_position() {
     app.update();
 
     let target = window_target(&mut app);
-    app.world_mut().trigger(Pointer::new(
-        PointerId::Mouse,
-        Location {
-            target,
-            position: Vec2::ZERO,
-        },
-        Scroll {
-            unit: bevy::input::mouse::MouseScrollUnit::Pixel,
-            x: 0.0,
-            y: -40.0,
-            hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
-            phase: bevy::input::touch::TouchPhase::Moved,
-        },
-        container,
-    ));
+    app.world_mut().trigger(PointerScroll {
+        entity: container,
+        pointer: Pointer::new(
+            PointerId::Mouse,
+            Location {
+                target,
+                position: Vec2::ZERO,
+            },
+        ),
+        unit: bevy::input::mouse::MouseScrollUnit::Pixel,
+        x: 0.0,
+        y: -40.0,
+        hit: HitData::new(Entity::PLACEHOLDER, 0.0, None, None),
+        phase: bevy::input::touch::TouchPhase::Moved,
+    });
     app.update();
 
     let position = app

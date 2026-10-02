@@ -11,9 +11,9 @@ use super::{BrushMaterialPalette, BrushMeshCache, BrushPreview};
 use crate::default_style;
 use crate::draw_brush::DrawBrushState;
 use crate::selection::Selected;
+use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 use jackdaw_geometry::{compute_brush_geometry_from_planes, compute_face_tangent_axes};
 use jackdaw_scene_types::BrushFaceData;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 pub(super) struct MeshPlugin;
 
@@ -471,10 +471,7 @@ pub fn ensure_brush_chunk_materials(
     palette: Res<BrushMaterialPalette>,
     view_modes: Res<crate::view_modes::ViewModeSettings>,
     brushes: Query<(Entity, &BrushMeshCache, Has<BrushPreview>, Has<Selected>), With<super::Brush>>,
-    mut chunk_mats: Query<(
-        &super::BrushMeshChunk,
-        &mut AuroraMaterial3d,
-    )>,
+    mut chunk_mats: Query<(&super::BrushMeshChunk, &mut AuroraMaterial3d)>,
     parents: Query<&ChildOf>,
     selected_query: Query<(), With<Selected>>,
 ) {

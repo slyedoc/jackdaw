@@ -1,6 +1,7 @@
 //! Converter tests: a legacy `.jsn` scene converts to `.bsn` text that loads
 //! into an ECS world semantically equal to what the JSN load path produces.
 
+use bevy_aurora::material::AuroraMaterial;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -410,7 +411,7 @@ fn inline_material_reference_and_terrain_survive_conversion() {
             .resource::<bevy::ecs::reflect::AppTypeRegistry>()
             .clone();
         let reg = registry.read();
-        let material = StandardMaterial {
+        let material = AuroraMaterial {
             base_color: Color::srgb(0.8, 0.1, 0.1),
             ..Default::default()
         };
@@ -419,7 +420,7 @@ fn inline_material_reference_and_terrain_survive_conversion() {
         serde_json::to_value(serializer).expect("material serializes")
     };
     scene.assets.0.insert(
-        "bevy_pbr::pbr_material::StandardMaterial".to_string(),
+        "bevy_aurora::material::AuroraMaterial".to_string(),
         std::collections::HashMap::from([("#RedMat".to_string(), material_json)]),
     );
 
@@ -448,7 +449,7 @@ fn inline_material_reference_and_terrain_survive_conversion() {
     );
     assert!(
         converted.scene_bsn.contains("#RedMat\n")
-            && converted.scene_bsn.contains("StandardMaterial"),
+            && converted.scene_bsn.contains("AuroraMaterial"),
         "scene must embed the inline material definition:\n{}",
         converted.scene_bsn
     );
@@ -548,7 +549,7 @@ fn convert_project_walks_scenes_prefabs_and_catalog() {
             .resource::<bevy::ecs::reflect::AppTypeRegistry>()
             .clone();
         let reg = registry.read();
-        let material = StandardMaterial {
+        let material = AuroraMaterial {
             base_color: Color::srgb(0.2, 0.9, 0.2),
             ..Default::default()
         };
@@ -559,7 +560,7 @@ fn convert_project_walks_scenes_prefabs_and_catalog() {
     let catalog = serde_json::json!({
         "jsn": {"format_version": [3, 0, 0], "editor_version": "0.5.0", "bevy_version": "0.19"},
         "assets": {
-            "bevy_pbr::pbr_material::StandardMaterial": {"@GreenMat": material_json}
+            "bevy_aurora::material::AuroraMaterial": {"@GreenMat": material_json}
         }
     });
     std::fs::write(
@@ -593,7 +594,7 @@ fn convert_project_walks_scenes_prefabs_and_catalog() {
 
     let catalog_bsn = std::fs::read_to_string(root.join(".jsn/catalog.bsn")).unwrap();
     assert!(catalog_bsn.contains("GreenMat"), "{catalog_bsn}");
-    assert!(catalog_bsn.contains("StandardMaterial"), "{catalog_bsn}");
+    assert!(catalog_bsn.contains("AuroraMaterial"), "{catalog_bsn}");
 
     let level_bsn = std::fs::read_to_string(root.join("assets/scenes/level.bsn")).unwrap();
     let mut app_b = headless_app();
@@ -705,7 +706,7 @@ fn a_catalog_written_before_assets_had_files_still_loads() {
     std::fs::create_dir_all(dir.path().join("assets")).unwrap();
     std::fs::write(
         dir.path().join("assets/catalog.bsn"),
-        "#Steel\nbevy_pbr::pbr_material::StandardMaterial { metallic: 0.75 }\n",
+        "#Steel\nbevy_aurora::material::AuroraMaterial { metallic: 0.75 }\n",
     )
     .unwrap();
 
@@ -728,8 +729,8 @@ fn a_catalog_written_before_assets_had_files_still_loads() {
         .clone();
     let material = app
         .world()
-        .resource::<Assets<StandardMaterial>>()
-        .get(&loaded.typed::<StandardMaterial>())
+        .resource::<Assets<AuroraMaterial>>()
+        .get(&loaded.typed::<AuroraMaterial>())
         .expect("material in store");
     assert!((material.metallic - 0.75).abs() < 1e-6);
 }

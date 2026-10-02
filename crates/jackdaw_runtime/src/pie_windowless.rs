@@ -14,7 +14,7 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use bevy::render::render_resource::{TextureFormat, TextureUsages};
+use wgpu_types::{TextureFormat, TextureUsages};
 use bevy::window::{CursorOptions, ExitCondition, PrimaryWindow, WindowPlugin};
 
 /// Initial capture size until the editor's first `StartFrameStream`.

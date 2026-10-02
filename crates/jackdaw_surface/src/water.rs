@@ -24,21 +24,42 @@
 //! shader, which is what the tests check: the two have to agree or a dial reads
 //! one way in the inspector and another on screen.
 
-use bevy::asset::embedded_asset;
 use bevy::color::ColorToComponents;
-use bevy::core_pipeline::prepass::DepthPrepass;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
-use bevy::render::render_asset::RenderAssets;
-use bevy::render::render_resource::{AsBindGroup, AsBindGroupShaderType, ShaderType};
-use bevy::render::texture::GpuImage;
-use bevy::shader::ShaderRef;
+use bevy_aurora::material::AuroraMaterial;
+use bevy_aurora::surface_group::SurfaceClass;
 use jackdaw_scene_types::{SceneWind, Wind};
 
-const SHADER_PATH: &str = "embedded://jackdaw_surface/shaders/water.wgsl";
+use crate::surface_class::{ExtendedSurface, Mirrors, mirror_extended};
 
 /// The material an entity wears to draw as water.
-pub type WaterMaterial = ExtendedMaterial<StandardMaterial, Water>;
+///
+/// TODO(aurora): no `water.rchit` yet, so the class is `OPAQUE` and the surface shades as
+/// its base: right colour, no waves, no depth tint, no foam. [`WaterUniform`] is the
+/// parameter row that shader will read.
+#[derive(Asset, Reflect, Clone, Debug, Default)]
+#[reflect(Default, Clone)]
+pub struct WaterMaterial {
+    pub base: AuroraMaterial,
+    pub extension: Water,
+}
+
+impl ExtendedSurface for WaterMaterial {
+    fn base(&self) -> &AuroraMaterial {
+        &self.base
+    }
+}
+
+/// The water material a mesh wears.
+#[derive(Component, Clone, Debug, Default, Reflect, PartialEq, Eq)]
+#[reflect(Component, Default, Clone, PartialEq)]
+pub struct Water3d(pub Handle<WaterMaterial>);
+
+impl AsRef<Handle<WaterMaterial>> for Water3d {
+    fn as_ref(&self) -> &Handle<WaterMaterial> {
+        &self.0
+    }
+}
 
 const TAU: f32 = std::f32::consts::TAU;
 /// How much of the wave the long octave carries, the short one taking the rest.
@@ -49,9 +70,8 @@ const SHORT_WAVE_RATE: f32 = 2.3;
 /// A standard material that draws as water: a moving surface, a colour that
 /// deepens with the bed behind it, foam at the shore and a wave in its
 /// vertices.
-#[derive(Asset, AsBindGroup, Reflect, Clone, Debug)]
-#[reflect(Default, Clone)]
-#[uniform(100, WaterUniform)]
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component, Default, Clone)]
 pub struct Water {
     /// The colour where the bed is right behind the surface. Its alpha is how
     /// much of the bed the shallows hide.
@@ -109,12 +129,9 @@ pub struct Water {
     /// A tangent-space normal map, sampled twice and averaged. It is scrolled
     /// past its own edges, so its image wants a repeating address mode.
     /// Without one the ripples come from a sine pattern.
-    #[texture(101)]
-    #[sampler(102)]
     pub normal_map_texture: Option<Handle<Image>>,
     /// Where the foam is, read from the red channel. Without one the foam is a
     /// banded pattern.
-    #[texture(103)]
     pub foam_mask: Option<Handle<Image>>,
     /// The wind the scene is blowing by, written by [`WaterPlugin`] from
     /// [`SceneWind`] rather than authored, so it never reaches the file.
@@ -213,7 +230,8 @@ impl Water {
 ///
 /// The two speeds arrive already scaled by [`Water::wind_gain`], so the shader
 /// has no wind of its own to read.
-#[derive(Clone, Default, ShaderType)]
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
 pub struct WaterUniform {
     pub shallow_color: Vec4,
     pub deep_color: Vec4,
@@ -246,8 +264,9 @@ pub mod flags {
     pub const FOAM_MASK: u32 = 2;
 }
 
-impl AsBindGroupShaderType<WaterUniform> for Water {
-    fn as_bind_group_shader_type(&self, _images: &RenderAssets<GpuImage>) -> WaterUniform {
+impl Water {
+    /// The parameter row `water.rchit` will read.
+    pub fn params(&self) -> WaterUniform {
         let radians = self.normal_direction.to_radians();
         WaterUniform {
             shallow_color: LinearRgba::from(self.shallow_color).to_vec4(),
@@ -275,23 +294,6 @@ impl AsBindGroupShaderType<WaterUniform> for Water {
     }
 }
 
-impl MaterialExtension for Water {
-    fn vertex_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
-
-    fn fragment_shader() -> ShaderRef {
-        SHADER_PATH.into()
-    }
-
-    fn alpha_mode() -> Option<AlphaMode> {
-        Some(AlphaMode::Blend)
-    }
-
-    fn enable_shadows() -> bool {
-        false
-    }
-}
 
 /// Registers the water material, its shader and its reflected type, so a scene
 /// naming one renders it.
@@ -299,40 +301,23 @@ pub struct WaterPlugin;
 
 impl Plugin for WaterPlugin {
     fn build(&self, app: &mut App) {
-        embedded_asset!(app, "shaders/water.wgsl");
-        app.add_plugins(MaterialPlugin::<WaterMaterial>::default())
+        app.init_asset::<WaterMaterial>()
             .init_resource::<SceneWind>()
+            .init_resource::<Mirrors<WaterMaterial>>()
             .register_type::<Water>()
+            .register_type::<Water3d>()
             .register_asset_reflect::<WaterMaterial>()
             .register_type_data::<WaterMaterial, bevy::reflect::std_traits::ReflectDefault>()
             .add_systems(
                 PostUpdate,
                 (
-                    give_the_cameras_the_depth_water_reads,
+                    mirror_extended::<WaterMaterial, Water3d>(SurfaceClass::OPAQUE),
                     move_the_water_by_the_scenes_wind,
                 ),
             );
     }
 }
 
-/// Put a depth prepass on the 3D cameras once a scene holds water.
-///
-/// The depth behind the surface is what colours the water and where its foam
-/// gathers, and nothing else in the editor asks for a prepass. It is left in
-/// place afterwards: taking it off again would respecialize every material in
-/// the scene each time the last water asset came and went.
-fn give_the_cameras_the_depth_water_reads(
-    mut commands: Commands,
-    water: Res<Assets<WaterMaterial>>,
-    cameras: Query<Entity, (With<Camera3d>, Without<DepthPrepass>)>,
-) {
-    if water.iter().next().is_none() {
-        return;
-    }
-    for camera in &cameras {
-        commands.entity(camera).insert(DepthPrepass);
-    }
-}
 
 /// Hand every water material the wind the scene is blowing by, so a wind
 /// authored once carries every surface wearing one.

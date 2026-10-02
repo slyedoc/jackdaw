@@ -68,11 +68,7 @@ impl MaterialCardKind {
 }
 
 /// Textures card body: the shared slot rows.
-pub(super) fn fill_textures_card(
-    world: &mut World,
-    body: Entity,
-    handle: Handle<AuroraMaterial>,
-) {
+pub(super) fn fill_textures_card(world: &mut World, body: Entity, handle: Handle<AuroraMaterial>) {
     let Some(m) = world
         .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
@@ -106,11 +102,7 @@ pub(super) fn fill_surface_card(world: &mut World, body: Entity, handle: Handle<
 const MASK_THRESHOLD_DEFAULT: f64 = 0.5;
 
 /// Settings card body: culling, transparency, and rendering flags.
-pub(super) fn fill_settings_card(
-    world: &mut World,
-    body: Entity,
-    handle: Handle<AuroraMaterial>,
-) {
+pub(super) fn fill_settings_card(world: &mut World, body: Entity, handle: Handle<AuroraMaterial>) {
     let Some(m) = world
         .resource::<Assets<AuroraMaterial>>()
         .get(&handle)
@@ -320,9 +312,7 @@ pub(crate) fn resolve_material_handle(
     if world.get::<crate::brush::Brush>(source).is_some() {
         return super::material_card_routing::resolve_brush_material_handle(world, source);
     }
-    world
-        .get::<AuroraMaterial3d>(source)
-        .map(|m| m.0.clone())
+    world.get::<AuroraMaterial3d>(source).map(|m| m.0.clone())
 }
 
 /// Preview card body: the action header, then the shared preview widget.

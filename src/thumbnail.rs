@@ -28,6 +28,7 @@
 //! - **Never retry a file that failed.** A subject that cannot load is marked
 //!   failed for that mtime and skipped until the file changes.
 
+use crate::image_capture::{ImageCapture, ImageCaptured};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -39,7 +40,6 @@ use bevy::{
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
     reflect::TypePath,
-    render::view::screenshot::{Screenshot, ScreenshotCaptured},
     ui::UiGlobalTransform,
     world_serialization::{WorldAsset, WorldAssetRoot},
 };
@@ -872,8 +872,8 @@ fn step_job(
                 return Step::Finish(ThumbState::Failed);
             };
             thumbnails.capture_result = None;
-            commands.spawn(Screenshot::image(target.clone())).observe(
-                move |capture: On<ScreenshotCaptured>, mut thumbs: ResMut<Thumbnails>| {
+            commands.spawn(ImageCapture::image(target.clone())).observe(
+                move |capture: On<ImageCaptured>, mut thumbs: ResMut<Thumbnails>| {
                     thumbs.capture_result =
                         Some(crate::screenshot::write_png(&capture.image, &file));
                 },
@@ -1219,8 +1219,8 @@ fn capture_pending_scene(world: &mut World) {
     else {
         return;
     };
-    world.spawn(Screenshot::image(target)).observe(
-        move |capture: On<ScreenshotCaptured>,
+    world.spawn(ImageCapture::image(target)).observe(
+        move |capture: On<ImageCaptured>,
               mut thumbs: ResMut<Thumbnails>,
               project: Option<ResMut<crate::project_window::ProjectWindowState>>| {
             if !crate::screenshot::write_scaled_png(&capture.image, &file, THUMBNAIL_SIZE) {

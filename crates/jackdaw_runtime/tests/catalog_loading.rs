@@ -3,6 +3,7 @@
 //! at and by the `@Name` the references written before paths spell. Without it,
 //! a scene field naming a material silently falls back to a default at runtime.
 
+use bevy_aurora::material::AuroraMaterial;
 use std::path::PathBuf;
 
 use bevy::asset::{Asset, AssetApp};
@@ -92,7 +93,7 @@ fn unique_temp_dir(label: &str) -> PathBuf {
 #[derive(Component, Reflect, Clone, Default)]
 #[reflect(Component, Default)]
 struct Painted {
-    material: Handle<StandardMaterial>,
+    material: Handle<AuroraMaterial>,
 }
 
 #[test]
@@ -101,7 +102,7 @@ fn a_scene_reaches_a_material_in_any_folder_by_the_path_of_its_file() {
     std::fs::create_dir_all(dir.join("content/props")).unwrap();
     std::fs::write(
         dir.join("content/props/grass.bsn"),
-        "#grass\nbevy_pbr::pbr_material::StandardMaterial {\n    perceptual_roughness: 0.25,\n}\n",
+        "#grass\nbevy_aurora::material::AuroraMaterial {\n    perceptual_roughness: 0.25,\n}\n",
     )
     .unwrap();
     std::fs::write(
@@ -122,8 +123,8 @@ fn a_scene_reaches_a_material_in_any_folder_by_the_path_of_its_file() {
     });
     app.add_plugins(bevy::world_serialization::WorldSerializationPlugin);
     app.add_plugins(bevy::image::ImagePlugin::default());
-    app.init_asset::<StandardMaterial>();
-    app.register_asset_reflect::<StandardMaterial>();
+    app.init_asset::<AuroraMaterial>();
+    app.register_asset_reflect::<AuroraMaterial>();
     app.register_type::<Painted>();
     app.add_plugins(JackdawPlugin);
 

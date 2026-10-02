@@ -76,12 +76,12 @@ fn null_material_brush_loads_headless_under_render_feature() {
 }
 
 /// When the rendering plugins are already present (a windowed client, the editor)
-/// they own the `StandardMaterial` asset machinery. Re-running `init_asset` over it
+/// they own the `AuroraMaterial` asset machinery. Re-running `init_asset` over it
 /// orphans existing handles and corrupts the asset storage, which is what crashed
 /// the client. The plugin must detect the existing registration and leave it alone.
 #[test]
 fn existing_material_storage_is_left_intact() {
-    use bevy::pbr::StandardMaterial;
+    use bevy_aurora::material::AuroraMaterial;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);
@@ -90,17 +90,17 @@ fn existing_material_storage_is_left_intact() {
 
     // Stand in for the render plugins owning the material asset, and mint a handle
     // against that storage before the jackdaw plugins are added.
-    app.init_asset::<StandardMaterial>();
+    app.init_asset::<AuroraMaterial>();
     let handle = app
         .world_mut()
-        .resource_mut::<Assets<StandardMaterial>>()
-        .add(StandardMaterial::default());
+        .resource_mut::<Assets<AuroraMaterial>>()
+        .add(AuroraMaterial::default());
 
     app.add_plugins(JackdawPlugin);
 
     assert!(
         app.world()
-            .resource::<Assets<StandardMaterial>>()
+            .resource::<Assets<AuroraMaterial>>()
             .get(&handle)
             .is_some(),
         "the pre-existing material storage must survive plugin init, not be re-registered",
