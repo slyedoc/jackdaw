@@ -546,18 +546,9 @@ debug-assertions = false
 opt-level = 3
 codegen-units = 1
 
-[profile.release]
-# `codegen-units` is deliberately left at the default here. The PE export ceiling is served
-# by the per-package setting on `jackdaw_sdk` below plus this `lto`; forcing every crate in
-# the tree to a single codegen unit only serialises the build -- it held a 32-core machine
-# at under 20% utilisation.
-lto = "thin"
-
-# Same rationale as `[profile.dev.package.jackdaw_sdk]`. `lto` isn't
-# a valid per-package option (it controls the final link), so we only
-# tighten codegen-units here; the workspace-wide `[profile.release]
-# lto = "thin"` covers the cross-crate dedup that actually helps the
-# PE export cap.
+# Release has no LTO: thin LTO only served the SDK dylib's PE export ceiling, this branch
+# builds without `dylib`, and it re-ran over the whole editor on every rebuild (~140 s vs ~100 s).
+# The SDK keeps one codegen unit for `--features dylib` builds, as in the dev profile.
 [profile.release.package.jackdaw_sdk]
 codegen-units = 1
 
