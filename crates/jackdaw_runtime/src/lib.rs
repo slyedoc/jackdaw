@@ -85,7 +85,7 @@ use bevy::reflect::TypeRegistry;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 use jackdaw_bsn::{
     BsnApplyAssets, BsnPatch, BsnSceneAssets, BsnValue, SceneBsnAst, apply_component_patch,
-    bsn_value_to_reflect, load_bsn_assets, parse_bsn_text,
+    bsn_value_to_reflect, insert_relationship, load_bsn_assets, parse_bsn_text,
 };
 use bevy_aurora::material::AuroraMaterial;
 
@@ -895,6 +895,7 @@ fn spawn_node(
 
     let mut name: Option<String> = None;
     let mut children: Vec<Entity> = Vec::new();
+    let mut related: Vec<(String, Vec<Entity>)> = Vec::new();
     let mut transform = Transform::default();
     let mut visibility = Visibility::default();
     let mut deferred: Vec<BsnPatch> = Vec::new();
@@ -908,7 +909,10 @@ fn spawn_node(
             };
             match patch {
                 BsnPatch::Name(n) => name = Some(n.clone()),
-                BsnPatch::Children(kids) => children = kids.clone(),
+                BsnPatch::Children(kids) => children.extend(kids.iter().copied()),
+                BsnPatch::Related(relation) => {
+                    related.push((relation.target.clone(), relation.entities.clone()));
+                }
                 BsnPatch::Base(_) | BsnPatch::Template(_, _) => {}
                 BsnPatch::Type(_) | BsnPatch::Struct(_) | BsnPatch::TupleStruct(_) => {
                     let Some(type_path) = patch_type_path(patch) else {
@@ -1000,6 +1004,17 @@ fn spawn_node(
         spawn_node(
             world, ast, child, entity, scene_root, false, registry, spawned,
         );
+    }
+
+    // Other relations' entities hang off the scene root and point at their owner.
+    for (target, nodes) in related {
+        for node in nodes {
+            if let Some(related_entity) = spawn_node(
+                world, ast, node, scene_root, scene_root, false, registry, spawned,
+            ) {
+                insert_relationship(world, related_entity, entity, &target);
+            }
+        }
     }
 
     Some(entity)
@@ -1175,8 +1190,8 @@ fn collect_linear_texture_paths(ast: &SceneBsnAst) -> Vec<String> {
         for &pe in &patches.0 {
             match ast.get_patch(pe) {
                 Some(BsnPatch::Struct(data)) => collect(data, &mut paths),
-                Some(BsnPatch::Children(kids)) => stack.extend(kids.iter().copied()),
-                _ => {}
+                Some(patch) => stack.extend(patch.related_entities().into_iter().flatten()),
+                None => {}
             }
         }
     }

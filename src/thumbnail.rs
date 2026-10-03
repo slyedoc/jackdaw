@@ -1039,7 +1039,7 @@ fn spawn_prefab_node(
     let mut children = Vec::new();
     let mut inherited = None;
     for patch in &patches {
-        if let BsnPatch::Children(list) = patch {
+        if let Some(list) = patch.related_entities() {
             children.extend(list.iter().copied());
             continue;
         }
