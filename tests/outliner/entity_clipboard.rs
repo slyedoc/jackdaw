@@ -509,13 +509,12 @@ fn a_paste_with_nothing_selected_uses_the_open_scenes_root() {
 /// by pasting hand-written BSN, which is what this does.
 #[test]
 fn a_paste_refuses_a_payload_that_is_both_kinds() {
-    const MIXED: &str = "bevy_ecs::hierarchy::Children [\n\
-                             #Screen\n\
+    const MIXED: &str = "#Screen\n\
                              bevy_ui::ui_node::Node\n\
-                             ,\n\
+                             --\n\
                              #Thing\n\
                              bevy_transform::components::transform::Transform\n\
-                         ]\n";
+                             ";
 
     let mut app = clipboard_app();
     run_finished(&mut app, "scene.new ui=true");

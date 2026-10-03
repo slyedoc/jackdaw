@@ -1,11 +1,11 @@
-//! The `.bsn` format as jackdaw uses it: `bevy::bsn`, the reader, document and writer that
+//! The `.bsn` format as jackdaw uses it: `bevy::bsn_document`, the reader, document and writer that
 //! live in the bevy fork, plus jackdaw's project conventions on top: the asset header and the
 //! type detection its browser lists files by, and the check that refuses retired UI components.
 
 pub mod header;
 pub mod retired;
 
-pub use bevy::bsn::*;
+pub use bevy::bsn_document::*;
 pub use header::{
     ASSET_HEADER, AssetFileError, PREFAB_TYPE, StemIndex, asset_file_type, asset_stem,
     asset_text_type, document_header, document_type_path, path_stem, read_asset_file,

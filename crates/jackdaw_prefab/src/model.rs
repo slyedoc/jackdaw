@@ -131,12 +131,12 @@ mod tests {
 jackdaw::prefab::components::PrefabEntityId(0)
 #Fir
 bevy_transform::components::transform::Transform { translation: glam::Vec3 { x: 5.0, y: 0.0, z: 0.0 } }
-jackdaw_scene_types::types::InstanceMaterialOverrides { materials: map[("Bark", "materials/wet_bark.bsn")] }
+jackdaw_scene_types::types::InstanceMaterialOverrides { materials: [("Bark", "materials/wet_bark.bsn")] }
 bevy_ecs::hierarchy::Children [
     #Fir
     bevy_transform::components::transform::Transform { translation: glam::Vec3 { x: 0.0, y: 2.0, z: 0.0 }, scale: glam::Vec3 { x: 2.0, y: 2.0, z: 2.0 } }
     jackdaw_scene_types::types::GltfSource { path: "models/fir.gltf", scene_index: 0 }
-    jackdaw_scene_types::types::MaterialOverrides { materials: map[("Bark", "materials/bark.bsn"), ("Leaves", "materials/fir_leaves.bsn")] }
+    jackdaw_scene_types::types::MaterialOverrides { materials: [("Bark", "materials/bark.bsn"), ("Leaves", "materials/fir_leaves.bsn")] }
     jackdaw::prefab::components::PrefabEntityId(1)
 ]
 "#;
@@ -173,7 +173,7 @@ bevy_ecs::hierarchy::Children [
     fn a_prefab_holding_two_models_draws_none() {
         let two = PACKED_FIR.replace(
             "    jackdaw::prefab::components::PrefabEntityId(1)\n]",
-            "    jackdaw::prefab::components::PrefabEntityId(1)\n    ,\n    #Stone\n    \
+            "    jackdaw::prefab::components::PrefabEntityId(1)\n    --\n    #Stone\n    \
              jackdaw_scene_types::types::GltfSource { path: \"models/stone.gltf\", scene_index: 0 }\n    \
              jackdaw::prefab::components::PrefabEntityId(2)\n]",
         );

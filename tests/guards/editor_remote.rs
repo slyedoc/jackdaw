@@ -406,8 +406,10 @@ fn applied_bsn_spawns_every_root_in_the_source() {
         &mut app,
         apply_bsn_handler,
         json!({
-            "source": "#Barrel bevy_transform::components::transform::Transform,\n\
-                #Sack bevy_transform::components::transform::Transform\n",
+            "source": "#Barrel bevy_transform::components::transform::Transform\n\
+                --\n\
+                #Sack bevy_transform::components::transform::Transform\n\
+                ",
         }),
     );
     app.update();

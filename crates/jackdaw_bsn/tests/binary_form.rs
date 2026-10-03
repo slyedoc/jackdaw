@@ -14,9 +14,10 @@ const SCENE: &str = r#"#Root
 bevy_transform::components::transform::Transform { translation: bevy_math::Vec3 { x: 1.0, y: -2.5, z: 0.0 } }
 bevy_ecs::hierarchy::Children [
     #Child
-    bevy_core::name::Name("a child"),
+    bevy_core::name::Name("a child")
+    --
     :"prefabs/tree.bsn"
-    my_game::Tags { names: ["one", "two"], counts: map[(1, true), (2, false)] }
+    my_game::Tags { names: ["one", "two"], counts: [(1, true), (2, false)] }
 ]
 "#;
 
@@ -45,7 +46,7 @@ fn every_value_shape_survives_the_binary_form() {
     nested: my_game::Inner { a: 1.0 },
     tuple: my_game::Wrap(1, "two"),
     list: [1, 2, 3],
-    pairs: map[("a", 1), ("b", 2)]
+    pairs: [("a", 1), ("b", 2)]
 }
 "#;
 
@@ -70,7 +71,17 @@ fn a_string_holding_nul_bytes_survives_the_binary_form() {
     let decoded = binary::decode(&binary::encode(&ast, None)).expect("it reads back");
 
     assert_eq!(emit_scene(&decoded.ast), emit_scene(&ast));
-    assert!(emit_scene(&decoded.ast).contains('\0'));
+    // The text escapes the NUL, and reading it back restores the bytes.
+    let text = emit_scene(&decoded.ast);
+    assert!(text.contains("\\0"), "{text}");
+    let reread = parse_bsn_text(&text).expect("the text reads back");
+    let Some(BsnPatch::Struct(data)) = reread
+        .get_patches(reread.roots[0])
+        .and_then(|patches| reread.get_patch(patches.0[0]))
+    else {
+        panic!("a struct patch");
+    };
+    assert!(matches!(&data.fields.0[0].value, BsnValue::String(s) if s == "a\0b\u{1}c"));
 }
 
 #[test]

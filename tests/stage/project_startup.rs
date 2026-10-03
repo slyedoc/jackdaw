@@ -17,23 +17,23 @@ use jackdaw::status_bar::EditorPhase;
 
 const MATERIAL: &str = "#slate\nbevy_aurora::material::AuroraMaterial {}\n";
 
-const SCENE: &str = "bevy_ecs::hierarchy::Children [\n    \
-                     #Root\n    \
-                     bevy_transform::components::transform::Transform\n]\n";
+const SCENE: &str = "#Root\nbevy_transform::components::transform::Transform\n";
 
 /// How many models the scene below names.
 const MODELS: usize = 3;
 
 /// A scene of `MODELS` entities, each naming a model of its own.
 fn models_scene() -> String {
-    let mut text = String::from("bevy_ecs::hierarchy::Children [\n");
-    for index in 0..MODELS {
-        text.push_str(&format!(
-            "    #Model{index}\n                 jackdaw_scene_types::types::GltfSource {{\n                     path: \"models/model{index}.gltf\",\n                     scene_index: 0,\n    }}\n                 bevy_transform::components::transform::Transform,\n"
-        ));
-    }
-    text.push_str("]\n");
-    text
+    (0..MODELS)
+        .map(|index| {
+            format!(
+                "#Model{index}\n\
+                 jackdaw_scene_types::types::GltfSource {{ path: \"models/model{index}.gltf\", scene_index: 0 }}\n\
+                 bevy_transform::components::transform::Transform\n"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("--\n")
 }
 
 /// A project whose remembered tab is a scene naming [`MODELS`] models.

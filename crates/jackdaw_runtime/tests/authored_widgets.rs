@@ -14,18 +14,16 @@ use jackdaw_runtime::{JackdawPlugin, JackdawScene, JackdawSceneRoot};
 /// writes: a widget marker plus the feathers styling components the
 /// always-save list carries through a round trip.
 const SCENE: &str = r#"
-bevy_ecs::hierarchy::Children [
-    #Checkbox
-    bevy_ui::ui_node::Node
-    bevy_ui_widgets::checkbox::Checkbox
-    ,
-    #Caption
-    bevy_ui::ui_node::Node
-    bevy_feathers::theme::ThemedText
-    ,
-    #Plain
-    bevy_ui::ui_node::Node
-]
+#Checkbox
+bevy_ui::ui_node::Node
+bevy_ui_widgets::checkbox::Checkbox
+--
+#Caption
+bevy_ui::ui_node::Node
+bevy_feathers::theme::ThemedText
+--
+#Plain
+bevy_ui::ui_node::Node
 "#;
 
 #[test]

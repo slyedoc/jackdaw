@@ -12,13 +12,11 @@ use jackdaw_runtime::{
 };
 
 const RETIRED: &str = r#"
-bevy_ecs::hierarchy::Children [
-    #Overlay
-    jackdaw_ui::UiCanvas
-    ,
-    #World
-    bevy_transform::components::transform::Transform
-]
+#Overlay
+jackdaw_ui::UiCanvas
+--
+#World
+bevy_transform::components::transform::Transform
 "#;
 
 #[test]

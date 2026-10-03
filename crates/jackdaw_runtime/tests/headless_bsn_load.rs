@@ -8,18 +8,16 @@ use jackdaw_runtime::{JackdawPlugin, JackdawScene, JackdawSceneRoot};
 fn headless_bsn_scene_load() {
     let dir = tempfile::tempdir().expect("tempdir");
     let scene_text = r##"
-bevy_ecs::hierarchy::Children [
-    #Anchor
-    jackdaw_scene_types::node_id::SceneNodeId(77)
-    bevy_transform::components::transform::Transform {
-        translation: glam::Vec3 { x: 4.0, y: 5.0, z: 6.0 },
-    }
-    ,
-    #Follower
-    bevy_transform::components::transform::Transform {
-        translation: glam::Vec3 { x: 9.0, y: 0.0, z: 0.0 },
-    }
-]
+#Anchor
+jackdaw_scene_types::node_id::SceneNodeId(77)
+bevy_transform::components::transform::Transform {
+    translation: glam::Vec3 { x: 4.0, y: 5.0, z: 6.0 },
+}
+--
+#Follower
+bevy_transform::components::transform::Transform {
+    translation: glam::Vec3 { x: 9.0, y: 0.0, z: 0.0 },
+}
 "##;
     std::fs::write(dir.path().join("scene.bsn"), scene_text).unwrap();
 

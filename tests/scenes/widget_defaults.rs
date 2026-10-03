@@ -9,23 +9,22 @@ use jackdaw_widgets_runtime::{Dropdown, RadioOptions, TabStrip};
 
 /// A screen holding the three widgets at rest: each one a bare type path,
 /// which is what a save writes for a component equal to its default.
-const AT_REST: &str = "\
-#Screen
-jackdaw_scene_types::UiSceneRoot
-bevy_ui::ui_node::Node
-bevy_ecs::hierarchy::Children [
-    #Picker
-    jackdaw_widgets_runtime::Dropdown
-    bevy_ui::ui_node::Node
-    ,
-    #Choices
-    jackdaw_widgets_runtime::RadioOptions
-    bevy_ui::ui_node::Node
-    ,
-    #Tabs
-    jackdaw_widgets_runtime::TabStrip
-    bevy_ui::ui_node::Node
-]
+const AT_REST: &str = "#Screen\n\
+jackdaw_scene_types::UiSceneRoot\n\
+bevy_ui::ui_node::Node\n\
+bevy_ecs::hierarchy::Children [\n\
+    #Picker\n\
+    jackdaw_widgets_runtime::Dropdown\n\
+    bevy_ui::ui_node::Node\n\
+    --\n\
+    #Choices\n\
+    jackdaw_widgets_runtime::RadioOptions\n\
+    bevy_ui::ui_node::Node\n\
+    --\n\
+    #Tabs\n\
+    jackdaw_widgets_runtime::TabStrip\n\
+    bevy_ui::ui_node::Node\n\
+]\n\
 ";
 
 fn by_name(app: &mut App, name: &str) -> Entity {

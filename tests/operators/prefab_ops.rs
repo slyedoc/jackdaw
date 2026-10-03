@@ -586,22 +586,20 @@ bevy_ecs::hierarchy::Children [
 /// one turned and scaled, followed by `extra`.
 fn ridge_scene(extra: &str) -> String {
     format!(
-        r#"bevy_ecs::hierarchy::Children [
-    jackdaw::prefab::components::IsA {{ source: "prefabs/cliff.bsn", deleted: [] }}
-    jackdaw::prefab::components::PrefabEntityId(0)
-    bevy_transform::components::transform::Transform {{ translation: glam::Vec3 {{ x: 10.0, y: 0.0, z: 0.0 }} }}
-    bevy_ecs::hierarchy::Children [
-        jackdaw::prefab::components::PrefabEntityId(1)
-    ]
-    ,
-    jackdaw::prefab::components::IsA {{ source: "prefabs/cliff.bsn", deleted: [] }}
-    jackdaw::prefab::components::PrefabEntityId(0)
-    bevy_transform::components::transform::Transform {{ translation: glam::Vec3 {{ x: 0.0, y: 5.0, z: 0.0 }}, rotation: glam::Quat {{ x: 0.0, y: 0.38268343, z: 0.0, w: 0.9238795 }}, scale: glam::Vec3 {{ x: 3.0, y: 3.0, z: 3.0 }} }}
-    bevy_ecs::hierarchy::Children [
-        jackdaw::prefab::components::PrefabEntityId(1)
-    ]
-{extra}]
-"#
+        r#"jackdaw::prefab::components::IsA {{ source: "prefabs/cliff.bsn", deleted: [] }}
+jackdaw::prefab::components::PrefabEntityId(0)
+bevy_transform::components::transform::Transform {{ translation: glam::Vec3 {{ x: 10.0, y: 0.0, z: 0.0 }} }}
+bevy_ecs::hierarchy::Children [
+    jackdaw::prefab::components::PrefabEntityId(1)
+]
+--
+jackdaw::prefab::components::IsA {{ source: "prefabs/cliff.bsn", deleted: [] }}
+jackdaw::prefab::components::PrefabEntityId(0)
+bevy_transform::components::transform::Transform {{ translation: glam::Vec3 {{ x: 0.0, y: 5.0, z: 0.0 }}, rotation: glam::Quat {{ x: 0.0, y: 0.38268343, z: 0.0, w: 0.9238795 }}, scale: glam::Vec3 {{ x: 3.0, y: 3.0, z: 3.0 }} }}
+bevy_ecs::hierarchy::Children [
+    jackdaw::prefab::components::PrefabEntityId(1)
+]
+{extra}"#
     )
 }
 
@@ -695,10 +693,10 @@ fn migrating_an_old_packed_prefab_moves_its_node_transform_onto_every_instance()
 #[test]
 fn migrating_leaves_a_prefab_alone_when_an_instance_cannot_take_its_transform() {
     let (mut app, dir) = app_in_project();
-    let uneven = r#"    ,
-    jackdaw::prefab::components::IsA { source: "prefabs/cliff.bsn", deleted: [] }
-    jackdaw::prefab::components::PrefabEntityId(0)
-    bevy_transform::components::transform::Transform { translation: glam::Vec3 { x: 0.0, y: 0.0, z: 9.0 }, scale: glam::Vec3 { x: 1.0, y: 4.0, z: 1.0 } }
+    let uneven = r#"--
+jackdaw::prefab::components::IsA { source: "prefabs/cliff.bsn", deleted: [] }
+jackdaw::prefab::components::PrefabEntityId(0)
+bevy_transform::components::transform::Transform { translation: glam::Vec3 { x: 0.0, y: 0.0, z: 9.0 }, scale: glam::Vec3 { x: 1.0, y: 4.0, z: 1.0 } }
 "#;
     let (prefab, scene) = project_with_old_cliff(dir.path(), uneven);
     let prefab_before = std::fs::read_to_string(&prefab).expect("the prefab");

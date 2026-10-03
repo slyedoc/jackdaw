@@ -1321,13 +1321,11 @@ fn activating_a_tab_holding_retired_ui_components_spawns_nothing() {
     let mut app = make_app_with_n_tabs(2);
     let doc = jackdaw_bsn::parse_bsn_text(
         r#"
-bevy_ecs::hierarchy::Children [
-    #Overlay
-    jackdaw_ui::UiCanvas
-    ,
-    #World
-    bevy_transform::components::transform::Transform
-]
+#Overlay
+jackdaw_ui::UiCanvas
+--
+#World
+bevy_transform::components::transform::Transform
 "#,
     )
     .expect("the fixture parses");
@@ -1363,13 +1361,11 @@ Children [
 /// refusal shows up as neither of them spawning.
 fn document_inheriting_from(base: &std::path::Path) -> jackdaw_bsn::SceneBsnAst {
     jackdaw_bsn::parse_bsn_text(&format!(
-        r#"bevy_ecs::hierarchy::Children [
-    jackdaw::prefab::components::IsA {{ source: "{}", deleted: [] }}
-    jackdaw::prefab::components::PrefabEntityId(0)
-    ,
-    #World
-    bevy_transform::components::transform::Transform
-]
+        r#"jackdaw::prefab::components::IsA {{ source: "{}", deleted: [] }}
+jackdaw::prefab::components::PrefabEntityId(0)
+--
+#World
+bevy_transform::components::transform::Transform
 "#,
         base.display()
     ))

@@ -10,13 +10,11 @@ fn ui_root_is_an_ecs_root_but_is_destroyed_with_its_scene() {
         .resource_mut::<Assets<JackdawScene>>()
         .add(JackdawScene::new(
             r#"
-bevy_ecs::hierarchy::Children [
-    #World
-    bevy_transform::components::transform::Transform
-    ,
-    #Overlay
-    jackdaw_scene_types::UiSceneRoot
-]
+#World
+bevy_transform::components::transform::Transform
+--
+#Overlay
+jackdaw_scene_types::UiSceneRoot
 "#
             .into(),
             ".".into(),

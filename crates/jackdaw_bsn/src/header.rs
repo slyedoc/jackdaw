@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use bevy::ecs::entity::Entity;
 use bevy::reflect::{FromReflect, GetTypeRegistration, TypePath, TypeRegistry};
 
-use bevy::bsn::catalog::asset_value_from_root;
-use bevy::bsn::{BsnLoadError, SceneBsnAst, bsn_value_to_reflect, parse_bsn_text};
+use bevy::bsn_document::catalog::asset_value_from_root;
+use bevy::bsn_document::{BsnLoadError, SceneBsnAst, bsn_value_to_reflect, parse_bsn_text};
 
 /// The comment marker that introduces an asset file's type header.
 pub const ASSET_HEADER: &str = "// jackdaw asset ";
@@ -26,7 +26,7 @@ pub const PREFAB_TYPE: &str = "jackdaw::prefab::components::Prefab";
 pub(crate) const MAX_ASSET_DEPTH: usize = 12;
 
 /// The type path a document's asset header names, for a document that carries one.
-pub fn document_header(document: &bevy::bsn::Document) -> Option<String> {
+pub fn document_header(document: &bevy::bsn_document::Document) -> Option<String> {
     document.preamble.as_deref().and_then(read_asset_header)
 }
 
@@ -171,10 +171,10 @@ pub fn document_type_path(text: &str) -> Option<String> {
 /// its header only where the document names no type of its own. Either form
 /// of the document reads.
 pub fn asset_file_type(path: &Path) -> Option<String> {
-    if !bevy::bsn::is_document_path(path) {
+    if !bevy::bsn_document::is_document_path(path) {
         return None;
     }
-    let text = bevy::bsn::read_document_text(path).ok()?;
+    let text = bevy::bsn_document::read_document_text(path).ok()?;
     asset_text_type(&text, path)
 }
 
@@ -202,13 +202,13 @@ pub fn walk_document_files(dir: &Path) -> Vec<PathBuf> {
     let found = walk_files_with_extensions(dir, &["bsn", "bsb", "jsn"]);
     let text: std::collections::HashSet<PathBuf> = found
         .iter()
-        .filter(|path| !bevy::bsn::is_binary_path(path))
+        .filter(|path| !bevy::bsn_document::is_binary_path(path))
         .cloned()
         .collect();
     found
         .into_iter()
         .filter(|path| {
-            !bevy::bsn::is_binary_path(path) || !text.contains(&bevy::bsn::text_twin(path))
+            !bevy::bsn_document::is_binary_path(path) || !text.contains(&bevy::bsn_document::text_twin(path))
         })
         .collect()
 }
@@ -274,7 +274,7 @@ pub fn walk_asset_files(assets_root: &Path) -> impl Iterator<Item = (PathBuf, St
 pub enum AssetFileError {
     #[error("{1}")]
     /// The file could not be read.
-    Read(PathBuf, bevy::bsn::DocumentError),
+    Read(PathBuf, bevy::bsn_document::DocumentError),
     #[error("failed to parse {}: {}", .0.display(), .1)]
     /// The file did not parse.
     Parse(PathBuf, BsnLoadError),
@@ -307,7 +307,7 @@ where
     T: FromReflect + TypePath + GetTypeRegistration,
 {
     let expected = T::type_path();
-    let text = bevy::bsn::read_document_text(path)
+    let text = bevy::bsn_document::read_document_text(path)
         .map_err(|err| AssetFileError::Read(path.to_path_buf(), err))?;
     if let Some(header) = read_asset_header(&text).filter(|header| header != expected) {
         return Err(AssetFileError::WrongType {
@@ -341,7 +341,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::bsn::parse_bsn_text;
+    use bevy::bsn_document::parse_bsn_text;
 
     const STAMP: &str = "// jackdaw 0.19.0 | bevy 0.19";
 
