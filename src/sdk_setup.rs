@@ -6,7 +6,9 @@
 //! the user sees live progress instead of a frozen window and cannot
 //! start a project build concurrently (which would fight the SDK build
 //! for memory). In a dev checkout there is no embedded recipe, so
-//! [`bootstrap::needs_setup`] is false and none of this runs.
+//! [`bootstrap::needs_setup`] is false and none of this runs. Nor does it
+//! without the `dylib` feature: the SDK only serves extensions, which such an
+//! editor cannot load.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -109,7 +111,7 @@ fn start_sdk_setup(
         pending.is_some(),
         setup.task.is_some(),
         setup.outcome.is_some(),
-        bootstrap::needs_setup,
+        || cfg!(feature = "dylib") && bootstrap::needs_setup(),
     ) {
         return;
     }

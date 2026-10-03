@@ -354,18 +354,27 @@ pub fn write_recipe(dst: &Path) -> std::io::Result<()> {
     prune_removed_crates(dst)
 }
 
-/// Delete crate directories the recipe no longer ships.
+/// Delete crate directories, and files inside shipped crates, the recipe no
+/// longer ships.
 ///
 /// Writing is otherwise purely additive, and the recipe's root declares
 /// `members = ["crates/*"]`, so a crate dropped between versions stays
 /// on disk and stays a workspace member. If it was dropped *because* it
 /// could not resolve there, the cache is permanently broken and no
 /// amount of upgrading fixes it: the user would have to know to delete
-/// `~/.jackdaw/sdk` by hand, which nothing tells them.
+/// `~/.jackdaw/sdk` by hand, which nothing tells them. A dropped file is
+/// as bad: a leftover `build.rs` runs against a manifest that no longer
+/// declares its build dependencies.
 fn prune_removed_crates(dst: &Path) -> std::io::Result<()> {
-    let Ok(entries) = std::fs::read_dir(dst.join("crates")) else {
+    let crates = dst.join("crates");
+    let Ok(entries) = std::fs::read_dir(&crates) else {
         return Ok(());
     };
+    let shipped_files: std::collections::BTreeSet<PathBuf> = crate::RECIPE_FILES
+        .iter()
+        .filter(|(rel, _)| rel.starts_with("crates/"))
+        .map(|(rel, _)| dst.join(rel))
+        .collect();
     let shipped: std::collections::BTreeSet<&str> = crate::RECIPE_FILES
         .iter()
         .filter_map(|(rel, _)| rel.strip_prefix("crates/"))
@@ -376,8 +385,30 @@ fn prune_removed_crates(dst: &Path) -> std::io::Result<()> {
             continue;
         }
         let name = entry.file_name();
-        if !shipped.contains(name.to_string_lossy().as_ref()) {
+        if shipped.contains(name.to_string_lossy().as_ref()) {
+            prune_unshipped_files(&entry.path(), &shipped_files)?;
+        } else {
             std::fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+/// Remove every file under `dir` that is not in `shipped`, then any directory
+/// left empty.
+fn prune_unshipped_files(
+    dir: &Path,
+    shipped: &std::collections::BTreeSet<PathBuf>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            prune_unshipped_files(&path, shipped)?;
+            if std::fs::read_dir(&path)?.next().is_none() {
+                std::fs::remove_dir(&path)?;
+            }
+        } else if !shipped.contains(&path) {
+            std::fs::remove_file(&path)?;
         }
     }
     Ok(())
