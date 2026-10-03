@@ -546,8 +546,12 @@ debug-assertions = false
 opt-level = 3
 codegen-units = 1
 
-# Release has no LTO: thin LTO only served the SDK dylib's PE export ceiling, this branch
-# builds without `dylib`, and it re-ran over the whole editor on every rebuild (~140 s vs ~100 s).
+# No LTO at all: thin LTO only served the SDK dylib's PE export ceiling and this branch builds
+# without `dylib`. `"off"` also skips the crate-local thin-LTO pass `false` still runs, which was
+# ~40 s of every rebuild of the editor crate.
+[profile.release]
+lto = "off"
+
 # The SDK keeps one codegen unit for `--features dylib` builds, as in the dev profile.
 [profile.release.package.jackdaw_sdk]
 codegen-units = 1
