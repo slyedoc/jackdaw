@@ -1174,7 +1174,7 @@ pub fn material_save_as(_: In<OperatorParameters>, mut commands: Commands) -> Op
         let dialog = crate::native_dialog::dialog_starting_at(world, Some(folder))
             .set_title("Save material")
             .set_file_name(file_name);
-        let task = AsyncComputeTaskPool::get().spawn(async move { dialog.save_file().await });
+        let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.save_file()));
         world.insert_resource(MaterialSaveFolderTask(task));
     });
     OperatorResult::Finished

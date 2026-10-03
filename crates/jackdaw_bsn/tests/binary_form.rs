@@ -278,7 +278,7 @@ fn an_asset_file_saved_as_binary_keeps_its_header_type() {
     let document = read_document(&path).expect("the asset reads");
 
     assert_eq!(
-        document.header(),
+        jackdaw_bsn::document_header(&document),
         Some("my_game::content::ItemDef".to_string())
     );
     assert_eq!(

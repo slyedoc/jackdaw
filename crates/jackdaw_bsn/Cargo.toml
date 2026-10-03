@@ -7,21 +7,9 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
-bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = ["std", "bevy_asset"] }
-# Named directly to turn on `smol_str`, which is what gives `SmolStr` its
-# reflect impl. In the workspace build a sibling crate happens to enable it;
-# relying on that would make theme tokens silently revert to their Debug form
-# the day the sibling stops.
-bevy_reflect = { git = "https://github.com/bevyengine/bevy", branch = "main", features = ["smol_str"] }
-lalrpop-util = "0.23"
-nom = "8"
-pathdiff.workspace = true
-path-slash.workspace = true
-thiserror = "2"
+bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = ["std", "bevy_asset", "bevy_scene"] }
 log = "0.4"
-# `bevy_feathers::theme::ThemeToken` wraps a `SmolStr`, which reflects as an
-# opaque value: without a direct conversion it round-trips as its `Debug` form.
-smol_str = "0.2"
+thiserror = "2"
 
 [dev-dependencies]
 # The round-trip test needs a real vocabulary of its own, not a synthetic
@@ -29,9 +17,6 @@ smol_str = "0.2"
 jackdaw_bind.workspace = true
 # A definition type's files are round-tripped through a real directory.
 tempfile = "3"
-
-[build-dependencies]
-lalrpop = "0.23"
 
 [lints]
 workspace = true

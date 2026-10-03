@@ -24,7 +24,7 @@ fn make_app() -> App {
     let mut app = App::new();
     app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
-    app.add_plugins(jackdaw_bsn::JackdawBsnPlugin);
+    app.add_plugins(jackdaw_bsn::BsnDocumentPlugin);
     app.add_plugins(jackdaw::prefab::PrefabPlugin);
     app.init_resource::<jackdaw::commands::CommandHistory>();
     app.init_resource::<jackdaw::scene_io::SceneFilePath>();

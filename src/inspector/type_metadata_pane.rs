@@ -383,7 +383,7 @@ fn open_preview_picker(world: &mut World, type_path: String) {
         crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Model)
             .set_title("Select preview model")
             .add_filter("glTF", &["glb", "gltf"]);
-    let task = AsyncComputeTaskPool::get().spawn(async move { dialog.pick_file().await });
+    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
     world.insert_resource(PreviewPickTask { type_path, task });
 }
 

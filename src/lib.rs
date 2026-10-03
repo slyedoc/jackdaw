@@ -403,7 +403,7 @@ impl Plugin for EditorCorePlugin {
             jackdaw_scene_types::SceneTypesPlugin {
                 runtime_mesh_rebuild: false,
             },
-            jackdaw_bsn::JackdawBsnPlugin,
+            jackdaw_bsn::BsnDocumentPlugin,
             (
                 project_select::ProjectSelectPlugin,
                 sdk_setup::SdkSetupPlugin,

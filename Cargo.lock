@@ -828,6 +828,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_bsn"
+version = "0.20.0-dev"
+dependencies = [
+ "bevy_app",
+ "bevy_asset",
+ "bevy_ecs",
+ "bevy_platform",
+ "bevy_reflect",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "nom",
+ "path-slash",
+ "pathdiff",
+ "smol_str",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "bevy_camera"
 version = "0.20.0-dev"
 dependencies = [
@@ -1337,6 +1356,7 @@ dependencies = [
  "bevy_app",
  "bevy_asset",
  "bevy_audio",
+ "bevy_bsn",
  "bevy_camera",
  "bevy_camera_controller",
  "bevy_clipboard",
@@ -1812,6 +1832,7 @@ version = "0.20.0-dev"
 dependencies = [
  "bevy_app",
  "bevy_asset",
+ "bevy_bsn",
  "bevy_derive",
  "bevy_ecs",
  "bevy_log",
@@ -1819,9 +1840,6 @@ dependencies = [
  "bevy_reflect",
  "bevy_scene_macros",
  "bevy_utils",
- "lalrpop",
- "lalrpop-util",
- "nom",
  "smallvec",
  "thiserror 2.0.20",
  "tracing",
@@ -4563,15 +4581,8 @@ name = "jackdaw_bsn"
 version = "0.19.0"
 dependencies = [
  "bevy",
- "bevy_reflect",
  "jackdaw_bind",
- "lalrpop",
- "lalrpop-util",
  "log",
- "nom",
- "path-slash",
- "pathdiff",
- "smol_str",
  "tempfile",
  "thiserror 2.0.20",
 ]

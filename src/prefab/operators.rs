@@ -1126,7 +1126,7 @@ pub fn open_prefab_picker(world: &mut World) {
             .set_title("Select prefab")
             .add_filter("Prefab", &["bsn"]);
     let task =
-        bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { dialog.pick_file().await });
+        bevy::tasks::AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
     world.insert_resource(PrefabPickTask(task));
 }
 

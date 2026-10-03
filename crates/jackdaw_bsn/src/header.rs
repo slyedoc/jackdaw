@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use bevy::ecs::entity::Entity;
 use bevy::reflect::{FromReflect, GetTypeRegistration, TypePath, TypeRegistry};
 
-use crate::catalog::asset_value_from_root;
-use crate::{BsnLoadError, SceneBsnAst, bsn_value_to_reflect, parse_bsn_text};
+use bevy::bsn::catalog::asset_value_from_root;
+use bevy::bsn::{BsnLoadError, SceneBsnAst, bsn_value_to_reflect, parse_bsn_text};
 
 /// The comment marker that introduces an asset file's type header.
 pub const ASSET_HEADER: &str = "// jackdaw asset ";
@@ -24,6 +24,11 @@ pub const PREFAB_TYPE: &str = "jackdaw::prefab::components::Prefab";
 
 /// How deep under the assets directory a walk looks.
 pub(crate) const MAX_ASSET_DEPTH: usize = 12;
+
+/// The type path a document's asset header names, for a document that carries one.
+pub fn document_header(document: &bevy::bsn::Document) -> Option<String> {
+    document.preamble.as_deref().and_then(read_asset_header)
+}
 
 /// Prepend the header naming the type an asset file holds.
 pub fn with_asset_header(type_path: &str, body: &str) -> String {
@@ -90,6 +95,7 @@ impl StemIndex {
         index
     }
 
+    /// Index one asset file by its stem.
     pub fn insert(&mut self, path: impl Into<PathBuf>) {
         let path = path.into();
         let stem = path_stem(&path);
@@ -165,10 +171,10 @@ pub fn document_type_path(text: &str) -> Option<String> {
 /// its header only where the document names no type of its own. Either form
 /// of the document reads.
 pub fn asset_file_type(path: &Path) -> Option<String> {
-    if !crate::file::is_document_path(path) {
+    if !bevy::bsn::is_document_path(path) {
         return None;
     }
-    let text = crate::file::read_document_text(path).ok()?;
+    let text = bevy::bsn::read_document_text(path).ok()?;
     asset_text_type(&text, path)
 }
 
@@ -196,13 +202,13 @@ pub fn walk_document_files(dir: &Path) -> Vec<PathBuf> {
     let found = walk_files_with_extensions(dir, &["bsn", "bsb", "jsn"]);
     let text: std::collections::HashSet<PathBuf> = found
         .iter()
-        .filter(|path| !crate::file::is_binary_path(path))
+        .filter(|path| !bevy::bsn::is_binary_path(path))
         .cloned()
         .collect();
     found
         .into_iter()
         .filter(|path| {
-            !crate::file::is_binary_path(path) || !text.contains(&crate::file::text_twin(path))
+            !bevy::bsn::is_binary_path(path) || !text.contains(&bevy::bsn::text_twin(path))
         })
         .collect()
 }
@@ -267,18 +273,26 @@ pub fn walk_asset_files(assets_root: &Path) -> impl Iterator<Item = (PathBuf, St
 #[derive(Debug, thiserror::Error)]
 pub enum AssetFileError {
     #[error("{1}")]
-    Read(PathBuf, crate::file::DocumentError),
+    /// The file could not be read.
+    Read(PathBuf, bevy::bsn::DocumentError),
     #[error("failed to parse {}: {}", .0.display(), .1)]
+    /// The file did not parse.
     Parse(PathBuf, BsnLoadError),
     #[error("{} holds no value", .0.display())]
+    /// The file holds no value.
     Empty(PathBuf),
     #[error("{} holds a {found}, not a {expected}", .path.display())]
+    /// The file holds a value of another type.
     WrongType {
+        /// The file read.
         path: PathBuf,
+        /// The type asked for.
         expected: String,
+        /// The type the file holds.
         found: String,
     },
     #[error("{} does not read as a {}", .0.display(), .1)]
+    /// The value did not deserialize as its type.
     Unreadable(PathBuf, String),
 }
 
@@ -293,7 +307,7 @@ where
     T: FromReflect + TypePath + GetTypeRegistration,
 {
     let expected = T::type_path();
-    let text = crate::file::read_document_text(path)
+    let text = bevy::bsn::read_document_text(path)
         .map_err(|err| AssetFileError::Read(path.to_path_buf(), err))?;
     if let Some(header) = read_asset_header(&text).filter(|header| header != expected) {
         return Err(AssetFileError::WrongType {
@@ -327,7 +341,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_bsn_text;
+    use bevy::bsn::parse_bsn_text;
 
     const STAMP: &str = "// jackdaw 0.19.0 | bevy 0.19";
 

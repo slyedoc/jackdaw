@@ -1072,7 +1072,7 @@ fn pick_project_folder(
     )
     .set_title(title);
 
-    let task = AsyncComputeTaskPool::get().spawn(async move { dialog.pick_folder().await });
+    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_folder()));
     commands.insert_resource(FolderDialogTask { task, purpose });
 }
 
@@ -2987,7 +2987,7 @@ fn on_browse_new_location(
         raw_handle.single().ok(),
     )
     .set_title("Choose parent directory");
-    let task = AsyncComputeTaskPool::get().spawn(async move { dialog.pick_folder().await });
+    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_folder()));
     commands.queue(move |world: &mut World| {
         world.resource_mut::<NewProjectState>().folder_task = Some(task);
     });

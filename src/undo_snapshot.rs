@@ -259,7 +259,7 @@ mod tests {
         app.add_plugins(jackdaw_scene_types::SceneTypesPlugin {
             runtime_mesh_rebuild: false,
         });
-        app.add_plugins(jackdaw_bsn::JackdawBsnPlugin);
+        app.add_plugins(jackdaw_bsn::BsnDocumentPlugin);
         // `SceneTypesPlugin { runtime_mesh_rebuild: false }` skips the module that owns
         // this collection, and these tests mint materials directly. The reflect
         // registrations are what let an unsaved material be written into the scene inline

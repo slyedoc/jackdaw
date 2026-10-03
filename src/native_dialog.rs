@@ -3,7 +3,9 @@
 //! the user is already browsing rather than at the home directory.
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, RawHandleWrapper};
@@ -70,10 +72,38 @@ impl DialogMemory {
     }
 }
 
+static SUPPRESSED: AtomicBool = AtomicBool::new(false);
+
+/// Make every native dialog in this process resolve as cancelled without opening.
+/// [`NativeDialogPlugin`] calls it for an app with no window to parent a dialog to, which is
+/// every headless test app: an unattended run must never put a dialog on the user's screen.
+pub fn suppress_native_dialogs() {
+    SUPPRESSED.store(true, Ordering::Relaxed);
+}
+
+/// Whether [`suppress_native_dialogs`] was called.
+pub fn native_dialogs_suppressed() -> bool {
+    SUPPRESSED.load(Ordering::Relaxed)
+}
+
+/// Open a dialog with `open`, or resolve as cancelled without building it when dialogs are
+/// suppressed.
+pub async fn unless_suppressed<T, F: Future<Output = Option<T>>>(
+    open: impl FnOnce() -> F,
+) -> Option<T> {
+    if native_dialogs_suppressed() {
+        return None;
+    }
+    open().await
+}
+
 pub struct NativeDialogPlugin;
 
 impl Plugin for NativeDialogPlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<bevy::winit::WinitPlugin>() {
+            suppress_native_dialogs();
+        }
         app.init_resource::<DialogMemory>()
             .add_systems(Update, restore_dialog_memory);
     }

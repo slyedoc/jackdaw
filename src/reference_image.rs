@@ -135,7 +135,7 @@ pub fn open_reference_image_picker(world: &mut World) {
                 "Images",
                 &["png", "jpg", "jpeg", "ktx2", "bmp", "tga", "webp"],
             );
-    let task = AsyncComputeTaskPool::get().spawn(async move { dialog.pick_file().await });
+    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
     world.insert_resource(ReferenceImagePickTask(task));
 }
 

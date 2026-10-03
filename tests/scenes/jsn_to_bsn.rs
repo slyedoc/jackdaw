@@ -133,7 +133,7 @@ fn headless_app() -> App {
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin {
         runtime_mesh_rebuild: false,
     });
-    app.add_plugins(jackdaw_bsn::JackdawBsnPlugin);
+    app.add_plugins(jackdaw_bsn::BsnDocumentPlugin);
     app
 }
 

@@ -378,7 +378,7 @@ fn install_button() -> impl Scene {
                 .set_title("Select extension bundle")
                 .add_filter("Jackdaw extension bundle", &["jdext"]);
                 let task =
-                    AsyncComputeTaskPool::get().spawn(async move { dialog.pick_file().await });
+                    AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
                 world.resource_mut::<InstallStatus>().task = Some(task);
                 world.resource_mut::<InstallStatus>().message =
                     Some("Select a signed .jdext bundle...".into());
@@ -491,15 +491,19 @@ fn handle_install(
                     publisher,
                     fingerprint,
                 }) => {
-                    let result = MessageDialog::new()
-                        .set_level(MessageLevel::Warning)
-                        .set_title("Trust native extension publisher?")
-                        .set_description(format!(
-                            "`{publisher}` ({fingerprint}) can execute native code with \
-                         your full user permissions. Trust this publisher and install?"
-                        ))
-                        .set_buttons(MessageButtons::YesNo)
-                        .show();
+                    let result = if crate::native_dialog::native_dialogs_suppressed() {
+                        MessageDialogResult::No
+                    } else {
+                        MessageDialog::new()
+                            .set_level(MessageLevel::Warning)
+                            .set_title("Trust native extension publisher?")
+                            .set_description(format!(
+                                "`{publisher}` ({fingerprint}) can execute native code with \
+                             your full user permissions. Trust this publisher and install?"
+                            ))
+                            .set_buttons(MessageButtons::YesNo)
+                            .show()
+                    };
                     if result != MessageDialogResult::Yes {
                         let error = "publisher trust was not granted".to_string();
                         world.resource_mut::<InstallStatus>().message =
