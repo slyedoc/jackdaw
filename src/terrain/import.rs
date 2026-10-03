@@ -237,7 +237,10 @@ fn open_heightmap_picker(world: &mut World, into: PickInto) {
         crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Image)
             .set_title(title)
             .add_filter("Greyscale images", &["png"]);
-    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+    let task =
+        AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || {
+            dialog.pick_file()
+        }));
     world.insert_resource(HeightmapPick { task, into });
 }
 

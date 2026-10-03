@@ -312,7 +312,7 @@ fn section_header(label: impl Into<String>) -> impl Scene {
             border: UiRect::bottom(px(1)),
         }
         ThemeBorderColor(tokens::PANE_HEADER_DIVIDER)
-        Children [ label_dim(label) ]
+        Children [ @label_dim(label) ]
     }
 }
 
@@ -322,7 +322,7 @@ fn empty_regular_notice() -> impl Scene {
         Node {
             padding: UiRect::axes(px(12), px(4)),
         }
-        Children [ label_dim("No regular extensions installed") ]
+        Children [ @label_dim("No regular extensions installed") ]
     }
 }
 

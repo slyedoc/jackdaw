@@ -159,7 +159,7 @@ impl ScrubNumberInput {
                 {
                     // Label section
                     props.label_text.map(|text| {
-                        bsn_list!(
+                        bsn_list! {
                             Node {
                                 display: Display::Flex,
                                 align_items: AlignItems::Center,
@@ -177,75 +177,71 @@ impl ScrubNumberInput {
                                 PropagateOver<TextFont>
                                 ThemeTextColor(tokens::TEXT_INPUT_TEXT)
                             ]
-                        )
+                        }
                     })
-                },
-
-                (
-                    // The editable text entity
-                    @FeathersTextInput {
-                        @max_characters: 20usize,
-                    }
-                    Node {
-                        flex_grow: 1.0,
-                        align_items: AlignItems::Center,
-                        align_self: AlignSelf::Stretch,
-                        border_radius: {
-                            if props.label_text.is_some() {
-                                RoundedCorners::Right.to_border_radius(4.0)
-                            } else {
-                                RoundedCorners::All.to_border_radius(4.0)
-                            }
-                        },
-                    }
-                    Hovered
-                    EditableTextFilter::new(|c| {
-                        c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
-                    })
-                    template_value(LineHeight::Px(24.0)) // TODO: Make const for this
-                    TextLayout {
-                        justify: Justify::Center,
-                    }
-                    ThemeTextColor(tokens::TEXT_INPUT_TEXT)
-                    // Use a gradient to draw the moving bar, this lets us round corners
-                    BackgroundGradient(vec![Gradient::Linear(LinearGradient {
-                        angle: PI * 0.5,
-                        stops: vec![
-                            ColorStop::new(Color::WHITE, percent(0)),
-                            ColorStop::new(Color::WHITE, percent(50)),
-                            ColorStop::new(Color::NONE, percent(50)),
-                            ColorStop::new(Color::NONE, percent(100)),
-                        ],
-                        color_space: InterpolationColorSpace::Srgba,
-                    })])
-                    EntityCursor::System(bevy::window::SystemCursorIcon::ColResize)
-                    on(number_input_init)
-                    on(number_input_on_enter_key)
-                    on(number_input_on_focus_gained)
-                    on(number_input_on_focus_lost)
-                    on(number_input_hovered)
-                    Children [
-                        (
-                            // Invisible child on top of input field which intercepts drag
-                            // events (conditionally) and handles scrubbing gestures.
-                            ScrubberDragState
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: px(0),
-                                top: px(0),
-                                bottom: px(0),
-                                right: px(0),
-                            }
-                            on(scrubber_on_acquire_focus)
-                            on(scrubber_on_press)
-                            on(scrubber_on_release)
-                            on(scrubber_on_drag_start)
-                            on(scrubber_on_drag)
-                            on(scrubber_on_drag_end)
-                            on(scrubber_on_drag_cancel)
-                        ),
-                    ]
-                ),
+                }
+--
+                // The editable text entity
+                @FeathersTextInput {
+                    @max_characters: 20usize,
+                }
+                Node {
+                    flex_grow: 1.0,
+                    align_items: AlignItems::Center,
+                    align_self: AlignSelf::Stretch,
+                    border_radius: {
+                        if props.label_text.is_some() {
+                            RoundedCorners::Right.to_border_radius(4.0)
+                        } else {
+                            RoundedCorners::All.to_border_radius(4.0)
+                        }
+                    },
+                }
+                Hovered
+                EditableTextFilter::new(|c| {
+                    c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
+                })
+                LineHeight::Px(24.0) // TODO: Make const for this
+                TextLayout {
+                    justify: Justify::Center,
+                }
+                ThemeTextColor(tokens::TEXT_INPUT_TEXT)
+                // Use a gradient to draw the moving bar, this lets us round corners
+                BackgroundGradient(vec![Gradient::Linear(LinearGradient {
+                    angle: PI * 0.5,
+                    stops: vec![
+                        ColorStop::new(Color::WHITE, percent(0)),
+                        ColorStop::new(Color::WHITE, percent(50)),
+                        ColorStop::new(Color::NONE, percent(50)),
+                        ColorStop::new(Color::NONE, percent(100)),
+                    ],
+                    color_space: InterpolationColorSpace::Srgba,
+                })])
+                EntityCursor::System(bevy::window::SystemCursorIcon::ColResize)
+                on(number_input_init)
+                on(number_input_on_enter_key)
+                on(number_input_on_focus_gained)
+                on(number_input_on_focus_lost)
+                on(number_input_hovered)
+                Children [
+                        // Invisible child on top of input field which intercepts drag
+                        // events (conditionally) and handles scrubbing gestures.
+                        ScrubberDragState
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: px(0),
+                            top: px(0),
+                            bottom: px(0),
+                            right: px(0),
+                        }
+                        on(scrubber_on_acquire_focus)
+                        on(scrubber_on_press)
+                        on(scrubber_on_release)
+                        on(scrubber_on_drag_start)
+                        on(scrubber_on_drag)
+                        on(scrubber_on_drag_end)
+                        on(scrubber_on_drag_cancel)
+                ]
             ]
         }
     }

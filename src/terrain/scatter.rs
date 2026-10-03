@@ -810,8 +810,9 @@ pub(crate) fn terrain_scatter_import_pick(
             crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Layout)
                 .set_title("Select placements file")
                 .add_filter("Placement layouts", &["json"]);
-        let task =
-            bevy::tasks::AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+        let task = bevy::tasks::AsyncComputeTaskPool::get().spawn(
+            crate::native_dialog::unless_suppressed(move || dialog.pick_file()),
+        );
         world.insert_resource(LayoutPick(task));
     });
     OperatorResult::Finished

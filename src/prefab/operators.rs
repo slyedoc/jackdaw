@@ -608,8 +608,8 @@ fn node_identity(world: &World, entity: Entity) -> Vec<String> {
         return Vec::new();
     };
     let mut types: Vec<String> = components
-        .filter(|info| info.type_id().is_some())
-        .map(|info| info.name().to_string())
+        .filter(|(_, info)| info.type_id().is_some())
+        .map(|(_, info)| info.name().to_string())
         .collect();
     types.sort();
     types
@@ -1125,8 +1125,9 @@ pub fn open_prefab_picker(world: &mut World) {
         crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Prefab)
             .set_title("Select prefab")
             .add_filter("Prefab", &["bsn"]);
-    let task =
-        bevy::tasks::AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+    let task = bevy::tasks::AsyncComputeTaskPool::get().spawn(
+        crate::native_dialog::unless_suppressed(move || dialog.pick_file()),
+    );
     world.insert_resource(PrefabPickTask(task));
 }
 

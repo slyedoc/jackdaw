@@ -692,8 +692,9 @@ fn browse_for_asset(world: &mut World, row: Entity) {
     }
     .set_title(format!("Select a file for {}", field.field_path))
     .add_filter(short_type(&field.asset_type_path), extensions);
-    let task =
-        bevy::tasks::AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+    let task = bevy::tasks::AsyncComputeTaskPool::get().spawn(
+        crate::native_dialog::unless_suppressed(move || dialog.pick_file()),
+    );
     world.insert_resource(AssetBrowsePick { task, row });
 }
 

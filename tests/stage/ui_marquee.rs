@@ -1,6 +1,7 @@
 //! The rubber band a drag from bare canvas pulls out.
 
 use crate::util;
+use bevy::ecs::event::EventTriggerState;
 
 use bevy::{
     camera::{NormalizedRenderTarget, RenderTarget},
@@ -131,12 +132,14 @@ fn screen_position_of(app: &mut App, panel: Entity, authored: Vec2) -> Vec2 {
 
 /// Each picking event now carries its own `entity` and `pointer`, so there is no wrapper to
 /// put an arbitrary event inside: the caller builds the event from the two.
-fn pointer_at<'a, E: EntityEvent<Trigger<'a>: Default>>(
+fn pointer_at<E: EntityEvent>(
     app: &mut App,
     target: Entity,
     position: Vec2,
     event: impl FnOnce(Entity, Pointer) -> E,
-) {
+) where
+    EventTriggerState<'static, E>: Default,
+{
     let window = app
         .world_mut()
         .query_filtered::<Entity, With<PrimaryWindow>>()

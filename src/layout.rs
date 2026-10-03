@@ -396,32 +396,52 @@ pub(crate) fn toolbar() -> impl Scene {
         BackgroundColor(tokens::PANEL_HEADER_BG)
         BorderColor::all(tokens::TOOLBAR_BORDER)
         Children [
-            toolbar_op_button(ToolSelectOp::ID, Icon::MousePointer),
-            toolbar_op_button(ToolTranslateOp::ID, Icon::Move3d),
-            toolbar_op_button(ToolRotateOp::ID, Icon::Rotate3d),
-            toolbar_op_button(ToolScaleOp::ID, Icon::Scale3d),
-            toolbar_separator(),
+            @toolbar_op_button(ToolSelectOp::ID, Icon::MousePointer)
+            --
+            @toolbar_op_button(ToolTranslateOp::ID, Icon::Move3d)
+            --
+            @toolbar_op_button(ToolRotateOp::ID, Icon::Rotate3d)
+            --
+            @toolbar_op_button(ToolScaleOp::ID, Icon::Scale3d)
+            --
+            @toolbar_separator()
+            --
             // Gizmo space toggle. Active highlight = `Local`; default
             // = `World`. Tooltip is the discoverability path.
-            toolbar_op_button(GizmoSpaceToggleOp::ID, Icon::Globe),
-            toolbar_separator(),
-            toolbar_op_button(ActivateDrawBrushModalOp::ID, Icon::Box),
-            toolbar_op_button(MeasureDistanceOp::ID, Icon::RulerDimensionLine),
-            toolbar_op_button(EditModeVertexOp::ID, Icon::CircleDot),
-            toolbar_op_button(EditModeEdgeOp::ID, Icon::GitCommitHorizontal),
-            toolbar_op_button(EditModeFaceOp::ID, Icon::Hexagon),
-            toolbar_op_button(EditModeClipOp::ID, Icon::ScissorsLineDashed),
-            toolbar_separator(),
-            toolbar_op_button(PhysicsActivateOp::ID, Icon::Zap),
+            @toolbar_op_button(GizmoSpaceToggleOp::ID, Icon::Globe)
+            --
+            @toolbar_separator()
+            --
+            @toolbar_op_button(ActivateDrawBrushModalOp::ID, Icon::Box)
+            --
+            @toolbar_op_button(MeasureDistanceOp::ID, Icon::RulerDimensionLine)
+            --
+            @toolbar_op_button(EditModeVertexOp::ID, Icon::CircleDot)
+            --
+            @toolbar_op_button(EditModeEdgeOp::ID, Icon::GitCommitHorizontal)
+            --
+            @toolbar_op_button(EditModeFaceOp::ID, Icon::Hexagon)
+            --
+            @toolbar_op_button(EditModeClipOp::ID, Icon::ScissorsLineDashed)
+            --
+            @toolbar_separator()
+            --
+            @toolbar_op_button(PhysicsActivateOp::ID, Icon::Zap)
+            --
             // Spacer pushes the grid / snap widget to the right edge.
-            toolbar_spacer(),
+            @toolbar_spacer()
+            --
             // Grid-size stepper: current size between decrease / increase.
-            toolbar_op_button(GridDecreaseOp::ID, Icon::Minus),
-            grid_size_label(),
-            toolbar_op_button(GridIncreaseOp::ID, Icon::Plus),
-            toolbar_separator(),
+            @toolbar_op_button(GridDecreaseOp::ID, Icon::Minus)
+            --
+            @grid_size_label()
+            --
+            @toolbar_op_button(GridIncreaseOp::ID, Icon::Plus)
+            --
+            @toolbar_separator()
+            --
             // Grid-snap toggle; highlights while snapping is on.
-            toolbar_op_button(GridToggleSnapOp::ID, Icon::Magnet),
+            @toolbar_op_button(GridToggleSnapOp::ID, Icon::Magnet)
         ]
     }
 }
@@ -521,7 +541,7 @@ fn toolbar_op_button(op_id: &'static str, icon: Icon) -> impl Scene {
     let glyph = String::from(icon.unicode());
     bsn! {
         @FeathersToolButton {
-            @caption: bsn! { icon_scene(glyph, TOOLBAR_ICON_PX) },
+            @caption: bsn! { @icon_scene(glyph, TOOLBAR_ICON_PX) },
             @variant: {ButtonVariant::Plain}
         }
         ButtonOperatorCall::new(op_id)

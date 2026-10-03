@@ -29,7 +29,7 @@ use bevy::{
     math::DVec2,
     picking::PickingSystems,
     prelude::*,
-    window::{PrimaryWindow, WindowEvent},
+    window::{PrimaryWindow, RawCursorMoved, WindowEvent},
 };
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::keymap::key_code_from_name;
@@ -160,66 +160,47 @@ fn drive_synthetic_input(world: &mut World) {
     }
 }
 
-/// Deliver one event the way `bevy_winit` does: on its own message stream and
-/// on the combined [`WindowEvent`] one, with the window's cursor moved to match.
+/// Deliver one event the way `bevy_winit` does: as one [`WindowEvent`], which bevy splits
+/// into the typed messages (and the cursor into the window's position) itself.
 fn emit(world: &mut World, window: Entity, event: Emit) {
-    match event {
+    let event = match event {
         Emit::Cursor(logical) => {
-            let Some(mut win) = world.get_mut::<Window>(window) else {
+            let Some(win) = world.get::<Window>(window) else {
                 return;
             };
-            let scale = win.resolution.scale_factor();
-            let physical =
-                DVec2::new(f64::from(logical.x), f64::from(logical.y)) * f64::from(scale);
-            let last = win.physical_cursor_position();
-            win.set_physical_cursor_position(Some(physical));
-            let delta = last.map(|last| (physical.as_vec2() - last) / scale);
-            let moved = CursorMoved {
+            let scale = f64::from(win.resolution.scale_factor());
+            WindowEvent::CursorMoved(RawCursorMoved {
                 window,
-                position: logical,
-                delta,
-            };
-            world.write_message(moved.clone());
-            world.write_message(WindowEvent::CursorMoved(moved));
+                physical_position: DVec2::new(f64::from(logical.x), f64::from(logical.y)) * scale,
+            })
         }
-        Emit::Button { button, state } => {
-            let input = MouseButtonInput {
-                button,
-                state,
-                window,
-            };
-            world.write_message(input);
-            world.write_message(WindowEvent::MouseButtonInput(input));
-        }
-        Emit::Wheel(lines) => {
-            let wheel = MouseWheel {
-                unit: MouseScrollUnit::Line,
-                x: lines.x,
-                y: lines.y,
-                window,
-                phase: TouchPhase::Moved,
-            };
-            world.write_message(wheel);
-            world.write_message(WindowEvent::MouseWheel(wheel));
-        }
+        Emit::Button { button, state } => WindowEvent::MouseButtonInput(MouseButtonInput {
+            button,
+            state,
+            window,
+        }),
+        Emit::Wheel(lines) => WindowEvent::MouseWheel(MouseWheel {
+            unit: MouseScrollUnit::Line,
+            x: lines.x,
+            y: lines.y,
+            window,
+            phase: TouchPhase::Moved,
+        }),
         Emit::Key {
             key,
             logical,
             text,
             state,
-        } => {
-            let input = KeyboardInput {
-                key_code: key,
-                logical_key: logical,
-                state,
-                text: text.map(Into::into),
-                repeat: false,
-                window,
-            };
-            world.write_message(input.clone());
-            world.write_message(WindowEvent::KeyboardInput(input));
-        }
-    }
+        } => WindowEvent::KeyboardInput(KeyboardInput {
+            key_code: key,
+            logical_key: logical,
+            state,
+            text: text.map(Into::into),
+            repeat: false,
+            window,
+        }),
+    };
+    world.write_message(event);
 }
 
 /// The modifiers a `mods=` list names, in press order. An unknown name is

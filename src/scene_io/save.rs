@@ -49,7 +49,10 @@ fn spawn_save_dialog(world: &mut World) {
     )
     .add_filter("BSN Scene", &["bsn", "bsb"]);
 
-    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.save_file()));
+    let task =
+        AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || {
+            dialog.save_file()
+        }));
     world.insert_resource(SceneDialogTask::Save(task));
 }
 

@@ -2223,7 +2223,10 @@ pub fn asset_select_folder(_: In<OperatorParameters>, mut commands: Commands) ->
             .map(|state| state.current_directory.clone());
         let dialog = crate::native_dialog::dialog_starting_at(world, current)
             .set_title("Select assets directory");
-        let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_folder()));
+        let task =
+            AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || {
+                dialog.pick_folder()
+            }));
         world.insert_resource(ProjectFolderTask(task));
     });
     OperatorResult::Finished

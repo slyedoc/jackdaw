@@ -4,6 +4,7 @@
 use bevy::{
     ecs::system::SystemState,
     prelude::*,
+    reflect::{GetPath, NamedField, ReflectRef, Typed, enums::EnumInfo},
     ui::{Checked, InteractionDisabled},
     ui_widgets::ValueChange,
 };
@@ -43,8 +44,39 @@ pub struct NodeCardBody;
 pub(crate) struct NodeEnumField {
     label: &'static str,
     path: &'static str,
-    variants: &'static [&'static str],
-    current: fn(&Node) -> usize,
+}
+
+impl NodeEnumField {
+    /// The field's enum, found by walking `Node`'s reflected type along `path`: its variant
+    /// names are the menu, in declaration order.
+    fn info(&self) -> &'static EnumInfo {
+        let mut info = Node::type_info();
+        for segment in self.path.split('.') {
+            info = info
+                .as_struct()
+                .ok()
+                .and_then(|fields| fields.field(segment))
+                .and_then(NamedField::type_info)
+                .unwrap_or_else(|| panic!("`Node.{}` is a reflected field", self.path));
+        }
+        info.as_enum()
+            .unwrap_or_else(|_| panic!("`Node.{}` is an enum", self.path))
+    }
+
+    fn variants(&self) -> &'static [&'static str] {
+        self.info().variant_names()
+    }
+
+    /// The index of the variant `node` holds, in [`Self::variants`] order.
+    fn current(&self, node: &Node) -> usize {
+        match node
+            .reflect_path(self.path)
+            .map(PartialReflect::reflect_ref)
+        {
+            Ok(ReflectRef::Enum(value)) => value.variant_index(),
+            _ => 0,
+        }
+    }
 }
 
 /// One `Option`-valued `Node` field. `integer` picks the JSON the commit
@@ -75,250 +107,81 @@ impl NodeOptionalField {
 const DISPLAY: NodeEnumField = NodeEnumField {
     label: "display",
     path: "display",
-    variants: &["Flex", "Grid", "Block", "None"],
-    current: |node| match node.display {
-        Display::Flex => 0,
-        Display::Grid => 1,
-        Display::Block => 2,
-        Display::None => 3,
-    },
 };
 
 const POSITION_TYPE: NodeEnumField = NodeEnumField {
     label: "position",
     path: "position_type",
-    variants: &["Relative", "Absolute"],
-    current: |node| match node.position_type {
-        PositionType::Relative => 0,
-        PositionType::Absolute => 1,
-    },
 };
 
 const BOX_SIZING: NodeEnumField = NodeEnumField {
     label: "box sizing",
     path: "box_sizing",
-    variants: &["BorderBox", "ContentBox"],
-    current: |node| match node.box_sizing {
-        BoxSizing::BorderBox => 0,
-        BoxSizing::ContentBox => 1,
-    },
 };
 
 const DIRECTION: NodeEnumField = NodeEnumField {
     label: "direction",
     path: "direction",
-    variants: &["Ltr", "Rtl"],
-    current: |node| match node.direction {
-        InlineDirection::Ltr => 0,
-        InlineDirection::Rtl => 1,
-    },
 };
-
-const OVERFLOW_AXIS_VARIANTS: &[&str] = &["Visible", "Clip", "Hidden", "Scroll"];
-
-fn overflow_axis_index(axis: OverflowAxis) -> usize {
-    match axis {
-        OverflowAxis::Visible => 0,
-        OverflowAxis::Clip => 1,
-        OverflowAxis::Hidden => 2,
-        OverflowAxis::Scroll => 3,
-    }
-}
 
 const OVERFLOW_X: NodeEnumField = NodeEnumField {
     label: "overflow x",
     path: "overflow.x",
-    variants: OVERFLOW_AXIS_VARIANTS,
-    current: |node| overflow_axis_index(node.overflow.x),
 };
 
 const OVERFLOW_Y: NodeEnumField = NodeEnumField {
     label: "overflow y",
     path: "overflow.y",
-    variants: OVERFLOW_AXIS_VARIANTS,
-    current: |node| overflow_axis_index(node.overflow.y),
 };
 
 const CLIP_VISUAL_BOX: NodeEnumField = NodeEnumField {
     label: "clip box",
     path: "overflow_clip_margin.visual_box",
-    variants: &["ContentBox", "PaddingBox", "BorderBox"],
-    current: |node| match node.overflow_clip_margin.visual_box {
-        VisualBox::ContentBox => 0,
-        VisualBox::PaddingBox => 1,
-        VisualBox::BorderBox => 2,
-    },
 };
 
 const ALIGN_ITEMS: NodeEnumField = NodeEnumField {
     label: "items",
     path: "align_items",
-    variants: &[
-        "Default",
-        "Start",
-        "End",
-        "FlexStart",
-        "FlexEnd",
-        "Center",
-        "Baseline",
-        "Stretch",
-    ],
-    current: |node| match node.align_items {
-        AlignItems::Default => 0,
-        AlignItems::Start => 1,
-        AlignItems::End => 2,
-        AlignItems::FlexStart => 3,
-        AlignItems::FlexEnd => 4,
-        AlignItems::Center => 5,
-        AlignItems::Baseline => 6,
-        AlignItems::Stretch => 7,
-    },
 };
 
 const ALIGN_SELF: NodeEnumField = NodeEnumField {
     label: "self",
     path: "align_self",
-    variants: &[
-        "Auto",
-        "Start",
-        "End",
-        "FlexStart",
-        "FlexEnd",
-        "Center",
-        "Baseline",
-        "Stretch",
-    ],
-    current: |node| match node.align_self {
-        AlignSelf::Auto => 0,
-        AlignSelf::Start => 1,
-        AlignSelf::End => 2,
-        AlignSelf::FlexStart => 3,
-        AlignSelf::FlexEnd => 4,
-        AlignSelf::Center => 5,
-        AlignSelf::Baseline => 6,
-        AlignSelf::Stretch => 7,
-    },
 };
 
 const ALIGN_CONTENT: NodeEnumField = NodeEnumField {
     label: "content",
     path: "align_content",
-    variants: &[
-        "Default",
-        "Start",
-        "End",
-        "FlexStart",
-        "FlexEnd",
-        "Center",
-        "Stretch",
-        "SpaceBetween",
-        "SpaceEvenly",
-        "SpaceAround",
-    ],
-    current: |node| match node.align_content {
-        AlignContent::Default => 0,
-        AlignContent::Start => 1,
-        AlignContent::End => 2,
-        AlignContent::FlexStart => 3,
-        AlignContent::FlexEnd => 4,
-        AlignContent::Center => 5,
-        AlignContent::Stretch => 6,
-        AlignContent::SpaceBetween => 7,
-        AlignContent::SpaceEvenly => 8,
-        AlignContent::SpaceAround => 9,
-    },
 };
 
 const JUSTIFY_ITEMS: NodeEnumField = NodeEnumField {
     label: "items",
     path: "justify_items",
-    variants: &["Default", "Start", "End", "Center", "Baseline", "Stretch"],
-    current: |node| match node.justify_items {
-        JustifyItems::Default => 0,
-        JustifyItems::Start => 1,
-        JustifyItems::End => 2,
-        JustifyItems::Center => 3,
-        JustifyItems::Baseline => 4,
-        JustifyItems::Stretch => 5,
-    },
 };
 
 const JUSTIFY_SELF: NodeEnumField = NodeEnumField {
     label: "self",
     path: "justify_self",
-    variants: &["Auto", "Start", "End", "Center", "Baseline", "Stretch"],
-    current: |node| match node.justify_self {
-        JustifySelf::Auto => 0,
-        JustifySelf::Start => 1,
-        JustifySelf::End => 2,
-        JustifySelf::Center => 3,
-        JustifySelf::Baseline => 4,
-        JustifySelf::Stretch => 5,
-    },
 };
 
 const JUSTIFY_CONTENT: NodeEnumField = NodeEnumField {
     label: "content",
     path: "justify_content",
-    variants: &[
-        "Default",
-        "Start",
-        "End",
-        "FlexStart",
-        "FlexEnd",
-        "Center",
-        "Stretch",
-        "SpaceBetween",
-        "SpaceEvenly",
-        "SpaceAround",
-    ],
-    current: |node| match node.justify_content {
-        JustifyContent::Default => 0,
-        JustifyContent::Start => 1,
-        JustifyContent::End => 2,
-        JustifyContent::FlexStart => 3,
-        JustifyContent::FlexEnd => 4,
-        JustifyContent::Center => 5,
-        JustifyContent::Stretch => 6,
-        JustifyContent::SpaceBetween => 7,
-        JustifyContent::SpaceEvenly => 8,
-        JustifyContent::SpaceAround => 9,
-    },
 };
 
 const FLEX_DIRECTION: NodeEnumField = NodeEnumField {
     label: "direction",
     path: "flex_direction",
-    variants: &["Row", "Column", "RowReverse", "ColumnReverse"],
-    current: |node| match node.flex_direction {
-        FlexDirection::Row => 0,
-        FlexDirection::Column => 1,
-        FlexDirection::RowReverse => 2,
-        FlexDirection::ColumnReverse => 3,
-    },
 };
 
 const FLEX_WRAP: NodeEnumField = NodeEnumField {
     label: "wrap",
     path: "flex_wrap",
-    variants: &["NoWrap", "Wrap", "WrapReverse"],
-    current: |node| match node.flex_wrap {
-        FlexWrap::NoWrap => 0,
-        FlexWrap::Wrap => 1,
-        FlexWrap::WrapReverse => 2,
-    },
 };
 
 const GRID_AUTO_FLOW: NodeEnumField = NodeEnumField {
     label: "auto flow",
     path: "grid_auto_flow",
-    variants: &["Row", "Column", "RowDense", "ColumnDense"],
-    current: |node| match node.grid_auto_flow {
-        GridAutoFlow::Row => 0,
-        GridAutoFlow::Column => 1,
-        GridAutoFlow::RowDense => 2,
-        GridAutoFlow::ColumnDense => 3,
-    },
 };
 
 /// How far a grid line may be dragged. Narrower than the `NonZeroI16` it is
@@ -796,8 +659,8 @@ fn spawn_segments(
         .observe(on_segment_change)
         .id();
 
-    let current = (field.current)(node);
-    for (index, variant) in field.variants.iter().enumerate() {
+    let current = field.current(node);
+    for (index, variant) in field.variants().iter().enumerate() {
         let mut segment = commands.spawn((
             NodeSegment {
                 source,
@@ -827,9 +690,9 @@ fn spawn_enum_combo(
     field: &'static NodeEnumField,
 ) {
     let row = spawn_field_row(commands, parent, FieldRowProps::new(field.label));
-    let current = (field.current)(node);
+    let current = field.current(node);
     let options: Vec<ComboBoxOptionData> = field
-        .variants
+        .variants()
         .iter()
         .map(|variant| ComboBoxOptionData::new(*variant))
         .collect();
@@ -852,11 +715,11 @@ fn commit_variant(
     field: &'static NodeEnumField,
     index: usize,
 ) {
-    let Some(variant) = field.variants.get(index).copied() else {
+    let Some(variant) = field.variants().get(index).copied() else {
         warn!(
             "a variant pick on '{}' was dropped: no variant {index} of {}",
             field.path,
-            field.variants.len()
+            field.variants().len()
         );
         return;
     };
@@ -911,7 +774,7 @@ pub fn paint_node_segments(
         let Ok(node) = nodes.get(segment.source) else {
             continue;
         };
-        let active = (segment.field.current)(node) == segment.index;
+        let active = segment.field.current(node) == segment.index;
         let color = segmented::segment_background(active);
         if background.0 != color {
             background.0 = color;
@@ -933,7 +796,7 @@ pub fn refresh_node_enum_combos(
         let Ok(node) = nodes.get(combo.source) else {
             continue;
         };
-        let live = (combo.field.current)(node);
+        let live = combo.field.current(node);
         if live != shown.0 {
             commands.entity(entity).insert(ComboBoxSelectedIndex(live));
         }
@@ -1299,7 +1162,7 @@ mod tests {
             &GRID_AUTO_FLOW,
         ] {
             assert!(
-                (field.current)(&node) < field.variants.len(),
+                field.current(&node) < field.variants().len(),
                 "{} indexes outside its variant list",
                 field.path,
             );

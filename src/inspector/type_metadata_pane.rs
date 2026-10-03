@@ -246,7 +246,7 @@ fn type_metadata_toggle_button() -> impl Scene {
     let glyph = String::from(Icon::Ellipsis.unicode());
     bsn! {
         @FeathersToolButton {
-            @caption: bsn! { icon_scene(glyph, tokens::TEXT_SIZE_SM_PX) },
+            @caption: bsn! { @icon_scene(glyph, tokens::TEXT_SIZE_SM_PX) },
             @variant: {ButtonVariant::Plain}
         }
         Tooltip::title("Type settings")
@@ -257,7 +257,7 @@ fn clear_preview_button() -> impl Scene {
     let glyph = String::from(Icon::X.unicode());
     bsn! {
         @FeathersToolButton {
-            @caption: bsn! { icon_scene(glyph, tokens::TEXT_SIZE_PX) },
+            @caption: bsn! { @icon_scene(glyph, tokens::TEXT_SIZE_PX) },
             @variant: {ButtonVariant::Plain}
         }
         Tooltip::title("Clear preview")
@@ -383,7 +383,10 @@ fn open_preview_picker(world: &mut World, type_path: String) {
         crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Model)
             .set_title("Select preview model")
             .add_filter("glTF", &["glb", "gltf"]);
-    let task = AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+    let task =
+        AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || {
+            dialog.pick_file()
+        }));
     world.insert_resource(PreviewPickTask { type_path, task });
 }
 

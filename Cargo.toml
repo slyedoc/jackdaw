@@ -455,72 +455,70 @@ workspace = true
 ###############################################################################
 
 [patch."https://github.com/bevyengine/bevy"]
-bevy = { path = "../bevy" }
-bevy_a11y = { path = "../bevy/crates/bevy_a11y" }
-bevy_android = { path = "../bevy/crates/bevy_android" }
-bevy_animation = { path = "../bevy/crates/bevy_animation" }
-bevy_anti_alias = { path = "../bevy/crates/bevy_anti_alias" }
-bevy_app = { path = "../bevy/crates/bevy_app" }
-bevy_asset = { path = "../bevy/crates/bevy_asset" }
-bevy_audio = { path = "../bevy/crates/bevy_audio" }
-bevy_camera = { path = "../bevy/crates/bevy_camera" }
-bevy_camera_controller = { path = "../bevy/crates/bevy_camera_controller" }
-bevy_clipboard = { path = "../bevy/crates/bevy_clipboard" }
-bevy_color = { path = "../bevy/crates/bevy_color" }
-bevy_core_pipeline = { path = "../bevy/crates/bevy_core_pipeline" }
-bevy_derive = { path = "../bevy/crates/bevy_derive" }
-bevy_dev_tools = { path = "../bevy/crates/bevy_dev_tools" }
-bevy_diagnostic = { path = "../bevy/crates/bevy_diagnostic" }
-bevy_dylib = { path = "../bevy/crates/bevy_dylib" }
-bevy_ecs = { path = "../bevy/crates/bevy_ecs" }
-bevy_encase_derive = { path = "../bevy/crates/bevy_encase_derive" }
-bevy_extract = { path = "../bevy/crates/bevy_extract" }
-bevy_feathers = { path = "../bevy/crates/bevy_feathers" }
-bevy_feathers_inspector = { path = "../bevy/crates/bevy_feathers_inspector" }
-bevy_gilrs = { path = "../bevy/crates/bevy_gilrs" }
-bevy_gizmos = { path = "../bevy/crates/bevy_gizmos" }
-bevy_gizmos_render = { path = "../bevy/crates/bevy_gizmos_render" }
-bevy_gltf = { path = "../bevy/crates/bevy_gltf" }
-bevy_image = { path = "../bevy/crates/bevy_image" }
-bevy_input = { path = "../bevy/crates/bevy_input" }
-bevy_input_focus = { path = "../bevy/crates/bevy_input_focus" }
-bevy_internal = { path = "../bevy/crates/bevy_internal" }
-bevy_light = { path = "../bevy/crates/bevy_light" }
-bevy_log = { path = "../bevy/crates/bevy_log" }
-bevy_macro_utils = { path = "../bevy/crates/bevy_macro_utils" }
-bevy_material = { path = "../bevy/crates/bevy_material" }
-bevy_math = { path = "../bevy/crates/bevy_math" }
-bevy_mesh = { path = "../bevy/crates/bevy_mesh" }
-bevy_pbr = { path = "../bevy/crates/bevy_pbr" }
-bevy_picking = { path = "../bevy/crates/bevy_picking" }
-bevy_platform = { path = "../bevy/crates/bevy_platform" }
-bevy_post_process = { path = "../bevy/crates/bevy_post_process" }
-bevy_ptr = { path = "../bevy/crates/bevy_ptr" }
-bevy_reflect = { path = "../bevy/crates/bevy_reflect" }
-bevy_remote = { path = "../bevy/crates/bevy_remote" }
-bevy_render = { path = "../bevy/crates/bevy_render" }
-bevy_scene = { path = "../bevy/crates/bevy_scene" }
-bevy-settings = { path = "../bevy/crates/bevy_settings" }
-bevy_shader = { path = "../bevy/crates/bevy_shader" }
-bevy_solari = { path = "../bevy/crates/bevy_solari" }
-bevy_sprite = { path = "../bevy/crates/bevy_sprite" }
-bevy_sprite_render = { path = "../bevy/crates/bevy_sprite_render" }
-bevy_state = { path = "../bevy/crates/bevy_state" }
-bevy_tasks = { path = "../bevy/crates/bevy_tasks" }
-bevy_text = { path = "../bevy/crates/bevy_text" }
-bevy_time = { path = "../bevy/crates/bevy_time" }
-bevy_transform = { path = "../bevy/crates/bevy_transform" }
-bevy_ui = { path = "../bevy/crates/bevy_ui" }
-bevy_ui_render = { path = "../bevy/crates/bevy_ui_render" }
-bevy_ui_widgets = { path = "../bevy/crates/bevy_ui_widgets" }
-bevy_utils = { path = "../bevy/crates/bevy_utils" }
-bevy_window = { path = "../bevy/crates/bevy_window" }
-bevy_winit = { path = "../bevy/crates/bevy_winit" }
-bevy_world_serialization = { path = "../bevy/crates/bevy_world_serialization" }
-
-[patch."https://github.com/slyedoc/aurora.git"]
-bevy_aurora = { path = "../../p/aurora" }
-aurora_material = { path = "../../p/aurora/crates/aurora_material" }
+bevy = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_a11y = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_android = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_animation = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_anti_alias = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_app = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_asset = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_audio = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_camera = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_camera_controller = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_clipboard = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_color = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_core_pipeline = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_derive = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_dev_tools = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_diagnostic = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_dylib = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_ecs = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_encase_derive = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_extract = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_feathers = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_feathers_inspector = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_gilrs = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_gizmos = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_gizmos_render = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_gltf = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_image = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_input = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_input_focus = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_internal = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_light = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_log = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_macro_utils = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_material = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_math = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_shape = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_curve = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_mesh = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_pbr = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_picking = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_platform = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_post_process = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_ptr = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_reflect = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_remote = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_render = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_scene = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy-settings = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_shader = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_solari = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_sprite = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_sprite_render = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_state = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_tasks = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_text = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_time = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_transform = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_ui = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_ui_render = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_ui_widgets = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_utils = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_window = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_winit = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
+bevy_world_serialization = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 
 [patch."https://github.com/avianphysics/avian"]
 avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
@@ -529,10 +527,8 @@ avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 [patch.crates-io]
 avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 bevy_enhanced_input = { git = "https://github.com/slyedoc/bevy_enhanced_input", branch = "bevy-main" }
-# Path, not the branch: the `bevy_mesh` feature's dead `dep:bevy_render` is fixed in the
-# side-by-side checkout and not yet pushed. Point these back at the branch once it is.
-bevy_rerecast = { path = "../rerecast/crates/bevy_rerecast" }
-bevy_rerecast_core = { path = "../rerecast/crates/bevy_rerecast_core" }
+bevy_rerecast = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
+bevy_rerecast_core = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
 bevy_monitors = { git = "https://github.com/slyedoc/bevy_monitors", branch = "bevy-main" }
 
 [profile.dev]

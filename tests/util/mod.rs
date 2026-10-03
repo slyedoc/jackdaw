@@ -373,6 +373,6 @@ pub fn has_legacy_interaction(world: &World, entity: Entity) -> bool {
     world.inspect_entity(entity).is_ok_and(|components| {
         components
             .into_iter()
-            .any(|info| info.name().to_string().ends_with("::Interaction"))
+            .any(|(_, info)| info.name().to_string().ends_with("::Interaction"))
     })
 }

@@ -154,6 +154,7 @@ pub const INSPECTOR_OVERRIDE: Color = Color::srgb(1.0, 0.6, 0.3);
 // -- General --
 /// `Default::default()` is non-const, so we have to make our own.
 pub const DEFAULT_LINE_CONFIG: GizmoLineConfig = GizmoLineConfig {
+    animation_offset: 0.0,
     width: 2.0,
     perspective: false,
     style: GizmoLineStyle::Solid,

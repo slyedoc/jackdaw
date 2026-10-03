@@ -61,8 +61,9 @@ pub fn spawn_open_dialog(world: &mut World) {
         crate::native_dialog::file_dialog(world, crate::native_dialog::DialogPurpose::Scene)
             .set_title("Open scene")
             .add_filter("Jackdaw scene", &["bsn", "bsb", "jsn"]);
-    let task =
-        bevy::tasks::AsyncComputeTaskPool::get().spawn(crate::native_dialog::unless_suppressed(move || dialog.pick_file()));
+    let task = bevy::tasks::AsyncComputeTaskPool::get().spawn(
+        crate::native_dialog::unless_suppressed(move || dialog.pick_file()),
+    );
     world.insert_resource(SceneDialogTask::Open(task));
 }
 
