@@ -4,6 +4,7 @@ use bevy::gltf::GltfAssetLabel;
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAssetRoot, WorldInstanceReady, WorldInstanceSpawner};
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_bsn::{AstNodeRef, SceneBsnAst};
 use jackdaw_scene_types::{Brush, GltfSource};
 
@@ -51,7 +52,7 @@ fn sync_schema_previews(
     asset_server: Res<AssetServer>,
     hosts: Query<(Entity, &AstNodeRef), (With<Transform>, Without<EditorEntity>)>,
     existing: Query<(Entity, &ChildOf, &SchemaPreview)>,
-    authored_visuals: Query<(), Or<(With<Brush>, With<GltfSource>, With<Mesh3d>)>>,
+    authored_visuals: Query<(), Or<(With<Brush>, With<GltfSource>, With<AuroraMesh3d>)>>,
 ) {
     let Some(ast) = ast else {
         return;

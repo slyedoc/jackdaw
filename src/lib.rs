@@ -30,6 +30,7 @@ pub mod command_palette;
 pub mod commands;
 pub mod component_json;
 pub mod creation_taxonomy;
+pub(crate) mod cursor_pick;
 pub mod custom_properties;
 pub mod default_style;
 pub mod definition_assets;
@@ -429,6 +430,7 @@ impl Plugin for EditorCorePlugin {
                 asset_drag::AssetDragPlugin,
                 texture_files::TextureFilesPlugin,
                 viewport_select::ViewportSelectPlugin,
+                cursor_pick::CursorPickPlugin,
                 snapping::SnappingPlugin,
                 jackdaw_localization::LocalizationPlugin,
             ),

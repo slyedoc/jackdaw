@@ -6,6 +6,7 @@
 //! Headless, so no texture decodes and the surfaces carry the untextured
 //! material rather than the splat one.
 
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::path::Path;
 
 use bevy::asset::AssetApp;
@@ -112,7 +113,7 @@ fn game(assets: &Path) -> App {
         ..default()
     });
     // The mesh store a windowed game gets from its render plugins.
-    app.init_asset::<Mesh>();
+    app.init_asset::<AuroraMesh>();
     app.add_plugins(JackdawPlugin);
     app.world_mut().spawn((
         Camera3d::default(),
@@ -152,26 +153,22 @@ fn game(assets: &Path) -> App {
 
 /// Every vertex the terrain drew, in world space.
 fn drawn_vertices(app: &mut App) -> Vec<Vec3> {
-    let drawn: Vec<(Handle<Mesh>, GlobalTransform)> = app
+    let drawn: Vec<(Handle<AuroraMesh>, GlobalTransform)> = app
         .world_mut()
-        .query::<(&Mesh3d, &GlobalTransform)>()
+        .query::<(&AuroraMesh3d, &GlobalTransform)>()
         .iter(app.world())
         .map(|(mesh, transform)| (mesh.0.clone(), *transform))
         .collect();
-    let meshes = app.world().resource::<Assets<Mesh>>();
+    let meshes = app.world().resource::<Assets<AuroraMesh>>();
     let mut points = Vec::new();
     for (handle, transform) in &drawn {
-        let Some(positions) = meshes
-            .get(handle)
-            .and_then(|mesh| mesh.attribute(Mesh::ATTRIBUTE_POSITION))
-            .and_then(|values| values.as_float3())
-        else {
+        let Some(mesh) = meshes.get(handle) else {
             continue;
         };
         points.extend(
-            positions
+            mesh.vertex_positions
                 .iter()
-                .map(|position| transform.transform_point(Vec3::from(*position))),
+                .map(|position| transform.transform_point(*position)),
         );
     }
     points

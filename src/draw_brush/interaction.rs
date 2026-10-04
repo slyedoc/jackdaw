@@ -10,10 +10,7 @@ use crate::{
     snapping::SnapSettings,
     viewport::ViewportCursor,
 };
-use bevy::{
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
-    prelude::*,
-};
+use bevy::prelude::*;
 use jackdaw_geometry::compute_face_tangent_axes;
 use jackdaw_scene_types::Brush;
 
@@ -22,7 +19,7 @@ pub(crate) fn draw_brush_update(
     vp: ViewportCursor,
     keyboard: Res<ButtonInput<KeyCode>>,
     snap_settings: Res<SnapSettings>,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     brush_chunks: Query<&BrushMeshChunk>,
     brushes: Query<(&Brush, &GlobalTransform)>,
     brush_caches: Query<&BrushMeshCache>,
@@ -72,22 +69,17 @@ pub(crate) fn draw_brush_update(
 
             if !active.plane_locked {
                 // Raycast against brush chunk meshes
-                let settings =
-                    MeshRayCastSettings::default().with_visibility(RayCastVisibility::Any);
-                let hits = ray_cast.cast_ray(ray, &settings);
 
                 let mut best_hit: Option<(Vec3, Vec3)> = None;
                 let mut best_distance = f32::MAX;
                 let mut best_facing = f32::MIN;
 
-                for (hit_entity, hit_data) in hits {
-                    if let Ok(chunk) = brush_chunks.get(*hit_entity)
+                for hit_data in cursor_hits.all() {
+                    if let Ok(chunk) = brush_chunks.get(hit_data.entity)
                         && let Ok((brush, brush_tf)) = brushes.get(chunk.brush_entity)
                     {
-                        let Some(tri_idx) = hit_data.triangle_index else {
-                            continue;
-                        };
-                        let Some(&face_idx) = chunk.face_of_tri.get(tri_idx) else {
+                        let Some(&face_idx) = chunk.face_of_tri.get(hit_data.triangle as usize)
+                        else {
                             continue;
                         };
                         // `face_of_tri` is evaluated-space; resolve a hit on

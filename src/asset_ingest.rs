@@ -6,7 +6,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility};
 use bevy::prelude::*;
 use bevy::window::FileDragAndDrop;
 
@@ -115,7 +114,7 @@ fn handle_file_drops(
     mut drops: MessageReader<FileDragAndDrop>,
     project: Option<Res<ProjectRoot>>,
     vp: ViewportCursor,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     editor_entities: Query<(), With<crate::EditorEntity>>,
     mut commands: Commands,
 ) {
@@ -138,7 +137,7 @@ fn handle_file_drops(
 
     // Computed once and reused: the cursor placement is the same for every
     // image in a multi-file drop.
-    let placement = image_placement_under_cursor(&vp, &mut ray_cast, &editor_entities);
+    let placement = image_placement_under_cursor(&vp, &cursor_hits, &editor_entities);
 
     for path in dropped {
         let rel = match import_to_assets(&assets_dir, &path) {
@@ -190,7 +189,7 @@ fn handle_file_drops(
 /// normal toward the camera.
 fn image_placement_under_cursor(
     vp: &ViewportCursor,
-    ray_cast: &mut MeshRayCast,
+    cursor_hits: &crate::cursor_pick::CursorHits,
     editor_entities: &Query<(), With<crate::EditorEntity>>,
 ) -> Option<ImagePlacement> {
     let cursor_pos = vp.cursor()?;
@@ -203,16 +202,11 @@ fn image_placement_under_cursor(
     let ray = camera.viewport_to_world(cam_tf, local_cursor).ok()?;
 
     // Editor-internal meshes (gizmos, previews, the per-viewport grid) carry
-    // `EditorEntity` and sit at world origin on off-screen render layers;
-    // `MeshRayCast` ignores render layers, so filter them out to avoid
-    // snapping the drop onto an invisible mesh. Same guard the viewport
-    // selection raycast uses.
+    // `EditorEntity`; skip them so the drop does not snap onto one. Same guard
+    // the viewport selection uses.
     let editor_filter = |entity: Entity| !editor_entities.contains(entity);
-    let settings = MeshRayCastSettings::default()
-        .with_visibility(RayCastVisibility::Any)
-        .with_filter(&editor_filter);
-    let position = match ray_cast.cast_ray(ray, &settings).first() {
-        Some((_, hit)) => hit.point,
+    let position = match cursor_hits.filtered(editor_filter).next() {
+        Some(hit) => hit.point,
         None => ray.origin + *ray.direction * DROP_FALLBACK_DISTANCE,
     };
 
@@ -266,10 +260,10 @@ fn spawn_reference_image_facing(
 /// `world.run_system_cached`.
 fn drop_placement_system(
     vp: ViewportCursor,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     editor_entities: Query<(), With<crate::EditorEntity>>,
 ) -> Option<ImagePlacement> {
-    image_placement_under_cursor(&vp, &mut ray_cast, &editor_entities)
+    image_placement_under_cursor(&vp, &cursor_hits, &editor_entities)
 }
 
 /// Place an image at the viewport center: a point [`DROP_FALLBACK_DISTANCE`] in

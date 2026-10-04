@@ -2,6 +2,7 @@
 //! of its standard one.
 
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_surface::LayeredSurface3d;
 use std::path::{Path, PathBuf};
 
@@ -157,7 +158,7 @@ fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
         .world_mut()
         .spawn((
             Name::new("cliff"),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(standard),
         ))
         .id();
@@ -238,7 +239,7 @@ fn a_scene_naming_a_layered_surface_reloads_with_it_on_the_mesh() {
         .add(AuroraMaterial::default());
     app.world_mut()
         .entity_mut(mesh)
-        .insert((Mesh3d::default(), AuroraMaterial3d(standard)));
+        .insert((AuroraMesh3d::default(), AuroraMaterial3d(standard)));
     app.world_mut().resource_mut::<Selection>().entities = vec![mesh];
     settle(&mut app);
 

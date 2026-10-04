@@ -5,6 +5,7 @@
 //! menu, so a kind looks the same wherever it is named.
 
 use crate::util;
+use bevy_aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw::hierarchy::HierarchyTreeContainer;
@@ -223,7 +224,7 @@ fn the_drawn_row_glyph_follows_the_value() {
     );
 }
 
-/// A brush carries `Mesh3d` like every other visible thing, and is still
+/// A brush carries `AuroraMesh3d` like every other visible thing, and is still
 /// a brush: the world kinds keep their place ahead of the general ones.
 #[test]
 fn a_brush_still_shows_the_cuboid() {
@@ -233,7 +234,7 @@ fn a_brush_still_shows_the_cuboid() {
         .spawn((
             Name::new("Brush"),
             jackdaw_scene_types::Brush::default(),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             Transform::default(),
         ))
         .id();
@@ -263,7 +264,9 @@ fn the_world_kinds_each_read_as_themselves() {
     let spot = world
         .spawn((SpotLight::default(), Transform::default()))
         .id();
-    let mesh = world.spawn((Mesh3d::default(), Transform::default())).id();
+    let mesh = world
+        .spawn((AuroraMesh3d::default(), Transform::default()))
+        .id();
     app.update();
 
     for (entity, icon, what) in [
@@ -294,7 +297,7 @@ fn a_scene_root_and_a_prefab_instance_win_over_what_they_are_made_of() {
     let instance = world
         .spawn((
             jackdaw_prefab::components::IsA::default(),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             Transform::default(),
         ))
         .id();

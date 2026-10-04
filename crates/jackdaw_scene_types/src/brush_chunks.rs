@@ -18,6 +18,29 @@ pub struct MeshChunk {
     pub face_of_tri: Vec<u32>,
 }
 
+#[cfg(feature = "render")]
+impl MeshChunk {
+    /// The traced mesh of this chunk; triangle `i` of it is `face_of_tri[i]`'s.
+    pub fn aurora_mesh(&self) -> aurora_mesh::AuroraMesh {
+        use bevy::math::{Vec2, Vec4};
+        aurora_mesh::AuroraMesh::from_triangles(aurora_mesh::Triangles {
+            positions: self
+                .positions
+                .iter()
+                .map(|&p| bevy::math::Vec3::from_array(p))
+                .collect(),
+            normals: self
+                .normals
+                .iter()
+                .map(|&n| bevy::math::Vec3::from_array(n))
+                .collect(),
+            uvs: self.uvs.iter().map(|&uv| Vec2::from_array(uv)).collect(),
+            tangents: self.tangents.iter().map(|&t| Vec4::from_array(t)).collect(),
+            indices: self.indices.clone(),
+        })
+    }
+}
+
 /// Group a brush's already-evaluated faces into per-material render chunks.
 /// `vertices` / `face_polygons` / `faces` are post-modifier geometry: the caller
 /// folds the modifier stack (`evaluate_modifier_stack`) and resolves evaluated

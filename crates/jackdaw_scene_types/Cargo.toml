@@ -8,6 +8,7 @@ repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
 aurora_material = { workspace = true, optional = true }
+aurora_mesh = { workspace = true, optional = true }
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
     "reflect_auto_register",
     "std",
@@ -31,6 +32,7 @@ rand.workspace = true
 default = ["render"]
 render = [
     "dep:aurora_material",
+    "dep:aurora_mesh",
     "bevy/bevy_mesh",
     "bevy/bevy_image",
     "bevy/bevy_asset",

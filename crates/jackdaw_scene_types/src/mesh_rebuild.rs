@@ -2,13 +2,13 @@ use bevy::{
     asset::{embedded_asset, load_embedded_asset},
     image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings},
     math::Affine2,
-    mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
 
 use crate::types::Brush;
-use jackdaw_geometry::compute_brush_geometry_from_planes;
 use aurora_material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora_mesh::{AuroraMesh, AuroraMesh3d};
+use jackdaw_geometry::compute_brush_geometry_from_planes;
 
 pub struct MeshRebuildPlugin;
 
@@ -52,8 +52,8 @@ pub fn remesh_changed_brushes(
         ),
         Or<(Changed<Brush>, Changed<jackdaw_geometry::ModifierStack>)>,
     >,
-    face_meshes: Query<(), With<Mesh3d>>,
-    meshes: Option<ResMut<Assets<Mesh>>>,
+    face_meshes: Query<(), With<AuroraMesh3d>>,
+    meshes: Option<ResMut<Assets<AuroraMesh>>>,
     materials: Option<ResMut<Assets<AuroraMaterial>>>,
     assets: Res<AssetServer>,
 ) {
@@ -156,7 +156,7 @@ fn build_brush_meshes(
     brush: &Brush,
     stack: Option<&jackdaw_geometry::ModifierStack>,
     commands: &mut Commands,
-    meshes: &mut Assets<Mesh>,
+    meshes: &mut Assets<AuroraMesh>,
     materials: &mut Assets<AuroraMaterial>,
     assets: &AssetServer,
 ) {
@@ -165,13 +165,7 @@ fn build_brush_meshes(
 
     let mut fallback_material: Option<Handle<AuroraMaterial>> = None;
     for chunk in chunks {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, chunk.positions);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, chunk.normals);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, chunk.uvs);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, chunk.tangents);
-        mesh.insert_indices(Indices::U32(chunk.indices));
-        let mesh_handle = meshes.add(mesh);
+        let mesh_handle = meshes.add(chunk.aurora_mesh());
 
         let material = if chunk.material != Handle::default() {
             chunk.material.clone()
@@ -183,7 +177,7 @@ fn build_brush_meshes(
 
         commands.spawn((
             crate::DerivedFaceMesh,
-            Mesh3d(mesh_handle),
+            AuroraMesh3d(mesh_handle),
             AuroraMaterial3d(material),
             Transform::default(),
             ChildOf(entity),
@@ -223,10 +217,10 @@ fn grid_material(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aurora_material::AuroraMaterial;
     use bevy::app::App;
     use bevy::asset::AssetPlugin;
     use bevy::image::ImagePlugin;
-    use aurora_material::AuroraMaterial;
     use jackdaw_geometry::{
         BrushFaceData, BrushPlane, MeshMirror, Modifier, ModifierEntry, ModifierStack,
         compute_brush_topology, compute_face_tangent_axes,
@@ -237,7 +231,7 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         app.add_plugins(AssetPlugin::default());
         app.add_plugins(ImagePlugin::default());
-        app.init_asset::<Mesh>();
+        app.init_asset::<AuroraMesh>();
         app.init_asset::<AuroraMaterial>();
         app.add_plugins(MeshRebuildPlugin);
         app
@@ -251,7 +245,7 @@ mod tests {
             .unwrap_or_default();
         children
             .iter()
-            .filter(|&&child| app.world().get::<Mesh3d>(child).is_some())
+            .filter(|&&child| app.world().get::<AuroraMesh3d>(child).is_some())
             .count()
     }
 
@@ -264,17 +258,15 @@ mod tests {
             .get::<Children>(brush_entity)
             .map(|c| c.iter().collect())
             .unwrap_or_default();
-        let meshes = app.world().resource::<Assets<Mesh>>();
+        let meshes = app.world().resource::<Assets<AuroraMesh>>();
         children.iter().any(|&child| {
-            let Some(mesh3d) = app.world().get::<Mesh3d>(child) else {
+            let Some(mesh3d) = app.world().get::<AuroraMesh3d>(child) else {
                 return false;
             };
             let Some(mesh) = meshes.get(&mesh3d.0) else {
                 return false;
             };
-            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-                .and_then(|a| a.as_float3())
-                .is_some_and(|positions| positions.iter().any(|p| p[0] < -1e-5))
+            mesh.vertex_positions.iter().any(|p| p.x < -1e-5)
         })
     }
 
@@ -446,20 +438,16 @@ mod tests {
             .get::<Children>(brush_entity)
             .map(|c| c.iter().collect())
             .unwrap_or_default();
-        let meshes = app.world().resource::<Assets<Mesh>>();
+        let meshes = app.world().resource::<Assets<AuroraMesh>>();
         let mut any = false;
         for child in children {
-            let Some(mesh3d) = app.world().get::<Mesh3d>(child) else {
+            let Some(mesh3d) = app.world().get::<AuroraMesh3d>(child) else {
                 continue;
             };
             any = true;
             let mesh = meshes.get(&mesh3d.0).expect("chunk mesh asset exists");
-            let positions = mesh
-                .attribute(Mesh::ATTRIBUTE_POSITION)
-                .and_then(|a| a.as_float3())
-                .expect("position attribute");
             assert!(
-                positions.iter().all(|p| p[0] >= -1e-5),
+                mesh.vertex_positions.iter().all(|p| p.x >= -1e-5),
                 "an in_game=false mirror must add no -X geometry"
             );
         }
@@ -487,30 +475,23 @@ mod tests {
             .get::<Children>(brush_entity)
             .map(|c| c.iter().collect())
             .unwrap_or_default();
-        let meshes = app.world().resource::<Assets<Mesh>>();
+        let meshes = app.world().resource::<Assets<AuroraMesh>>();
         let mut found_neg_x_cap = false;
         let mut any = false;
         for child in children {
-            let Some(mesh3d) = app.world().get::<Mesh3d>(child) else {
+            let Some(mesh3d) = app.world().get::<AuroraMesh3d>(child) else {
                 continue;
             };
             any = true;
             let mesh = meshes.get(&mesh3d.0).expect("chunk mesh asset exists");
-            let positions = mesh
-                .attribute(Mesh::ATTRIBUTE_POSITION)
-                .and_then(|a| a.as_float3())
-                .expect("position attribute");
-            let normals = mesh
-                .attribute(Mesh::ATTRIBUTE_NORMAL)
-                .and_then(|a| a.as_float3())
-                .expect("normal attribute");
-            for (p, n) in positions.iter().zip(normals.iter()) {
-                if (p[0] + 0.5).abs() < 1e-5 {
+            for (p, &n) in mesh.vertex_positions.iter().zip(mesh.vertex_normals.iter()) {
+                let n = aurora_mesh::unpack_normal(n);
+                if (p.x + 0.5).abs() < 1e-5 {
                     assert!(
-                        n[0] <= 1e-5,
+                        n.x <= 1e-3,
                         "no vertex at x = -0.5 may keep the un-reflected +X normal, got {n:?}"
                     );
-                    if n[0] < -0.5 {
+                    if n.x < -0.5 {
                         found_neg_x_cap = true;
                     }
                 }

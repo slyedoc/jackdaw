@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_feathers::status_bar::{StatusBarCenter, StatusBarLeft, StatusBarRight};
 
 use crate::{
@@ -495,7 +496,7 @@ fn update_status_right(
 /// System to update the scene stats text in the hierarchy panel footer.
 pub fn update_scene_stats(
     scene_entities: Query<Entity, (With<Transform>, Without<EditorEntity>)>,
-    meshes: Query<(), (With<Mesh3d>, Without<EditorEntity>)>,
+    meshes: Query<(), (With<AuroraMesh3d>, Without<EditorEntity>)>,
     point_lights: Query<(), (With<PointLight>, Without<EditorEntity>)>,
     dir_lights: Query<(), (With<DirectionalLight>, Without<EditorEntity>)>,
     spot_lights: Query<(), (With<SpotLight>, Without<EditorEntity>)>,

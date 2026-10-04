@@ -37,8 +37,8 @@ pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
 pub use types::{
     Brush, BrushFaceData, BrushPlane, BrushTopology, CustomProperties, DerivedFaceMesh,
     DetailLayer, DetailMesh, DetailPresser, GltfSource, InstanceMaterialOverrides,
-    MaterialOverrides, MaterialSlot, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude, PrefabBaseline, PropertyValue,
-    ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain, TerrainChannel,
+    MaterialOverrides, MaterialSlot, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude, PrefabBaseline,
+    PropertyValue, ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain, TerrainChannel,
     TerrainChannelElement, TerrainNavmesh, TerrainPaletteEntry, TerrainQuantization, Wind,
 };
 
@@ -334,8 +334,8 @@ pub struct EditorHidden;
 /// viewport still renders it.
 ///
 /// Pattern: under your scene-authored marker (e.g. `PlayerSpawn`),
-/// spawn a child carrying `SkipSerialization` plus a `Mesh3d` +
-/// `MeshMaterial3d`. The editor renders the helper; the saved
+/// spawn a child carrying `SkipSerialization` plus an `AuroraMesh3d` +
+/// `AuroraMaterial3d`. The editor renders the helper; the saved
 /// scene never includes it.
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 #[reflect(Component, Default)]

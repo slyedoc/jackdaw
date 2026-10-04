@@ -7,10 +7,7 @@ use crate::{
     selection::Selection,
     viewport::ViewportCursor,
 };
-use bevy::{
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
-    prelude::*,
-};
+use bevy::prelude::*;
 use jackdaw_geometry::{
     brush_planes_to_world, clean_degenerate_faces, compute_brush_geometry_from_planes,
     compute_brush_topology,
@@ -76,7 +73,7 @@ pub(crate) fn brush_extend_face_to_brush(
     selection: Res<Selection>,
     mut brush_selection: ResMut<crate::brush::BrushSelection>,
     vp: ViewportCursor,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     brush_chunks: Query<&BrushMeshChunk>,
     brush_caches: Query<&BrushMeshCache>,
     brush_query: Query<(), With<Brush>>,
@@ -123,7 +120,7 @@ pub(crate) fn brush_extend_face_to_brush(
 
         // Try hover raycast first to find the face
         let face_index =
-            find_hovered_face_on_brush(primary, &vp, &mut ray_cast, &brush_chunks, &brush_caches)
+            find_hovered_face_on_brush(primary, &vp, &cursor_hits, &brush_chunks, &brush_caches)
                 .or_else(|| {
                     // Fall back to remembered face
                     if brush_selection.last_face_entity == Some(primary) {
@@ -158,31 +155,22 @@ pub(crate) fn brush_extend_face_to_brush(
 fn find_hovered_face_on_brush(
     brush_entity: Entity,
     vp: &ViewportCursor,
-    ray_cast: &mut MeshRayCast,
+    cursor_hits: &crate::cursor_pick::CursorHits,
     brush_chunks: &Query<&BrushMeshChunk>,
     brush_caches: &Query<&BrushMeshCache>,
 ) -> Option<usize> {
-    let cursor_pos = vp.cursor()?;
-    let camera_entity = vp.camera_entity()?;
-    let viewport_entity = vp.viewport_entity()?;
-    let (camera, cam_tf) = vp.camera_for(camera_entity)?;
-    let viewport_cursor = vp.viewport_cursor_for(camera, viewport_entity, cursor_pos)?;
-    let ray = camera.viewport_to_world(cam_tf, viewport_cursor).ok()?;
+    vp.cursor()?;
+    vp.camera_entity()?;
+    vp.viewport_entity()?;
 
-    let settings = MeshRayCastSettings::default().with_visibility(RayCastVisibility::Any);
-    let hits = ray_cast.cast_ray(ray, &settings);
-
-    for (hit_entity, hit_data) in hits {
-        let Ok(chunk) = brush_chunks.get(*hit_entity) else {
+    for hit in cursor_hits.all() {
+        let Ok(chunk) = brush_chunks.get(hit.entity) else {
             continue;
         };
         if chunk.brush_entity != brush_entity {
             continue;
         }
-        let Some(tri_idx) = hit_data.triangle_index else {
-            continue;
-        };
-        let Some(&face_idx) = chunk.face_of_tri.get(tri_idx) else {
+        let Some(&face_idx) = chunk.face_of_tri.get(hit.triangle as usize) else {
             continue;
         };
         // A hit on a bisect cut cap has no authored face and is skipped.

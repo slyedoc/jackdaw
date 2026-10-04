@@ -14,8 +14,8 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::camera::RenderTarget;
 use bevy::prelude::*;
-use wgpu_types::{TextureFormat, TextureUsages};
 use bevy::window::{CursorOptions, ExitCondition, PrimaryWindow, WindowPlugin};
+use wgpu_types::{TextureFormat, TextureUsages};
 
 /// Initial capture size until the editor's first `StartFrameStream`.
 pub(crate) const DEFAULT_SIZE: UVec2 = UVec2::new(1280, 720);

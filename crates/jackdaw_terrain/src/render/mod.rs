@@ -24,21 +24,20 @@ use bevy::prelude::*;
 // `resolve_with` and the splat cache read a plain PBR material for its texture handles;
 // on this branch that is aurora's.
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use path_slash::PathExt as _;
 use wgpu_types::{
     Extent3d, TextureDataOrder, TextureDimension, TextureFormat, TextureViewDescriptor,
     TextureViewDimension,
 };
-use path_slash::PathExt as _;
 
 pub mod detail;
 pub mod scatter;
 
 pub use detail::{
     ATTRIBUTE_HEIGHT_FRACTION, BuiltDetailMesh, DETAIL_TILE_BUDGET, DETAIL_TILE_CELLS,
-    DetailAssets, DetailDirty, DetailLayerSource, DetailMeshes, DetailPressers,
-    DetailRenderPlugin, DetailSettings, DetailSource, DetailSystems, DetailTile, DetailViewer,
-    MAX_DETAIL_PRESSERS, TerrainDetailSource, card_mesh,
+    DetailAssets, DetailDirty, DetailLayerSource, DetailMeshes, DetailPressers, DetailRenderPlugin,
+    DetailSettings, DetailSource, DetailSystems, DetailTile, DetailViewer, MAX_DETAIL_PRESSERS,
+    TerrainDetailSource, card_mesh,
 };
 pub use scatter::{
     GROUND_COVER_CULL_DISTANCE, GROUND_COVER_HEIGHT, ScatterAssetPlugin, ScatterAssets,
@@ -52,7 +51,6 @@ use crate::splat::ControlTexels;
 use crate::texture_set::{
     MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError, check_layer_sizes,
 };
-
 
 pub use crate::sidecar::DEFAULT_BLEND_SHARPNESS;
 
@@ -1080,58 +1078,20 @@ fn wear_splat_stand_in(
     }
 }
 
-/// A surface whose [`Mesh3d`] stays the authored mesh -- remeshed, re-indexed
-/// and read back by its host -- traced through an [`AuroraMesh3d`] rebuilt
-/// from it whenever it changes.
-#[derive(Component, Clone, Copy, Debug, Default)]
-pub struct MirrorToAurora;
-
-fn mirror_to_aurora(
-    mut commands: Commands,
-    mut events: MessageReader<AssetEvent<Mesh>>,
-    meshes: Res<Assets<Mesh>>,
-    mut traced: ResMut<Assets<AuroraMesh>>,
-    mirrored: Query<(Entity, Ref<Mesh3d>, Has<AuroraMesh3d>), With<MirrorToAurora>>,
-) {
-    let touched: Vec<AssetId<Mesh>> = events
-        .read()
-        .filter_map(|event| match event {
-            AssetEvent::Added { id } | AssetEvent::Modified { id } => Some(*id),
-            _ => None,
-        })
-        .collect();
-    for (entity, mesh, mirrored) in &mirrored {
-        if mirrored && !mesh.is_changed() && !touched.contains(&mesh.id()) {
-            continue;
-        }
-        let Some(built) = meshes
-            .get(&mesh.0)
-            .and_then(|source| AuroraMesh::from_mesh(source).ok())
-        else {
-            continue;
-        };
-        commands
-            .entity(entity)
-            .insert(AuroraMesh3d(traced.add(built)));
-    }
-}
-
 /// Registers the splat material asset, and traces terrain wearing one with a stand-in.
 pub struct TerrainRenderPlugin;
 
 impl Plugin for TerrainRenderPlugin {
     fn build(&self, app: &mut App) {
-        if !app.world().contains_resource::<Assets<TerrainSplatMaterial>>() {
+        if !app
+            .world()
+            .contains_resource::<Assets<TerrainSplatMaterial>>()
+        {
             app.init_asset::<TerrainSplatMaterial>();
         }
         app.register_type::<TerrainSplat3d>().add_systems(
             PostUpdate,
-            (
-                wear_splat_stand_in.run_if(resource_exists::<Assets<AuroraMaterial>>),
-                mirror_to_aurora
-                    .run_if(resource_exists::<Assets<Mesh>>)
-                    .run_if(resource_exists::<Assets<AuroraMesh>>),
-            ),
+            wear_splat_stand_in.run_if(resource_exists::<Assets<AuroraMaterial>>),
         );
     }
 }
@@ -2350,7 +2310,6 @@ mod tests {
         assert_eq!(material.occlusion_slots, 0b010);
         assert_eq!(material.roughness_slots, 0b100);
     }
-
 
     /// A NaN reaches the fragment's `pow` and its `mix` unguarded, so the
     /// uniform write clamps rather than trusting its caller.

@@ -1,3 +1,4 @@
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::f32::consts::FRAC_PI_2;
 
 use crate::brush::{self, BrushMeshCache};
@@ -125,8 +126,8 @@ fn draw_selection_bounding_boxes(
         With<Selected>,
     >,
     children_query: Query<&Children>,
-    mesh_query: Query<(&Mesh3d, &GlobalTransform)>,
-    meshes: Res<Assets<Mesh>>,
+    mesh_query: Query<(&AuroraMesh3d, &GlobalTransform)>,
+    meshes: Res<Assets<AuroraMesh>>,
     view_dependent: Query<(), With<crate::ViewDependentBounds>>,
     authored_bounds: Query<&bevy::camera::primitives::Aabb>,
 ) {
@@ -291,7 +292,7 @@ fn draw_hull_wireframe(
     }
 }
 
-/// Recursively collect world-space vertex positions from Mesh3d components,
+/// Recursively collect world-space vertex positions from AuroraMesh3d components,
 /// skipping [`crate::ViewDependentBounds`] subtrees whole.
 ///
 /// Geometry rebuilt around the viewer does not describe its own extent: a
@@ -310,9 +311,9 @@ fn draw_hull_wireframe(
 pub(crate) fn collect_descendant_mesh_world_vertices(
     entity: Entity,
     children_query: &Query<&Children>,
-    mesh_query: &Query<(&Mesh3d, &GlobalTransform)>,
+    mesh_query: &Query<(&AuroraMesh3d, &GlobalTransform)>,
     view_dependent: &Query<(), With<crate::ViewDependentBounds>>,
-    meshes: &Assets<Mesh>,
+    meshes: &Assets<AuroraMesh>,
     out: &mut Vec<Vec3>,
 ) -> DescendantGeometry {
     if view_dependent.contains(entity) {
@@ -321,12 +322,9 @@ pub(crate) fn collect_descendant_mesh_world_vertices(
     let mut pruned = false;
     if let Ok((mesh3d, global_tf)) = mesh_query.get(entity)
         && let Some(mesh) = meshes.get(&mesh3d.0)
-        && let Some(positions) = mesh
-            .attribute(Mesh::ATTRIBUTE_POSITION)
-            .and_then(|attr| attr.as_float3())
     {
-        for pos in positions {
-            out.push(global_tf.transform_point(Vec3::from_array(*pos)));
+        for pos in mesh.vertex_positions.iter() {
+            out.push(global_tf.transform_point(*pos));
         }
     }
     if let Ok(children) = children_query.get(entity) {
@@ -388,11 +386,11 @@ impl DescendantGeometry {
 pub(crate) fn collect_measurable_world_vertices(
     entity: Entity,
     children_query: &Query<&Children>,
-    mesh_query: &Query<(&Mesh3d, &GlobalTransform)>,
+    mesh_query: &Query<(&AuroraMesh3d, &GlobalTransform)>,
     view_dependent: &Query<(), With<crate::ViewDependentBounds>>,
     authored_bounds: &Query<&bevy::camera::primitives::Aabb>,
     global_tf: &GlobalTransform,
-    meshes: &Assets<Mesh>,
+    meshes: &Assets<AuroraMesh>,
     out: &mut Vec<Vec3>,
 ) {
     let found = collect_descendant_mesh_world_vertices(
@@ -632,7 +630,7 @@ fn draw_camera_gizmo(
 /// Gizmo marker for entities tagged with
 /// [`crate::entity_ops::EmptyEntity`]: small wireframe cube at the
 /// origin so the entity is findable and selectable. Skipped once the
-/// entity has any descendant `Mesh3d`.
+/// entity has any descendant `AuroraMesh3d`.
 fn draw_empty_entity_marker(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     query: Query<
@@ -645,7 +643,7 @@ fn draw_empty_entity_marker(
         With<EmptyEntity>,
     >,
     children_query: Query<&Children>,
-    mesh_query: Query<(), With<Mesh3d>>,
+    mesh_query: Query<(), With<AuroraMesh3d>>,
 ) {
     // Fixed 0.5-unit cube so the marker is visible at any camera
     // distance. Not the world AABB: nothing to compute one from.
@@ -981,26 +979,26 @@ fn draw_coordinate_indicator(
 /// them, so the box does not grow as the camera walks away.
 #[cfg(test)]
 mod selection_bounds_tests {
-    use bevy::asset::RenderAssetUsages;
     use bevy::camera::primitives::Aabb;
-    use bevy::mesh::PrimitiveTopology;
+    use bevy_aurora::mesh::Triangles;
 
     use super::*;
 
     /// A single triangle at the given world offset, as a mesh entity.
     fn quad(world: &mut World, offset: Vec3, view_dependent: bool) -> Entity {
-        let mesh = world.resource_mut::<Assets<Mesh>>().add(
-            Mesh::new(
-                PrimitiveTopology::TriangleList,
-                RenderAssetUsages::default(),
-            )
-            .with_inserted_attribute(
-                Mesh::ATTRIBUTE_POSITION,
-                vec![[-1.0, 0.0, -1.0], [1.0, 0.0, -1.0], [1.0, 0.0, 1.0]],
-            ),
-        );
+        let mesh = world
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_triangles(Triangles {
+                positions: vec![
+                    Vec3::new(-1.0, 0.0, -1.0),
+                    Vec3::new(1.0, 0.0, -1.0),
+                    Vec3::new(1.0, 0.0, 1.0),
+                ],
+                indices: vec![0, 1, 2],
+                ..default()
+            }));
         let mut entity = world.spawn((
-            Mesh3d(mesh),
+            AuroraMesh3d(mesh),
             Transform::from_translation(offset),
             GlobalTransform::from_translation(offset),
         ));
@@ -1015,9 +1013,9 @@ mod selection_bounds_tests {
             .run_system_cached_with(
                 |root: In<Entity>,
                  children_query: Query<&Children>,
-                 mesh_query: Query<(&Mesh3d, &GlobalTransform)>,
+                 mesh_query: Query<(&AuroraMesh3d, &GlobalTransform)>,
                  view_dependent: Query<(), With<crate::ViewDependentBounds>>,
-                 meshes: Res<Assets<Mesh>>| {
+                 meshes: Res<Assets<AuroraMesh>>| {
                     let mut out = Vec::new();
                     collect_descendant_mesh_world_vertices(
                         *root,
@@ -1039,11 +1037,11 @@ mod selection_bounds_tests {
             .run_system_cached_with(
                 |root: In<Entity>,
                  children_query: Query<&Children>,
-                 mesh_query: Query<(&Mesh3d, &GlobalTransform)>,
+                 mesh_query: Query<(&AuroraMesh3d, &GlobalTransform)>,
                  view_dependent: Query<(), With<crate::ViewDependentBounds>>,
                  authored_bounds: Query<&Aabb>,
                  transforms: Query<&GlobalTransform>,
-                 meshes: Res<Assets<Mesh>>| {
+                 meshes: Res<Assets<AuroraMesh>>| {
                     let global_tf = transforms.get(*root).copied().unwrap_or_default();
                     let mut out = Vec::new();
                     collect_measurable_world_vertices(
@@ -1065,7 +1063,7 @@ mod selection_bounds_tests {
 
     fn world() -> World {
         let mut world = World::new();
-        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<AuroraMesh>::default());
         world
     }
 

@@ -3,7 +3,6 @@ use bevy::{
     image::{ImageAddressMode, ImageFilterMode, ImageLoaderSettings},
     light::{NotShadowCaster, NotShadowReceiver},
     math::Affine2,
-    mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
 
@@ -12,6 +11,7 @@ use crate::default_style;
 use crate::draw_brush::DrawBrushState;
 use crate::selection::Selected;
 use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_geometry::{compute_brush_geometry_from_planes, compute_face_tangent_axes};
 use jackdaw_scene_types::BrushFaceData;
 
@@ -246,8 +246,8 @@ pub fn regenerate_brush_meshes(
             Changed<jackdaw_geometry::ModifierStack>,
         )>,
     >,
-    mesh3d_query: Query<(), With<Mesh3d>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mesh3d_query: Query<(), With<AuroraMesh3d>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     palette: Res<BrushMaterialPalette>,
     parents: Query<&ChildOf>,
     selected_query: Query<(), With<Selected>>,
@@ -258,7 +258,7 @@ pub fn regenerate_brush_meshes(
             .get(entity)
             .is_ok_and(|child_of| selected_query.contains(child_of.0));
         let effectively_selected = is_selected || parent_selected;
-        // Despawn all Mesh3d children from previous regen cycles.
+        // Despawn all mesh children from previous regen cycles.
         if let Some(children) = children {
             for child in children.iter() {
                 if mesh3d_query.get(child).is_ok()
@@ -376,13 +376,7 @@ pub fn regenerate_brush_meshes(
 
         for chunk in chunks {
             let uses_default = chunk.material == Handle::default();
-            let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-            mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, chunk.positions);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, chunk.normals);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, chunk.uvs);
-            mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, chunk.tangents);
-            mesh.insert_indices(Indices::U32(chunk.indices));
-            let mesh_handle = meshes.add(mesh);
+            let mesh_handle = meshes.add(chunk.aurora_mesh());
 
             // Explicit face material, or the palette default with the
             // selection/preview variant applied at build time.
@@ -402,7 +396,7 @@ pub fn regenerate_brush_meshes(
                         uses_default_material: uses_default,
                         material: material.clone(),
                     },
-                    Mesh3d(mesh_handle),
+                    AuroraMesh3d(mesh_handle),
                     AuroraMaterial3d(material),
                     Transform::default(),
                     ChildOf(entity),

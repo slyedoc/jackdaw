@@ -76,7 +76,7 @@ const SKIP_COMPONENT_PATHS: &[&str] = &[
     // terrain chunks, GLTF instances, reference-image quads) and rebuilt
     // from the authored components on load; serializing them would inline
     // runtime mesh/material assets into the scene.
-    "bevy_mesh::components::Mesh3d",
+    "bevy_aurora::mesh::AuroraMesh3d",
     "bevy_aurora::material::AuroraMaterial3d",
     // The GLTF instance handle, derived from the authored `GltfSource` by
     // `derive_world_asset_root`. Writing it into the document would put a

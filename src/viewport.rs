@@ -18,7 +18,6 @@ use jackdaw_camera::{JackdawCameraPlugin, JackdawCameraSettings};
 use path_slash::PathExt as _;
 
 use bevy::ecs::system::SystemParam;
-use bevy::picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility};
 
 use crate::core_extension::CoreExtensionInputContext;
 use crate::selection::{Selected, Selection};
@@ -668,7 +667,7 @@ fn handle_viewport_drop(
     active: Res<ActiveViewport>,
     snap_settings: Res<crate::snapping::SnapSettings>,
     mut drag: ResMut<crate::asset_drag::ActiveAssetDrag>,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     editor_entities: Query<(), With<crate::EditorEntity>>,
     mut commands: Commands,
 ) {
@@ -715,7 +714,7 @@ fn handle_viewport_drop(
         cam_tf,
         viewport_entity,
         &viewport_query,
-        &mut ray_cast,
+        &cursor_hits,
         &editor_entities,
     );
     let position = surface
@@ -813,7 +812,7 @@ pub(crate) fn cursor_to_surface_for(
     cam_tf: &GlobalTransform,
     viewport_entity: Entity,
     viewport_query: &Query<(&ComputedNode, &UiGlobalTransform), With<SceneViewport>>,
-    ray_cast: &mut MeshRayCast,
+    cursor_hits: &crate::cursor_pick::CursorHits,
     editor_entities: &Query<(), With<crate::EditorEntity>>,
 ) -> Option<Vec3> {
     let viewport_cursor = crate::viewport_util::window_to_viewport_cursor_for(
@@ -822,21 +821,15 @@ pub(crate) fn cursor_to_surface_for(
         viewport_entity,
         viewport_query,
     )?;
-    let ray = camera.viewport_to_world(cam_tf, viewport_cursor).ok()?;
+    camera.viewport_to_world(cam_tf, viewport_cursor).ok()?;
 
     // Editor-internal meshes (gizmos, previews, the per-viewport grid) carry
-    // `EditorEntity` and sit at world origin on off-screen render layers;
-    // `MeshRayCast` ignores render layers, so filter them out or the drop
-    // snaps onto an invisible mesh. Same guard the selection raycast and the
-    // image-ingest drop use.
-    let editor_filter = |entity: Entity| !editor_entities.contains(entity);
-    let settings = MeshRayCastSettings::default()
-        .with_visibility(RayCastVisibility::Any)
-        .with_filter(&editor_filter);
-    ray_cast
-        .cast_ray(ray, &settings)
-        .first()
-        .map(|(_, hit)| hit.point)
+    // `EditorEntity`; skip them or the drop snaps onto one. Same guard the
+    // selection and the image-ingest drop use.
+    cursor_hits
+        .filtered(|entity| !editor_entities.contains(entity))
+        .next()
+        .map(|hit| hit.point)
 }
 
 fn raycast_to_ground(

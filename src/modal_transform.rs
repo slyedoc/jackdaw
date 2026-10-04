@@ -1,5 +1,4 @@
 use bevy::{
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
     prelude::*,
     ui::UiGlobalTransform,
     window::{CursorGrabMode, CursorOptions},
@@ -152,8 +151,8 @@ fn viewport_drag_detect(
         Res<crate::draw_brush::DrawBrushState>,
         Res<crate::terrain::TerrainEditMode>,
     ),
-    (mut ray_cast, parents, brushes, editor_entities): (
-        MeshRayCast,
+    (cursor_hits, parents, brushes, editor_entities): (
+        crate::cursor_pick::CursorHits,
         Query<&ChildOf>,
         Query<(), With<jackdaw_scene_types::Brush>>,
         Query<(), With<crate::EditorEntity>>,
@@ -230,21 +229,17 @@ fn viewport_drag_detect(
     };
 
     // Raycast to check if click hits the primary selection's mesh
-    let Ok(ray) = camera.viewport_to_world(cam_tf, viewport_cursor) else {
+    if camera.viewport_to_world(cam_tf, viewport_cursor).is_err() {
         return;
-    };
+    }
     // Filter out editor-internal mesh entities (material preview spheres,
     // gizmo meshes, draw previews) so they don't occlude clicks against
     // the actual scene geometry. Same fix as in `viewport_select::handle_viewport_click`.
     let editor_filter = |entity: Entity| !editor_entities.contains(entity);
-    let settings = MeshRayCastSettings::default()
-        .with_visibility(RayCastVisibility::Any)
-        .with_filter(&editor_filter);
-    let hits = ray_cast.cast_ray(ray, &settings);
 
     let mut hit_primary = false;
-    for (hit_entity, _) in hits {
-        let mut entity = *hit_entity;
+    for hit in cursor_hits.filtered(editor_filter) {
+        let mut entity = hit.entity;
         loop {
             if entity == primary {
                 hit_primary = true;

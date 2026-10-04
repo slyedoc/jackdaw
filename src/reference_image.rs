@@ -4,6 +4,7 @@ use bevy::asset::LoadState;
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use path_slash::PathExt as _;
 
 use crate::selection::Selection;
@@ -53,12 +54,12 @@ pub struct ReferenceImageRuntime {
 /// Shared unit-quad mesh for every reference image plane. Aspect ratio
 /// is applied per entity via `Transform::scale`, so one mesh serves all.
 #[derive(Resource)]
-pub struct ReferenceImageQuad(Handle<Mesh>);
+pub struct ReferenceImageQuad(Handle<AuroraMesh>);
 
 impl FromWorld for ReferenceImageQuad {
     fn from_world(world: &mut World) -> Self {
-        let mut meshes = world.resource_mut::<Assets<Mesh>>();
-        Self(meshes.add(Rectangle::new(1.0, 1.0)))
+        let mut meshes = world.resource_mut::<Assets<AuroraMesh>>();
+        Self(meshes.add(AuroraMesh::from_shape(Rectangle::new(1.0, 1.0))))
     }
 }
 
@@ -186,7 +187,7 @@ fn reference_material(
 
 /// Keep every reference image's render state in sync with its
 /// authored component. Rebuilds the material on `ReferenceImage`
-/// changes, (re)creates missing `Mesh3d`/`MeshMaterial3d` so
+/// changes, (re)creates missing `AuroraMesh3d`/`AuroraMaterial3d` so
 /// scene-loaded and undo-restored entities self-heal, and applies the
 /// image's aspect ratio to `Transform::scale` once the texture
 /// decodes.
@@ -200,14 +201,14 @@ pub fn maintain_reference_images(
         Entity,
         Ref<ReferenceImage>,
         Option<&mut ReferenceImageRuntime>,
-        Has<Mesh3d>,
+        Has<AuroraMesh3d>,
         Option<&AuroraMaterial3d>,
         &mut Transform,
     )>,
 ) {
     for (entity, reference, runtime, has_mesh, material, mut transform) in &mut refs {
         if !has_mesh {
-            commands.entity(entity).insert(Mesh3d(quad.0.clone()));
+            commands.entity(entity).insert(AuroraMesh3d(quad.0.clone()));
         }
 
         let stale = match &runtime {

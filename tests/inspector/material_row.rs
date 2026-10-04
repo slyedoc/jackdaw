@@ -5,6 +5,7 @@
 //! choice back out of the scene again.
 
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -87,7 +88,7 @@ fn app_with_mesh() -> (App, tempfile::TempDir, Entity) {
         .world_mut()
         .spawn((
             Name::new("crate"),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(Handle::<AuroraMaterial>::default()),
         ))
         .id();

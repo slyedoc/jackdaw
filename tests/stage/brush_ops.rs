@@ -3,6 +3,7 @@
 //! `is_available` check, so the Edit menu and the command palette can grey the
 //! entry when it would be a no-op.
 use crate::util;
+use bevy_aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
@@ -210,7 +211,7 @@ fn mesh_children(app: &mut App, entity: Entity) -> usize {
         .get::<Children>(entity)
         .into_iter()
         .flatten()
-        .filter(|&&child| app.world().get::<Mesh3d>(child).is_some())
+        .filter(|&&child| app.world().get::<AuroraMesh3d>(child).is_some())
         .count()
 }
 

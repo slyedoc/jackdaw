@@ -1,5 +1,4 @@
 use bevy::ecs::system::EntityCommands;
-use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use jackdaw_terrain::ClipmapLevel;
 use jackdaw_terrain::render::TerrainSplat3d;
@@ -8,6 +7,7 @@ use super::regions::{TerrainRegionView, region_of};
 use super::{CHUNK_SIZE, TerrainDataStore, TerrainDirtyChunks, TerrainPaintState, TerrainSurface};
 use crate::viewport::{ActiveViewport, MainViewportCamera};
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(
@@ -22,18 +22,12 @@ pub(super) fn plugin(app: &mut App) {
     );
 }
 
-/// Shared material for terrain with no texture set. `base_color` is white;
-/// the paint tint lives in each level's vertex-colour attribute, so
-/// toggling the channel debug view is a mesh rebuild, not a material swap.
+/// Shared material for terrain with no texture set.
 ///
 /// A terrain with a texture set draws with the splat material instead (see
 /// [`super::splat`]).
 #[derive(Resource)]
 struct TerrainMaterialHandle(Handle<AuroraMaterial>);
-
-/// Vertex colour for unpainted ground and for every vertex when the
-/// channel view is off.
-const UNPAINTED: [f32; 4] = [0.5, 0.5, 0.5, 1.0];
 
 /// The LOD level one surface entity is drawing.
 ///
@@ -114,15 +108,14 @@ fn sync_terrain_surface(
         &jackdaw_scene_types::Terrain,
         &mut TerrainDirtyChunks,
     )>,
-    surfaces: Query<(Entity, &TerrainSurface, &BuiltLevel, &Mesh3d)>,
+    surfaces: Query<(Entity, &TerrainSurface, &BuiltLevel, &AuroraMesh3d)>,
     cameras: Query<(Entity, &GlobalTransform, Has<MainViewportCamera>), With<Camera3d>>,
     active: Res<ActiveViewport>,
     transforms: Query<&GlobalTransform>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     material_res: Option<Res<TerrainMaterialHandle>>,
     store: Res<TerrainDataStore>,
-    paint: Res<TerrainPaintState>,
     splat: Res<super::splat::TerrainSplatMaterials>,
     region_view: Res<TerrainRegionView>,
 ) {
@@ -167,7 +160,7 @@ fn sync_terrain_surface(
         let document = store.get(&terrain.data_path);
         let splat_handle = splat.material(&terrain.data_path);
 
-        let mut existing: Vec<(Entity, u32, ClipmapLevel, Handle<Mesh>)> = surfaces
+        let mut existing: Vec<(Entity, u32, ClipmapLevel, Handle<AuroraMesh>)> = surfaces
             .iter()
             .filter(|(_, surface, _, _)| surface.terrain_entity == terrain_entity)
             .map(|(entity, surface, built, mesh)| (entity, surface.level, built.0, mesh.0.clone()))
@@ -251,7 +244,7 @@ fn sync_terrain_surface(
                 let indices =
                     jackdaw_terrain::build_clipmap_indices(shape.resolution, level, present);
                 if let Some(mut mesh) = meshes.get_mut(handle) {
-                    mesh.insert_indices(Indices::U32(indices));
+                    mesh.set_indices(indices);
                 }
                 commands.entity(*entity).insert(BuiltLevel(*level));
                 continue;
@@ -263,14 +256,11 @@ fn sync_terrain_surface(
             } else {
                 data
             };
-            let colors = surface_vertex_colors(terrain, &store, &paint, &data.grid);
-            let mut rebuilt = Some(build_bevy_mesh(data, colors));
+            let mut rebuilt = Some(surface_mesh(data));
 
             // Write over the mesh this level owns rather than minting
             // another asset: a new handle costs the renderer a buffer
-            // allocation and a rebuilt bind group every frame of a gesture.
-            // `calculate_bounds` watches `AssetChanged<Mesh3d>`, so the `Aabb`
-            // follows a write through the handle.
+            // allocation and a rebuilt BLAS slot every frame of a gesture.
             if let Some((_, _, _, handle)) = held
                 && let Some(mut slot) = meshes.get_mut(handle)
             {
@@ -296,7 +286,7 @@ fn sync_terrain_surface(
             };
             entity.insert(BuiltLevel(*level));
             if let Some(handle) = fresh {
-                entity.insert(Mesh3d(handle));
+                entity.insert(AuroraMesh3d(handle));
             }
             point_at_material(&mut entity, &splat_handle, &fallback);
         }
@@ -370,53 +360,14 @@ fn chunk_touches(chunk: (u32, u32), level: &ClipmapLevel, resolution: u32) -> bo
     min.x <= square.max.x && max.x >= square.min.x && min.y <= square.max.y && max.y >= square.min.y
 }
 
-/// Colour every vertex by what is painted under it. Off, or with no
-/// channel selected, every vertex is [`UNPAINTED`].
-///
-/// Colours are derived from `grid`, the grid coordinate the mesher recorded
-/// per vertex, rather than by re-walking the level's lattice: the smooth
-/// and flat meshers emit different vertex counts and orders. Values the
-/// palette does not name draw as unpainted.
-fn surface_vertex_colors(
-    terrain: &jackdaw_scene_types::Terrain,
-    store: &TerrainDataStore,
-    paint: &TerrainPaintState,
-    grid: &[[u32; 2]],
-) -> Vec<[f32; 4]> {
-    let descriptor = terrain.channels.get(paint.active_channel);
-    let document = store.get(&terrain.data_path);
-    let (Some(descriptor), Some(data)) = (descriptor, document) else {
-        return vec![UNPAINTED; grid.len()];
-    };
-    if !paint.show_channel || data.channels.len() <= paint.active_channel {
-        return vec![UNPAINTED; grid.len()];
-    }
-
-    // Read through the regions: a vertex whose region is absent carries no
-    // paint, which the accessor answers as zero.
-    grid.iter()
-        .map(|[gx, gz]| {
-            descriptor
-                .color_of(data.regions.grid_channel(paint.active_channel, *gx, *gz))
-                .map(|color| color.to_linear().to_f32_array())
-                .unwrap_or(UNPAINTED)
-        })
-        .collect()
-}
-
-fn build_bevy_mesh(data: jackdaw_terrain::SurfaceMeshData, colors: Vec<[f32; 4]>) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-    debug_assert_eq!(
-        colors.len(),
-        data.positions.len(),
-        "vertex colours must be emitted in the same order and count as positions",
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
-    mesh.insert_indices(Indices::U32(data.indices));
-    mesh
+fn surface_mesh(data: jackdaw_terrain::SurfaceMeshData) -> AuroraMesh {
+    AuroraMesh::from_triangles(Triangles {
+        positions: data.positions.into_iter().map(Vec3::from_array).collect(),
+        normals: data.normals.into_iter().map(Vec3::from_array).collect(),
+        uvs: data.uvs.into_iter().map(Vec2::from_array).collect(),
+        tangents: Vec::new(),
+        indices: data.indices,
+    })
 }
 
 #[cfg(test)]
@@ -447,7 +398,7 @@ mod tests {
     /// A world with one camera and one terrain, marked for a full rebuild.
     fn world_with_terrain(resolution: u32, heights: Vec<f32>) -> (World, Entity) {
         let mut world = World::new();
-        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<AuroraMesh>::default());
         world.insert_resource(Assets::<AuroraMaterial>::default());
         world.insert_resource(TerrainPaintState::default());
         world.insert_resource(ActiveViewport::default());
@@ -553,9 +504,9 @@ mod tests {
 
     /// Every level's mesh, in level order: query order is not guaranteed,
     /// and comparing two runs by position needs one.
-    fn surface_meshes(world: &mut World) -> Vec<(u32, Handle<Mesh>)> {
-        let mut query = world.query::<(&TerrainSurface, &Mesh3d)>();
-        let mut meshes: Vec<(u32, Handle<Mesh>)> = query
+    fn surface_meshes(world: &mut World) -> Vec<(u32, Handle<AuroraMesh>)> {
+        let mut query = world.query::<(&TerrainSurface, &AuroraMesh3d)>();
+        let mut meshes: Vec<(u32, Handle<AuroraMesh>)> = query
             .iter(world)
             .map(|(surface, mesh)| (surface.level, mesh.0.clone()))
             .collect();
@@ -584,15 +535,14 @@ mod tests {
         let levels = levels_of(&mut world, entity);
         assert!(!levels.is_empty(), "a 129 terrain must draw something");
 
-        let mut query = world.query::<(&TerrainSurface, &Mesh3d)>();
-        let handles: Vec<Handle<Mesh>> =
+        let mut query = world.query::<(&TerrainSurface, &AuroraMesh3d)>();
+        let handles: Vec<Handle<AuroraMesh>> =
             query.iter(&world).map(|(_, mesh)| mesh.0.clone()).collect();
-        let meshes = world.resource::<Assets<Mesh>>();
+        let meshes = world.resource::<Assets<AuroraMesh>>();
         let triangles: usize = handles
             .iter()
             .filter_map(|handle| meshes.get(handle))
-            .filter_map(Mesh::indices)
-            .map(|indices| indices.len() / 3)
+            .map(|mesh| mesh.indices.len() / 3)
             .sum();
         assert!(triangles > 0, "the surface has no triangles");
     }
@@ -655,7 +605,7 @@ mod tests {
     #[test]
     fn a_stroke_on_one_terrain_leaves_another_terrains_surface_alone() {
         let mut world = World::new();
-        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<AuroraMesh>::default());
         world.insert_resource(Assets::<AuroraMaterial>::default());
         world.insert_resource(TerrainPaintState::default());
         world.insert_resource(ActiveViewport::default());
@@ -871,15 +821,14 @@ mod tests {
     }
 
     fn mesh_triangles(world: &mut World) -> usize {
-        let mut query = world.query::<(&TerrainSurface, &Mesh3d)>();
-        let handles: Vec<Handle<Mesh>> =
+        let mut query = world.query::<(&TerrainSurface, &AuroraMesh3d)>();
+        let handles: Vec<Handle<AuroraMesh>> =
             query.iter(world).map(|(_, mesh)| mesh.0.clone()).collect();
-        let meshes = world.resource::<Assets<Mesh>>();
+        let meshes = world.resource::<Assets<AuroraMesh>>();
         handles
             .iter()
             .filter_map(|handle| meshes.get(handle))
-            .filter_map(Mesh::indices)
-            .map(|indices| indices.len() / 3)
+            .map(|mesh| mesh.indices.len() / 3)
             .sum()
     }
 
@@ -889,22 +838,19 @@ mod tests {
     fn drawn_levels(world: &mut World) -> Vec<(u32, usize, bool)> {
         let mut query = world.query::<(
             &TerrainSurface,
-            &Mesh3d,
+            &AuroraMesh3d,
             Has<AuroraMaterial3d>,
             Has<TerrainSplat3d>,
         )>();
-        let held: Vec<(u32, Handle<Mesh>, bool)> = query
+        let held: Vec<(u32, Handle<AuroraMesh>, bool)> = query
             .iter(world)
             .map(|(surface, mesh, plain, splat)| (surface.level, mesh.0.clone(), plain || splat))
             .collect();
-        let meshes = world.resource::<Assets<Mesh>>();
+        let meshes = world.resource::<Assets<AuroraMesh>>();
         let mut drawn: Vec<(u32, usize, bool)> = held
             .iter()
             .map(|(level, handle, material)| {
-                let triangles = meshes
-                    .get(handle)
-                    .and_then(Mesh::indices)
-                    .map_or(0, |indices| indices.len() / 3);
+                let triangles = meshes.get(handle).map_or(0, |mesh| mesh.indices.len() / 3);
                 (*level, triangles, *material)
             })
             .collect();

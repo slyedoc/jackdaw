@@ -10,7 +10,6 @@ use avian3d::prelude::*;
 use bevy::{
     ecs::reflect::AppTypeRegistry,
     picking::cursor::{EntityCursor, OverrideCursor},
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
     prelude::*,
     window::SystemCursorIcon,
 };
@@ -306,7 +305,7 @@ fn physics_tool_drag(
     selection: Res<Selection>,
     parents: Query<&ChildOf>,
     mut tool_state: ResMut<PhysicsToolState>,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     mut physics_time: ResMut<Time<Physics>>,
     mut transforms: Query<&mut Transform>,
     mut velocities: Query<(&mut LinearVelocity, &mut AngularVelocity)>,
@@ -354,12 +353,9 @@ fn physics_tool_drag(
 
     // --- Start drag ---
     if mouse.just_pressed(MouseButton::Left) && tool_state.drag.is_none() {
-        let settings = MeshRayCastSettings::default().with_visibility(RayCastVisibility::Any);
-        let hits = ray_cast.cast_ray(ray, &settings);
-
-        for (hit_entity, hit_data) in hits {
+        for hit_data in cursor_hits.all() {
             // Walk up ChildOf to find the root entity
-            let mut root = *hit_entity;
+            let mut root = hit_data.entity;
             loop {
                 if rb_check.contains(root) && selection.entities.contains(&root) {
                     break;

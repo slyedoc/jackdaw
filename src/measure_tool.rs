@@ -1,8 +1,4 @@
-use bevy::{
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
-    picking::prelude::Pickable,
-    prelude::*,
-};
+use bevy::{picking::prelude::Pickable, prelude::*};
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::tokens;
 
@@ -102,7 +98,7 @@ pub(crate) fn measure_distance(
     _: In<OperatorParameters>,
     mut state: ResMut<MeasureToolState>,
     vp: crate::viewport::ViewportCursor,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     editor_entities: Query<(), With<crate::EditorEntity>>,
 ) -> OperatorResult {
     if !state.initialized {
@@ -145,7 +141,7 @@ pub(crate) fn measure_distance(
         let vp_cursor = vp.viewport_cursor_for(camera, viewport_entity, cursor_pos)?;
         let ray = camera.viewport_to_world(cam_tf, vp_cursor).ok()?;
         Some(
-            raycast_closest_point(ray, &mut ray_cast, &editor_entities)
+            raycast_closest_point(&cursor_hits, &editor_entities)
                 .or_else(|| ray_plane_intersection(ray, Vec3::ZERO, Vec3::Y))
                 .unwrap_or(cam_tf.translation() + *ray.direction * 10.0),
         )
@@ -208,25 +204,20 @@ fn confirm_measure_distance(
 
 // -- Raycasting helpers --
 
-/// The nearest scene geometry under `ray`.
+/// The nearest scene geometry under the cursor.
 ///
 /// Editor entities are filtered out: the tool reports distances in the authored
 /// world, and the editor draws meshes into it that are not part of it. The
 /// navmesh overlay is a sheet floating above the ground it describes, so
 /// measuring against it would answer with the drawing rather than the terrain.
 fn raycast_closest_point(
-    ray: Ray3d,
-    ray_cast: &mut MeshRayCast,
+    cursor_hits: &crate::cursor_pick::CursorHits,
     editor_entities: &Query<(), With<crate::EditorEntity>>,
 ) -> Option<Vec3> {
-    let editor_filter = |entity: Entity| !editor_entities.contains(entity);
-    let settings = MeshRayCastSettings::default()
-        .with_visibility(RayCastVisibility::Any)
-        .with_filter(&editor_filter);
-    ray_cast
-        .cast_ray(ray, &settings)
-        .first()
-        .map(|(_, hit_data)| hit_data.point)
+    cursor_hits
+        .filtered(|entity| !editor_entities.contains(entity))
+        .next()
+        .map(|hit| hit.point)
 }
 
 fn ray_plane_intersection(ray: Ray3d, plane_point: Vec3, plane_normal: Vec3) -> Option<Vec3> {

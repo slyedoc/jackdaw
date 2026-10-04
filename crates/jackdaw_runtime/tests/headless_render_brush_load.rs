@@ -8,7 +8,7 @@
 //!    instead of failing (which would drop the whole brush).
 //! 2. The `On<Insert<Brush>>` mesh-rebuild observer no-ops when the mesh/material
 //!    asset stores are absent, so loading the brush does not panic on the missing
-//!    `Assets<Mesh>`.
+//!    `Assets<AuroraMesh>`.
 //!
 //! Run: `cargo test -p jackdaw_runtime --test headless_render_brush_load`
 #![cfg(feature = "render")]

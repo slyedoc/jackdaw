@@ -36,9 +36,8 @@ fn a_custom_relation_relates_its_entities_to_the_owner() {
     app.register_type::<Items>();
 
     let items = std::any::type_name::<Items>();
-    let text = format!(
-        "#Chest\n{items} [\n    #Sword\n    --\n    #Shield\n]\nChildren [ #Lid ]\n"
-    );
+    let text =
+        format!("#Chest\n{items} [\n    #Sword\n    --\n    #Shield\n]\nChildren [ #Lid ]\n");
     let scene = app
         .world_mut()
         .resource_mut::<Assets<JackdawScene>>()
@@ -56,6 +55,12 @@ fn a_custom_relation_relates_its_entities_to_the_owner() {
         app.world().get::<Items>(chest).map(|i| i.0.clone()),
         Some(vec![sword, shield])
     );
-    assert_eq!(app.world().get::<ChildOf>(sword).map(ChildOf::parent), Some(root));
-    assert_eq!(app.world().get::<ChildOf>(lid).map(ChildOf::parent), Some(chest));
+    assert_eq!(
+        app.world().get::<ChildOf>(sword).map(ChildOf::parent),
+        Some(root)
+    );
+    assert_eq!(
+        app.world().get::<ChildOf>(lid).map(ChildOf::parent),
+        Some(chest)
+    );
 }

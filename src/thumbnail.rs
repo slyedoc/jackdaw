@@ -29,6 +29,7 @@
 //!   failed for that mtime and skipped until the file changes.
 
 use crate::image_capture::{ImageCapture, ImageCaptured};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -562,12 +563,12 @@ fn drive_thumbnail_queue(
     mut thumbnails: ResMut<Thumbnails>,
     mut images: ResMut<Assets<Image>>,
     assets: Res<AssetServer>,
-    meshes: Res<Assets<Mesh>>,
+    meshes: Res<Assets<AuroraMesh>>,
     materials: Res<Assets<AuroraMaterial>>,
     shapes: Option<Res<crate::material_preview::PreviewShapeMeshes>>,
     index: Option<Res<AssetIndex>>,
     children_query: Query<&Children>,
-    mesh_query: Query<(&Mesh3d, &GlobalTransform)>,
+    mesh_query: Query<(&AuroraMesh3d, &GlobalTransform)>,
     model_query: Query<&WorldAssetRoot>,
     view_dependent: Query<(), With<crate::ViewDependentBounds>>,
     mut camera_query: Query<(&mut Transform, &Projection), With<ThumbnailCamera>>,
@@ -716,7 +717,7 @@ fn start_job(
                 .spawn((
                     ThumbnailSubject,
                     crate::EditorEntity,
-                    Mesh3d(shapes.sphere.clone()),
+                    AuroraMesh3d(shapes.sphere.clone()),
                     AuroraMaterial3d(material.clone()),
                     Transform::IDENTITY,
                     Visibility::Visible,
@@ -775,10 +776,10 @@ fn step_job(
     thumbnails: &mut Thumbnails,
     images: &mut Assets<Image>,
     assets: &AssetServer,
-    meshes: &Assets<Mesh>,
+    meshes: &Assets<AuroraMesh>,
     materials: &Assets<AuroraMaterial>,
     children_query: &Query<&Children>,
-    mesh_query: &Query<(&Mesh3d, &GlobalTransform)>,
+    mesh_query: &Query<(&AuroraMesh3d, &GlobalTransform)>,
     model_query: &Query<&WorldAssetRoot>,
     view_dependent: &Query<(), With<crate::ViewDependentBounds>>,
     camera_query: &mut Query<(&mut Transform, &Projection), With<ThumbnailCamera>>,

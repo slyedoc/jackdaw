@@ -6,10 +6,10 @@ use crate::draw_brush::{
 use crate::{EditorEntity, brush::BrushMaterialPalette, selection::Selected};
 use bevy::{
     light::{NotShadowCaster, NotShadowReceiver},
-    mesh::{Indices, PrimitiveTopology},
     prelude::*,
 };
 use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 use jackdaw_geometry::build_face_render_buffers;
 use jackdaw_scene_types::Brush;
 
@@ -57,7 +57,7 @@ fn clear_draw_preview(
 pub(crate) fn manage_draw_preview_mesh(
     draw_state: Res<DrawBrushState>,
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     preview_query: Query<Entity, With<DrawPreviewMesh>>,
     result_preview_query: Query<Entity, With<CutResultPreviewMesh>>,
@@ -178,10 +178,12 @@ pub(crate) fn manage_draw_preview_mesh(
         return;
     }
 
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
-    mesh.insert_indices(Indices::U32(all_indices));
+    let mesh = AuroraMesh::from_triangles(Triangles {
+        positions: positions.into_iter().map(Vec3::from_array).collect(),
+        normals: normals.into_iter().map(Vec3::from_array).collect(),
+        indices: all_indices,
+        ..default()
+    });
 
     // Mode-dependent material color
     let material = match active.mode {
@@ -220,7 +222,7 @@ pub(crate) fn manage_draw_preview_mesh(
     // Spawn solid volume preview for Add mode only.
     if active.mode == DrawMode::Add {
         commands.spawn((
-            Mesh3d(meshes.add(mesh)),
+            AuroraMesh3d(meshes.add(mesh)),
             AuroraMaterial3d(material.clone()),
             Visibility::Inherited,
             Transform::default(),
@@ -326,11 +328,13 @@ pub(crate) fn manage_draw_preview_mesh(
                         face_data,
                     );
 
-                    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, buf.positions);
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, buf.normals);
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, buf.uvs);
-                    mesh.insert_indices(Indices::U32(buf.indices));
+                    let mesh = AuroraMesh::from_triangles(Triangles {
+                        positions: buf.positions.iter().map(|&p| Vec3::from_array(p)).collect(),
+                        normals: buf.normals.iter().map(|&n| Vec3::from_array(n)).collect(),
+                        uvs: buf.uvs.iter().map(|&uv| Vec2::from_array(uv)).collect(),
+                        indices: buf.indices,
+                        ..default()
+                    });
 
                     let material = if face_data.material != Handle::default() {
                         face_data.material.clone()
@@ -344,7 +348,7 @@ pub(crate) fn manage_draw_preview_mesh(
                         indices.iter().map(|&vi| frag_verts[vi]).collect();
 
                     commands.spawn((
-                        Mesh3d(meshes.add(mesh)),
+                        AuroraMesh3d(meshes.add(mesh)),
                         AuroraMaterial3d(material),
                         Visibility::Inherited,
                         Transform::default(),

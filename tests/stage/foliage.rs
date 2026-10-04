@@ -2,6 +2,7 @@
 //! standard one, and that blows with the scene's wind.
 
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_surface::foliage::Foliage3d;
 use std::path::{Path, PathBuf};
 
@@ -157,7 +158,7 @@ fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
         .world_mut()
         .spawn((
             Name::new("pine"),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(standard),
         ))
         .id();

@@ -133,7 +133,11 @@ pub fn dress_part(world: &mut World, part: Entity) {
     let Some(name) = world
         .get::<MaterialSlot>(part)
         .map(|slot| slot.0.clone())
-        .or_else(|| world.get::<GltfMaterialName>(part).map(|name| name.0.clone()))
+        .or_else(|| {
+            world
+                .get::<GltfMaterialName>(part)
+                .map(|name| name.0.clone())
+        })
     else {
         return;
     };
@@ -192,10 +196,16 @@ mod tests {
     fn model(app: &mut App, own: &Handle<AuroraMaterial>) -> (Entity, Entity, Entity) {
         let world = app.world_mut();
         let rock = world
-            .spawn((GltfMaterialName("Rock".into()), AuroraMaterial3d(own.clone())))
+            .spawn((
+                GltfMaterialName("Rock".into()),
+                AuroraMaterial3d(own.clone()),
+            ))
             .id();
         let moss = world
-            .spawn((GltfMaterialName("Moss".into()), AuroraMaterial3d(own.clone())))
+            .spawn((
+                GltfMaterialName("Moss".into()),
+                AuroraMaterial3d(own.clone()),
+            ))
             .id();
         let root = world
             .spawn(Transform::default())

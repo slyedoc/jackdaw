@@ -7,6 +7,7 @@
 
 use crate::util;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw::brush::{
@@ -767,7 +768,7 @@ fn reference_image_maintenance_installs_placeholder_for_empty_path() {
         .run_system_cached(maintain_reference_images)
         .expect("maintain_reference_images ran");
 
-    let mesh = app.world().entity(entity).get::<Mesh3d>();
+    let mesh = app.world().entity(entity).get::<AuroraMesh3d>();
     assert!(mesh.is_some(), "maintenance attaches the shared quad mesh");
 
     let material_handle = app

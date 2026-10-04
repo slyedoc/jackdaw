@@ -363,6 +363,8 @@ bevy_rerecast = { version = "0.5.0", default-features = false, features = ["bevy
 bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 # The material as data, no Vulkan: for the crates that only name materials.
 aurora_material = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+# The mesh as data, no Vulkan: for the crates that build traced meshes.
+aurora_mesh = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 ehttp = { version = "0.5", default-features = false, features = [
     "native-async",
     "json",

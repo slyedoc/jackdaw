@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
 use crate::active_tool::ActiveTool;
 use crate::brush::BrushMeshCache;
@@ -110,10 +111,10 @@ fn dragged_entity_position(
 #[derive(bevy::ecs::system::SystemParam)]
 struct MeasurableGeometry<'w, 's> {
     children_query: Query<'w, 's, &'static Children>,
-    mesh_query: Query<'w, 's, (&'static Mesh3d, &'static GlobalTransform)>,
+    mesh_query: Query<'w, 's, (&'static AuroraMesh3d, &'static GlobalTransform)>,
     view_dependent: Query<'w, 's, (), With<crate::ViewDependentBounds>>,
     authored_bounds: Query<'w, 's, &'static bevy::camera::primitives::Aabb>,
-    meshes: Res<'w, Assets<Mesh>>,
+    meshes: Res<'w, Assets<AuroraMesh>>,
 }
 
 impl MeasurableGeometry<'_, '_> {
@@ -391,31 +392,31 @@ fn draw_alignment_guides(
 /// edges that would move with the viewer.
 #[cfg(test)]
 mod measurable_geometry_tests {
-    use bevy::asset::RenderAssetUsages;
     use bevy::camera::primitives::Aabb;
-    use bevy::mesh::PrimitiveTopology;
+    use bevy_aurora::mesh::Triangles;
 
     use super::*;
 
     fn world() -> World {
         let mut world = World::new();
-        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<AuroraMesh>::default());
         world
     }
 
     fn triangle(world: &mut World, offset: Vec3, view_dependent: bool) -> Entity {
-        let mesh = world.resource_mut::<Assets<Mesh>>().add(
-            Mesh::new(
-                PrimitiveTopology::TriangleList,
-                RenderAssetUsages::default(),
-            )
-            .with_inserted_attribute(
-                Mesh::ATTRIBUTE_POSITION,
-                vec![[-1.0, 0.0, -1.0], [1.0, 0.0, -1.0], [1.0, 0.0, 1.0]],
-            ),
-        );
+        let mesh = world
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_triangles(Triangles {
+                positions: vec![
+                    Vec3::new(-1.0, 0.0, -1.0),
+                    Vec3::new(1.0, 0.0, -1.0),
+                    Vec3::new(1.0, 0.0, 1.0),
+                ],
+                indices: vec![0, 1, 2],
+                ..default()
+            }));
         let mut entity = world.spawn((
-            Mesh3d(mesh),
+            AuroraMesh3d(mesh),
             Transform::from_translation(offset),
             GlobalTransform::from_translation(offset),
         ));

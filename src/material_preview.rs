@@ -8,6 +8,7 @@ use wgpu_types::TextureFormat;
 
 use crate::default_style;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
 pub(super) struct MaterialPreviewPlugin;
 
@@ -55,13 +56,13 @@ impl PreviewShape {
 
 #[derive(Resource)]
 pub struct PreviewShapeMeshes {
-    pub sphere: Handle<Mesh>,
-    pub cube: Handle<Mesh>,
-    pub plane: Handle<Mesh>,
+    pub sphere: Handle<AuroraMesh>,
+    pub cube: Handle<AuroraMesh>,
+    pub plane: Handle<AuroraMesh>,
 }
 
 impl PreviewShapeMeshes {
-    pub fn get(&self, shape: PreviewShape) -> Handle<Mesh> {
+    pub fn get(&self, shape: PreviewShape) -> Handle<AuroraMesh> {
         match shape {
             PreviewShape::Sphere => self.sphere.clone(),
             PreviewShape::Cube => self.cube.clone(),
@@ -103,7 +104,7 @@ const PREVIEW_LAYER: usize = 1;
 
 fn setup_material_preview_scene(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut preview_state: ResMut<MaterialPreviewState>,
@@ -111,29 +112,29 @@ fn setup_material_preview_scene(
 ) {
     let preview_layer = RenderLayers::layer(PREVIEW_LAYER);
 
-    let sphere = meshes.add(
+    let sphere = meshes.add(AuroraMesh::from_shape(
         Sphere::new(1.0)
             .mesh()
             .ico(5)
             .unwrap()
             .with_generated_tangents()
             .unwrap(),
-    );
-    let cube = meshes.add(
+    ));
+    let cube = meshes.add(AuroraMesh::from_shape(
         Cuboid::new(1.6, 1.6, 1.6)
             .mesh()
             .build()
             .with_generated_tangents()
             .unwrap(),
-    );
-    let plane = meshes.add(
+    ));
+    let plane = meshes.add(AuroraMesh::from_shape(
         Plane3d::default()
             .mesh()
             .size(2.0, 2.0)
             .build()
             .with_generated_tangents()
             .unwrap(),
-    );
+    ));
     commands.insert_resource(PreviewShapeMeshes {
         sphere: sphere.clone(),
         cube,
@@ -144,7 +145,7 @@ fn setup_material_preview_scene(
     commands.spawn((
         PreviewSphere,
         crate::EditorEntity,
-        Mesh3d(sphere),
+        AuroraMesh3d(sphere),
         AuroraMaterial3d(mat),
         Transform::default(),
         Visibility::Inherited,
@@ -242,7 +243,7 @@ fn update_active_preview_material(
 fn update_preview_shape(
     preview_state: Res<MaterialPreviewState>,
     shapes: Option<Res<PreviewShapeMeshes>>,
-    mut sphere_q: Query<&mut Mesh3d, With<PreviewSphere>>,
+    mut sphere_q: Query<&mut AuroraMesh3d, With<PreviewSphere>>,
 ) -> Result<(), BevyError> {
     if !preview_state.is_changed() {
         return Ok(());

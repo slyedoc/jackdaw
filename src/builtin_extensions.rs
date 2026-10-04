@@ -18,6 +18,7 @@ use bevy::{
     prelude::*,
     window::SystemCursorIcon,
 };
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_api::{
     DefaultArea, ExtensionPoint, HierarchyWindow, InspectorWindow, WidgetDefinition,
     prelude::{ExtensionContext, ExtensionKind, JackdawExtension, WindowDescriptor},
@@ -32,7 +33,7 @@ use jackdaw_feathers::tokens;
 pub(crate) const WORLD_ENTITY_ICONS: &[(&str, Icon)] = &[
     ("jackdaw_scene_types::types::Brush", Icon::Cuboid),
     ("jackdaw_scene_types::types::Terrain", Icon::Mountain),
-    // Ahead of the `Mesh3d` rule: an instance carries no mesh of its own.
+    // Ahead of the `AuroraMesh3d` rule: an instance carries no mesh of its own.
     ("jackdaw_scene_types::types::GltfSource", Icon::Boxes),
     ("jackdaw::entity_ops::SceneFogVolume", Icon::CloudFog),
     ("jackdaw::entity_ops::SceneReflectionProbe", Icon::Sparkles),
@@ -618,7 +619,7 @@ fn scene_kind_icons() -> Vec<(String, Icon)> {
 }
 
 /// The 3D kinds, after jackdaw's own authorable components: a brush and
-/// a terrain both carry `Mesh3d`, and they are the more particular thing.
+/// a terrain both carry `AuroraMesh3d`, and they are the more particular thing.
 fn world_kind_icons() -> Vec<(String, Icon)> {
     use bevy::reflect::TypePath;
     vec![
@@ -626,7 +627,7 @@ fn world_kind_icons() -> Vec<(String, Icon)> {
         (DirectionalLight::type_path().to_string(), Icon::Sun),
         (PointLight::type_path().to_string(), Icon::Lightbulb),
         (SpotLight::type_path().to_string(), Icon::Flashlight),
-        (Mesh3d::type_path().to_string(), Icon::Box),
+        (AuroraMesh3d::type_path().to_string(), Icon::Box),
     ]
 }
 

@@ -1,3 +1,4 @@
+use bevy_aurora::mesh::AuroraMesh3d;
 use std::collections::HashSet;
 
 use bevy::{
@@ -157,7 +158,7 @@ impl Plugin for HierarchyPlugin {
             .add_observer(refresh_icon_on_add::<Text>)
             .add_observer(refresh_icon_on_add::<ImageNode>)
             .add_observer(refresh_icon_on_add::<Camera>)
-            .add_observer(refresh_icon_on_add::<Mesh3d>)
+            .add_observer(refresh_icon_on_add::<AuroraMesh3d>)
             .add_observer(refresh_icon_on_add::<DirectionalLight>)
             .add_observer(refresh_icon_on_add::<PointLight>)
             .add_observer(refresh_icon_on_add::<SpotLight>)
@@ -265,7 +266,7 @@ fn prefab_source_is_missing(world: &World, entity: Entity) -> bool {
 /// outliner can pair the right icon with a muted color.
 fn classify_entity(world: &World, entity: Entity) -> EntityCategory {
     // Checked before the component-based arms below: a glTF leaf carries
-    // `Mesh3d` and would otherwise read as an ordinary authored mesh.
+    // `AuroraMesh3d` and would otherwise read as an ordinary authored mesh.
     if is_asset_part(world, entity) {
         return EntityCategory::AssetPart;
     }
@@ -284,7 +285,7 @@ fn classify_entity(world: &World, entity: Entity) -> EntityCategory {
     {
         return EntityCategory::Light;
     }
-    if world.get::<Mesh3d>(entity).is_some() {
+    if world.get::<AuroraMesh3d>(entity).is_some() {
         return EntityCategory::Mesh;
     }
     // A UI scene root takes the same category as a 3D one, so the two sort
@@ -3611,7 +3612,7 @@ mod tests {
             })
             .id();
         let scene = world.spawn(ChildOf(root)).id();
-        let mesh_leaf = world.spawn((ChildOf(scene), Mesh3d::default())).id();
+        let mesh_leaf = world.spawn((ChildOf(scene), AuroraMesh3d::default())).id();
 
         assert_eq!(classify_entity(&world, root), EntityCategory::Scene);
         assert_eq!(classify_entity(&world, scene), EntityCategory::AssetPart);
@@ -3621,7 +3622,7 @@ mod tests {
         );
 
         // An authored mesh outside any glTF subtree is unaffected.
-        let authored_mesh = world.spawn(Mesh3d::default()).id();
+        let authored_mesh = world.spawn(AuroraMesh3d::default()).id();
         assert_eq!(classify_entity(&world, authored_mesh), EntityCategory::Mesh);
     }
 

@@ -6,6 +6,7 @@
 //! Headless, so no texture decodes and the surfaces carry the untextured
 //! material rather than the splat one.
 
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::path::{Path, PathBuf};
 
 use bevy::asset::AssetApp;
@@ -85,7 +86,7 @@ fn game_with(assets_root: &Path, scene: &str) -> App {
         ..default()
     });
     // The mesh store a windowed game gets from its render plugins.
-    app.init_asset::<Mesh>();
+    app.init_asset::<AuroraMesh>();
     // Both the catalog and the sidecar are resolved against this root.
     app.insert_resource(JackdawCatalogPath(assets_root.join("catalog.bsn")));
     app.add_plugins(JackdawPlugin);
@@ -106,17 +107,17 @@ fn game_with(assets_root: &Path, scene: &str) -> App {
 
 /// Surfaces the terrain drew, with the vertex count of each.
 fn surfaces(app: &mut App) -> Vec<usize> {
-    let meshes: Vec<Handle<Mesh>> = app
+    let meshes: Vec<Handle<AuroraMesh>> = app
         .world_mut()
-        .query::<&Mesh3d>()
+        .query::<&AuroraMesh3d>()
         .iter(app.world())
         .map(|mesh| mesh.0.clone())
         .collect();
-    let assets = app.world().resource::<Assets<Mesh>>();
+    let assets = app.world().resource::<Assets<AuroraMesh>>();
     meshes
         .iter()
         .filter_map(|handle| assets.get(handle))
-        .map(Mesh::count_vertices)
+        .map(|mesh| mesh.vertex_positions.len())
         .collect()
 }
 

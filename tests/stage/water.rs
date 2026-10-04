@@ -2,6 +2,7 @@
 //! of its standard one.
 
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_surface::water::Water3d;
 use std::path::{Path, PathBuf};
 
@@ -152,7 +153,7 @@ fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
         .world_mut()
         .spawn((
             Name::new("lake surface"),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(standard),
         ))
         .id();

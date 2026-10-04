@@ -20,7 +20,7 @@ pub struct SceneRootTag;
 /// Marker for the face-mesh child entities the runtime mesh rebuild derives
 /// from a `Brush`. They are never authored, and the PIE stream excludes them:
 /// the editor regenerates faces from the `Brush` itself, so streaming them
-/// would only project meaningless `Transform`/`ChildOf` shells (their `Mesh3d`
+/// would only project meaningless `Transform`/`ChildOf` shells (their `AuroraMesh3d`
 /// and material are stripped as render components). Deliberately not `Reflect`
 /// so it cannot leak into a snapshot or scene file.
 #[derive(Component, Clone, Copy, Debug, Default)]

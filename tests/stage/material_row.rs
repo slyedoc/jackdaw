@@ -6,6 +6,7 @@
 //! what put the mesh there.
 
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::AuroraMesh3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;
@@ -89,7 +90,7 @@ fn app_with_unauthored_mesh() -> (App, tempfile::TempDir, Entity) {
         .world_mut()
         .spawn((
             ChildOf(root),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(Handle::<AuroraMaterial>::default()),
         ))
         .id();
@@ -269,7 +270,7 @@ fn a_material_picked_on_an_authored_mesh_survives_a_save_and_a_reopen() {
         .add(AuroraMaterial::default());
     app.world_mut()
         .entity_mut(mesh)
-        .insert((Mesh3d::default(), AuroraMaterial3d(empty)));
+        .insert((AuroraMesh3d::default(), AuroraMaterial3d(empty)));
     app.world_mut().resource_mut::<Selection>().entities = vec![mesh];
     settle(&mut app);
 

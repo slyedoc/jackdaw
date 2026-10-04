@@ -450,7 +450,13 @@ fn merge_primitives(
                 .map(|normal| normal_matrix.mul_vec3(*normal))
                 .unwrap_or(Vec3::Y);
             normals.push(normal.normalize_or(Vec3::Y).to_array());
-            uvs.push(mesh.uvs.get(vertex).copied().unwrap_or(Vec2::ZERO).to_array());
+            uvs.push(
+                mesh.uvs
+                    .get(vertex)
+                    .copied()
+                    .unwrap_or(Vec2::ZERO)
+                    .to_array(),
+            );
         }
         indices.extend(mesh.indices.iter().map(|index| base + index));
     }
@@ -792,11 +798,18 @@ fn bake_tile(mesh: &Mesh, instances: &[DetailInstance], layer: &DetailLayer) -> 
         let width = layer.width[0] + (layer.width[1] - layer.width[0]) * width;
         let spin = Quat::from_rotation_y(yaw * core::f32::consts::TAU);
         let tilt = instance.tilt;
-        let ground = Vec3::new(tilt.x, (1.0 - tilt.length_squared()).max(0.0).sqrt(), tilt.y);
+        let ground = Vec3::new(
+            tilt.x,
+            (1.0 - tilt.length_squared()).max(0.0).sqrt(),
+            tilt.y,
+        );
         let lean = Quat::from_rotation_arc(Vec3::Y, ground);
         let base = positions.len() as u32;
         for (vertex, point) in source.iter().enumerate() {
-            let uv = uvs.and_then(|values| values.get(vertex)).copied().unwrap_or([0.0, 0.0]);
+            let uv = uvs
+                .and_then(|values| values.get(vertex))
+                .copied()
+                .unwrap_or([0.0, 0.0]);
             let up = fractions
                 .and_then(|values| values.get(vertex))
                 .copied()
@@ -822,11 +835,14 @@ fn bake_tile(mesh: &Mesh, instances: &[DetailInstance], layer: &DetailLayer) -> 
         indices.extend(local_indices.iter().map(|index| base + index));
     }
     Some(
-        Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
-            .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out_normals)
-            .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, out_uvs)
-            .with_inserted_indices(Indices::U32(indices)),
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, out_normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, out_uvs)
+        .with_inserted_indices(Indices::U32(indices)),
     )
 }
 
@@ -1180,9 +1196,8 @@ mod tests {
         };
         let primitives = vec![part(0.0), part(1.0)];
 
-        let (merged, color) =
-            merge_primitives("models/fern.bsn", &primitives, &meshes, &materials)
-                .expect("both parts are loaded");
+        let (merged, color) = merge_primitives("models/fern.bsn", &primitives, &meshes, &materials)
+            .expect("both parts are loaded");
         assert!(color.is_none(), "neither part carries a material");
         assert_eq!(merged.count_vertices(), 6);
         assert_eq!(
@@ -1490,10 +1505,20 @@ mod tests {
             .attribute(Mesh::ATTRIBUTE_POSITION)
             .and_then(|values| values.as_float3())
             .expect("positions");
-        assert_eq!(positions[0], [3.0 - 0.25, 1.0, 4.0], "the foot is full width");
+        assert_eq!(
+            positions[0],
+            [3.0 - 0.25, 1.0, 4.0],
+            "the foot is full width"
+        );
         let tip = positions[card.count_vertices() - 1];
         assert!((tip[0] - 3.0).abs() < 1e-5, "the tip tapers to the stem");
-        assert!((tip[1] - 3.0).abs() < 1e-5, "the tip stands the layer's height up");
-        assert!(bake_tile(&card, &[], &grass).is_none(), "an empty tile bakes nothing");
+        assert!(
+            (tip[1] - 3.0).abs() < 1e-5,
+            "the tip stands the layer's height up"
+        );
+        assert!(
+            bake_tile(&card, &[], &grass).is_none(),
+            "an empty tile bakes nothing"
+        );
     }
 }

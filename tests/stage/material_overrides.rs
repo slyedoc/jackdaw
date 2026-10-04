@@ -2,6 +2,7 @@
 
 use bevy_aurora::material::AuroraMaterial;
 use bevy_aurora::material::AuroraMaterial3d;
+use bevy_aurora::mesh::AuroraMesh3d;
 use std::path::{Path, PathBuf};
 
 use bevy::gltf::GltfMaterialName;
@@ -110,7 +111,7 @@ fn a_part(app: &mut App, root: Entity, material_name: &str) -> (Entity, Handle<A
         .world_mut()
         .spawn((
             GltfMaterialName(material_name.to_string()),
-            Mesh3d::default(),
+            AuroraMesh3d::default(),
             AuroraMaterial3d(own.clone()),
             ChildOf(root),
         ))

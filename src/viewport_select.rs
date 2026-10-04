@@ -9,11 +9,8 @@ use crate::{
     viewport_util::window_to_viewport_cursor_for,
 };
 use bevy::input_focus::InputFocus;
+use bevy::prelude::*;
 use bevy::ui::ui_transform::UiGlobalTransform;
-use bevy::{
-    picking::mesh_picking::ray_cast::{MeshRayCast, MeshRayCastSettings, RayCastVisibility},
-    prelude::*,
-};
 use jackdaw_api::prelude::*;
 use jackdaw_scene_types::Brush;
 
@@ -172,7 +169,7 @@ pub(crate) fn handle_viewport_click(
     mut selection: ResMut<Selection>,
     mut input_focus: ResMut<InputFocus>,
     mut commands: Commands,
-    mut ray_cast: MeshRayCast,
+    cursor_hits: crate::cursor_pick::CursorHits,
     // One-frame memory of `draw_state.active`. `draw_brush.confirm` clears
     // the state inline before this system runs, so the same mouse-press
     // would otherwise fall through to `selection.clear()` and strip
@@ -226,24 +223,20 @@ pub(crate) fn handle_viewport_click(
     // Try mesh raycast first for accurate geometry-based selection
     let mut best_entity = None;
 
-    if let Ok(ray) = camera.viewport_to_world(cam_tf, local_cursor) {
+    if camera.viewport_to_world(cam_tf, local_cursor).is_ok() {
         // Filter out editor-internal mesh entities (material preview
-        // spheres, gizmo meshes, draw previews, etc). These have
-        // `EditorEntity` and live on non-viewport render layers, but
-        // `MeshRayCast` doesn't filter by render layer, so without
-        // this guard the picker hits invisible meshes at world origin
-        // and short-circuits before reaching the actual scene.
-        // Locked reference images are also excluded so clicks pass
-        // through them to the geometry behind.
+        // spheres, gizmo meshes, draw previews, etc), which carry
+        // `EditorEntity`. Locked reference images are also excluded so
+        // clicks pass through them to the geometry behind.
         let editor_filter = |entity: Entity| {
             !editor_entities.contains(entity) && !is_locked_reference(&reference_images, entity)
         };
-        let settings = MeshRayCastSettings::default()
-            .with_visibility(RayCastVisibility::Any)
-            .with_filter(&editor_filter);
-        let hits = ray_cast.cast_ray(ray, &settings);
+        let hits: Vec<Entity> = cursor_hits
+            .filtered(&editor_filter)
+            .map(|hit| hit.entity)
+            .collect();
 
-        for (hit_entity, _) in hits {
+        for hit_entity in &hits {
             if let Some(ancestor) = find_selectable_ancestor(
                 *hit_entity,
                 &scene_entities,
@@ -263,7 +256,7 @@ pub(crate) fn handle_viewport_click(
             && let Some(current_primary) = selection.primary()
             && candidate != current_primary
         {
-            for (hit_entity, _) in hits {
+            for hit_entity in &hits {
                 if find_selectable_ancestor(
                     *hit_entity,
                     &scene_entities,

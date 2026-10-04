@@ -17,13 +17,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bevy::asset::LoadState;
-use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use jackdaw_scene_types::Terrain;
 use jackdaw_terrain::render::{
-    DetailDirty, DetailRenderPlugin, DetailSystems, MirrorToAurora, ScatterDirty,
-    ScatterRenderPlugin, ScatterSystems, SplatArrayHandles, SplatBuildError, TerrainDetailSource,
-    TerrainRenderPlugin, TerrainScatter, TerrainSplat3d, TerrainSplatMaterial, TextureSetImages,
+    DetailDirty, DetailRenderPlugin, DetailSystems, ScatterDirty, ScatterRenderPlugin,
+    ScatterSystems, SplatArrayHandles, SplatBuildError, TerrainDetailSource, TerrainRenderPlugin,
+    TerrainScatter, TerrainSplat3d, TerrainSplatMaterial, TextureSetImages,
     control_image_from_bytes, resolve_with, slope_image, splat_images, tint_image,
 };
 use jackdaw_terrain::sidecar::{self, TerrainMaterialSlot};
@@ -36,6 +35,7 @@ use crate::JackdawCatalog;
 #[cfg(feature = "physics")]
 use avian3d::prelude::{Collider, RigidBody};
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 /// Colour of a terrain drawn without a texture set.
 ///
@@ -136,7 +136,6 @@ pub struct TerrainViewer;
 
 /// One LOD level of a terrain's surface, rebuilt as the camera moves.
 #[derive(Component)]
-#[require(MirrorToAurora)]
 struct TerrainSurface {
     terrain: Entity,
     /// 0 is the finest ring.
@@ -426,11 +425,11 @@ fn sync_surfaces(
         &mut TerrainSplat,
         &GlobalTransform,
     )>,
-    surfaces: Query<(Entity, &TerrainSurface, &BuiltLevel, &Mesh3d)>,
+    surfaces: Query<(Entity, &TerrainSurface, &BuiltLevel, &AuroraMesh3d)>,
     cameras: Query<(&Camera, &GlobalTransform, Has<TerrainViewer>), With<Camera3d>>,
     // A dedicated server builds these types with no rendering plugins, so
     // there is no mesh store to build a surface into.
-    meshes: Option<ResMut<Assets<Mesh>>>,
+    meshes: Option<ResMut<Assets<AuroraMesh>>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     untextured: Option<Res<UntexturedTerrain>>,
 ) {
@@ -476,7 +475,7 @@ fn sync_surfaces(
 
         let resurface = std::mem::take(&mut splat.resurface);
 
-        let mut existing: Vec<(Entity, u32, ClipmapLevel, Handle<Mesh>)> = surfaces
+        let mut existing: Vec<(Entity, u32, ClipmapLevel, Handle<AuroraMesh>)> = surfaces
             .iter()
             .filter(|(_, surface, _, _)| surface.terrain == terrain_entity)
             .map(|(entity, surface, built, mesh)| (entity, surface.level, built.0, mesh.0.clone()))
@@ -532,7 +531,7 @@ fn sync_surfaces(
                 let indices =
                     jackdaw_terrain::build_clipmap_indices(shape.resolution, level, present);
                 if let Some(mut mesh) = meshes.get_mut(handle) {
-                    mesh.insert_indices(Indices::U32(indices));
+                    mesh.set_indices(indices);
                 }
                 commands.entity(*entity).insert(BuiltLevel(*level));
                 continue;
@@ -549,7 +548,7 @@ fn sync_surfaces(
 
             // Write over the mesh this level already owns rather than adding
             // another asset: a new handle costs the renderer a fresh buffer
-            // allocation and a rebuilt bind group, and nothing else refers
+            // allocation and a rebuilt BLAS slot, and nothing else refers
             // to this mesh.
             if let Some((_, _, _, handle)) = held
                 && let Some(mut slot) = meshes.get_mut(handle)
@@ -572,7 +571,7 @@ fn sync_surfaces(
             };
             entity.insert(BuiltLevel(*level));
             if let Some(handle) = fresh {
-                entity.insert(Mesh3d(handle));
+                entity.insert(AuroraMesh3d(handle));
             }
             // A splat-wearing surface is given its traced material by
             // `TerrainRenderPlugin`; dropping the splat goes back to the fallback.
@@ -616,13 +615,14 @@ fn viewer_of(cameras: Vec<(bool, isize, Vec3)>) -> Option<Vec3> {
         .map(|(_, _, position)| *position)
 }
 
-fn surface_mesh(data: jackdaw_terrain::SurfaceMeshData) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, data.positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, data.normals);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, data.uvs);
-    mesh.insert_indices(Indices::U32(data.indices));
-    mesh
+fn surface_mesh(data: jackdaw_terrain::SurfaceMeshData) -> AuroraMesh {
+    AuroraMesh::from_triangles(Triangles {
+        positions: data.positions.into_iter().map(Vec3::from_array).collect(),
+        normals: data.normals.into_iter().map(Vec3::from_array).collect(),
+        uvs: data.uvs.into_iter().map(Vec2::from_array).collect(),
+        tangents: Vec::new(),
+        indices: data.indices,
+    })
 }
 
 /// Rebuild a terrain's sampling heights when the component's dimensions change
@@ -1070,7 +1070,7 @@ mod tests {
     /// One terrain, its levels laid out around a camera the test moves.
     fn surfaced_world(resolution: u32) -> (World, Entity) {
         let mut world = World::new();
-        world.insert_resource(Assets::<Mesh>::default());
+        world.insert_resource(Assets::<AuroraMesh>::default());
         world.insert_resource(Assets::<AuroraMaterial>::default());
 
         let mut regions = jackdaw_terrain::TerrainRegions::new(
@@ -1117,22 +1117,19 @@ mod tests {
     fn drawn_levels(world: &mut World) -> Vec<(u32, usize, bool)> {
         let mut query = world.query::<(
             &TerrainSurface,
-            &Mesh3d,
+            &AuroraMesh3d,
             Has<AuroraMaterial3d>,
             Has<TerrainSplat3d>,
         )>();
-        let held: Vec<(u32, Handle<Mesh>, bool)> = query
+        let held: Vec<(u32, Handle<AuroraMesh>, bool)> = query
             .iter(world)
             .map(|(surface, mesh, plain, splat)| (surface.level, mesh.0.clone(), plain || splat))
             .collect();
-        let meshes = world.resource::<Assets<Mesh>>();
+        let meshes = world.resource::<Assets<AuroraMesh>>();
         let mut drawn: Vec<(u32, usize, bool)> = held
             .iter()
             .map(|(level, handle, material)| {
-                let triangles = meshes
-                    .get(handle)
-                    .and_then(Mesh::indices)
-                    .map_or(0, |indices| indices.len() / 3);
+                let triangles = meshes.get(handle).map_or(0, |mesh| mesh.indices.len() / 3);
                 (*level, triangles, *material)
             })
             .collect();

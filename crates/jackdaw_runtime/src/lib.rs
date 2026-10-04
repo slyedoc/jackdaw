@@ -83,11 +83,11 @@ use bevy::prelude::*;
 use bevy::reflect::TypeRegistry;
 #[cfg(feature = "render")]
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
+use bevy_aurora::material::AuroraMaterial;
 use jackdaw_bsn::{
     BsnApplyAssets, BsnPatch, BsnSceneAssets, BsnValue, SceneBsnAst, apply_component_patch,
     bsn_value_to_reflect, insert_relationship, load_bsn_assets, parse_bsn_text,
 };
-use bevy_aurora::material::AuroraMaterial;
 
 pub use jackdaw_scene_types::{
     Brush, BrushFaceData, CustomProperties, DetailPresser, EditorCategory, EditorDescription,
@@ -1227,9 +1227,7 @@ fn preload_linear_textures(world: &mut World, ast: &SceneBsnAst) -> Vec<UntypedH
 /// `Rg16Uint`. A `AuroraMaterial` slot demands a filterable float sampler,
 /// so binding either one fails the whole bind group.
 #[cfg(feature = "render")]
-fn filterable_twin(
-    format: wgpu_types::TextureFormat,
-) -> Option<wgpu_types::TextureFormat> {
+fn filterable_twin(format: wgpu_types::TextureFormat) -> Option<wgpu_types::TextureFormat> {
     use wgpu_types::TextureFormat;
     match format {
         TextureFormat::R16Uint => Some(TextureFormat::R16Unorm),
@@ -1867,7 +1865,8 @@ mod asset_file_tests {
             .clone();
 
         // The catalog file is read second and must not displace it.
-        let inline = "#grass\nbevy_aurora::material::AuroraMaterial {\n    perceptual_roughness: 0.9,\n}\n";
+        let inline =
+            "#grass\nbevy_aurora::material::AuroraMaterial {\n    perceptual_roughness: 0.9,\n}\n";
         let entries = load_bsn_assets(app.world_mut(), inline).expect("parse");
         let mut catalog = app.world_mut().resource_mut::<JackdawCatalog>();
         for entry in entries {

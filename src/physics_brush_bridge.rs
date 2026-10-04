@@ -3,13 +3,14 @@
 //! New brushes spawn with [`RigidBody::Static`] and [`AvianCollider`]. This
 //! module builds the runtime `Collider` from that wrapper  -- handling both
 //! mesh-backed entities and brushes (which have `BrushMeshCache` instead of
-//! `Mesh3d`).
+//! `AuroraMesh3d`).
 //!
 //! `ColliderConstructor` is never placed on entities, so avian's
 //! `init_collider_constructors` system never fires and can't interfere.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_avian_integration::AvianCollider;
 use jackdaw_geometry::{is_convex_topology, triangulate_polygons};
 
@@ -79,7 +80,7 @@ fn remove_collider_when_avian_collider_removed(
 /// drags / vertex edits: extending a brush updates `BrushMeshCache`,
 /// which fires this system, which rebuilds the trimesh collider so
 /// the green wireframe matches the new geometry. Handles both
-/// mesh-backed entities (reads from `Mesh3d`) and brushes (reads
+/// mesh-backed entities (reads from `AuroraMesh3d`) and brushes (reads
 /// from `BrushMeshCache`).
 pub(crate) fn sync_editor_collider_config(
     mut commands: Commands,
@@ -88,12 +89,12 @@ pub(crate) fn sync_editor_collider_config(
             Entity,
             &AvianCollider,
             Option<&BrushMeshCache>,
-            Option<&Mesh3d>,
+            Option<&AuroraMesh3d>,
         ),
         Or<(Changed<AvianCollider>, Changed<BrushMeshCache>)>,
     >,
     brushes: Query<&Brush>,
-    meshes: Res<Assets<Mesh>>,
+    meshes: Res<Assets<AuroraMesh>>,
 ) {
     for (entity, config, brush_cache, mesh3d) in &changed {
         let constructor = if let Ok(brush) = brushes.get(entity) {
@@ -111,15 +112,21 @@ pub(crate) fn sync_editor_collider_config(
         let collider = if constructor.requires_mesh() {
             // Try brush geometry first, then mesh asset
             if let Some(brush_cache) = brush_cache {
-                let Some(mesh) = brush_mesh_from_cache(brush_cache) else {
+                let Some((positions, triangles)) = brush_triangles(brush_cache) else {
                     continue;
                 };
-                Collider::try_from_constructor(constructor.clone(), Some(&mesh))
+                collider_from_triangles(&constructor, positions, triangles)
             } else if let Some(mesh3d) = mesh3d {
                 let Some(mesh) = meshes.get(&mesh3d.0) else {
                     continue;
                 };
-                Collider::try_from_constructor(constructor.clone(), Some(mesh))
+                let flat = mesh.flatten();
+                let triangles = flat
+                    .indices
+                    .chunks_exact(3)
+                    .map(|t| [t[0], t[1], t[2]])
+                    .collect();
+                collider_from_triangles(&constructor, flat.positions, triangles)
             } else {
                 continue;
             }
@@ -133,8 +140,8 @@ pub(crate) fn sync_editor_collider_config(
     }
 }
 
-/// Build a triangulated `Mesh` from a `BrushMeshCache`.
-fn brush_mesh_from_cache(cache: &BrushMeshCache) -> Option<Mesh> {
+/// A brush's triangulated geometry from its `BrushMeshCache`.
+fn brush_triangles(cache: &BrushMeshCache) -> Option<(Vec<Vec3>, Vec<[u32; 3]>)> {
     if cache.vertices.is_empty() {
         return None;
     }
@@ -146,13 +153,36 @@ fn brush_mesh_from_cache(cache: &BrushMeshCache) -> Option<Mesh> {
     if tris.is_empty() {
         return None;
     }
-    let positions: Vec<[f32; 3]> = cache.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
-    let indices: Vec<u32> = tris.iter().copied().flatten().collect();
-    let mut m = Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        bevy::asset::RenderAssetUsages::default(),
-    );
-    m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    m.insert_indices(bevy::mesh::Indices::U32(indices));
-    Some(m)
+    Some((cache.vertices.clone(), tris))
+}
+
+/// The collider a mesh-shaped `constructor` builds from triangle-list geometry.
+fn collider_from_triangles(
+    constructor: &ColliderConstructor,
+    positions: Vec<Vec3>,
+    triangles: Vec<[u32; 3]>,
+) -> Option<Collider> {
+    match constructor {
+        ColliderConstructor::TrimeshFromMesh => Collider::try_trimesh(positions, triangles).ok(),
+        ColliderConstructor::TrimeshFromMeshWithConfig(flags) => {
+            Collider::try_trimesh_with_config(positions, triangles, *flags).ok()
+        }
+        ColliderConstructor::ConvexDecompositionFromMesh => {
+            Some(Collider::convex_decomposition(positions, triangles))
+        }
+        ColliderConstructor::ConvexDecompositionFromMeshWithConfig(params) => Some(
+            Collider::convex_decomposition_with_config(positions, triangles, params.clone()),
+        ),
+        ColliderConstructor::ConvexHullFromMesh => Collider::convex_hull(positions),
+        ColliderConstructor::VoxelizedTrimeshFromMesh {
+            voxel_size,
+            fill_mode,
+        } => Some(Collider::voxelized_trimesh(
+            &positions,
+            &triangles,
+            *voxel_size,
+            *fill_mode,
+        )),
+        other => Collider::try_from_constructor(other.clone(), None),
+    }
 }

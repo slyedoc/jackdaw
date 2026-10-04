@@ -12,6 +12,7 @@ use bevy::math::Vec3;
 use bevy::prelude::*;
 
 use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 use jackdaw_geometry::{BrushTopology, triangulate_polygon};
 
 #[derive(Resource, Default)]
@@ -47,7 +48,7 @@ impl Plugin for PreviewPlugin {
 fn update_preview_mesh(
     mut commands: Commands,
     preview: Res<ActivePreview>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     existing: Query<Entity, With<PreviewMesh>>,
 ) -> Result<(), BevyError> {
@@ -76,7 +77,7 @@ fn update_preview_mesh(
         commands.entity(e).despawn();
     }
 
-    // Build a Bevy Mesh from the preview topology using per-triangle flat shading.
+    // Build the mesh from the preview topology using per-triangle flat shading.
     // Use triangulate_polygon (earcut-backed, concave-aware) to handle non-convex faces.
     let positions_world: Vec<Vec3> = topology.vertices.iter().map(|v| v.position).collect();
     let mut mesh_positions: Vec<[f32; 3]> = Vec::new();
@@ -111,15 +112,12 @@ fn update_preview_mesh(
         return Ok(());
     }
 
-    let mut mesh = Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        bevy::asset::RenderAssetUsages::default(),
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, mesh_positions);
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, mesh_normals);
-    mesh.insert_indices(bevy::mesh::Indices::U32(mesh_indices));
-
-    let mesh_handle = meshes.add(mesh);
+    let mesh_handle = meshes.add(AuroraMesh::from_triangles(Triangles {
+        positions: mesh_positions.into_iter().map(Vec3::from_array).collect(),
+        normals: mesh_normals.into_iter().map(Vec3::from_array).collect(),
+        indices: mesh_indices,
+        ..default()
+    }));
 
     let color = match preview.state {
         PreviewState::Valid => Color::srgba(0.3, 0.85, 1.0, 0.4), // cyan
@@ -139,7 +137,7 @@ fn update_preview_mesh(
     // space as the brush (topology coords match the brush transform), so we use
     // an identity local transform and let the parent's transform do the work.
     commands.spawn((
-        Mesh3d(mesh_handle),
+        AuroraMesh3d(mesh_handle),
         AuroraMaterial3d(material),
         Transform::default(),
         PreviewMesh,

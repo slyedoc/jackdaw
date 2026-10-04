@@ -1026,7 +1026,12 @@ fn an_align_combobox_commit_updates_align_items() {
     );
     let items = row_combo(&mut app, "Align", "items");
 
-    pick_option(&mut app, items, AlignItems::Center.variant_index(), "Center");
+    pick_option(
+        &mut app,
+        items,
+        AlignItems::Center.variant_index(),
+        "Center",
+    );
 
     assert_eq!(
         app.world().get::<Node>(entity).map(|n| n.align_items),
@@ -1064,7 +1069,12 @@ fn the_justify_group_writes_its_own_fields() {
     let (mut app, entity) = app_with_node_card(Node::default());
     let content = row_combo(&mut app, "Justify", "content");
 
-    pick_option(&mut app, content, JustifyContent::Center.variant_index(), "Center");
+    pick_option(
+        &mut app,
+        content,
+        JustifyContent::Center.variant_index(),
+        "Center",
+    );
 
     let node = app.world().get::<Node>(entity).cloned().unwrap_or_default();
     assert_eq!(node.justify_content, JustifyContent::Center);

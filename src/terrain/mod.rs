@@ -306,8 +306,7 @@ fn prune_terrain_heightmaps(
 #[require(
     crate::EditorHidden,
     crate::NonSerializable,
-    crate::ViewDependentBounds,
-    jackdaw_terrain::render::MirrorToAurora
+    crate::ViewDependentBounds
 )]
 pub struct TerrainSurface {
     pub terrain_entity: Entity,

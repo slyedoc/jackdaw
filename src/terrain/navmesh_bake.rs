@@ -13,12 +13,11 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use bevy::camera::primitives::{Aabb, MeshAabb as _};
+use bevy::camera::primitives::Aabb;
 use bevy::light::{NotShadowCaster, NotShadowReceiver};
 use bevy::math::Affine3A;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
-use bevy_rerecast::TriMeshFromBevyMesh as _;
 use bevy_rerecast::rerecast::{
     Aabb3d, AreaType, ConfigBuilder, DetailNavmesh, HeightfieldBuilder, PolygonNavmesh, TriMesh,
 };
@@ -31,6 +30,7 @@ use crate::default_style;
 use crate::scene_io::SceneFilePath;
 use crate::selection::Selection;
 use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainNavmeshState>()
@@ -435,7 +435,7 @@ pub(crate) struct SceneGeometry<'w, 's> {
         (
             Entity,
             &'static GlobalTransform,
-            &'static Mesh3d,
+            &'static AuroraMesh3d,
             Option<&'static avian3d::prelude::RigidBody>,
             Option<&'static avian3d::prelude::Sensor>,
         ),
@@ -455,7 +455,7 @@ pub(crate) struct SceneGeometry<'w, 's> {
         ),
         (
             With<avian3d::prelude::Collider>,
-            Without<Mesh3d>,
+            Without<AuroraMesh3d>,
             Without<EditorEntity>,
             // The ground reaches the bake through its heights rather than
             // through a mesh, so a collider on it is not a gap.
@@ -472,35 +472,26 @@ pub(crate) struct SceneGeometry<'w, 's> {
         ),
     >,
     names: Query<'w, 's, &'static Name>,
-    assets: Res<'w, Assets<Mesh>>,
+    assets: Res<'w, Assets<AuroraMesh>>,
 }
 
 impl SceneGeometry<'_, '_> {
     /// Every mesh a bake could rasterize, before anything the author has
     /// excluded is dropped.
-    fn candidates(&self) -> impl Iterator<Item = (Entity, Affine3A, &Mesh3d)> + '_ {
+    fn candidates(&self) -> impl Iterator<Item = (Entity, Affine3A, &AuroraMesh3d)> + '_ {
         self.meshes
             .iter()
-            .filter(|(entity, _, handle, body, sensor)| {
+            .filter(|(entity, _, _, body, sensor)| {
                 // A body that moves is not ground, and nothing stands on a
                 // trigger volume. A collider with no body is static, like an
                 // unsimulated scene mesh.
-                !moves(*body) && sensor.is_none() && !self.hidden(*entity) && self.readable(handle)
+                !moves(*body) && sensor.is_none() && !self.hidden(*entity)
             })
             .map(|(entity, transform, handle, _, _)| (entity, transform.affine(), handle))
     }
 
-    /// Whether this mesh can be read here: one extracted to the render world
-    /// panics on its attributes, and an unloaded handle counts as readable.
-    fn readable(&self, handle: &Mesh3d) -> bool {
-        self.assets.get(handle).is_none_or(|mesh| {
-            mesh.asset_usage
-                .contains(bevy::asset::RenderAssetUsages::MAIN_WORLD)
-        })
-    }
-
     /// Every mesh that belongs in the bake, with where it stands.
-    fn baked(&self) -> impl Iterator<Item = (Entity, Affine3A, &Mesh3d)> + '_ {
+    fn baked(&self) -> impl Iterator<Item = (Entity, Affine3A, &AuroraMesh3d)> + '_ {
         self.candidates()
             .filter(|(entity, _, _)| !self.excluded(*entity))
     }
@@ -511,7 +502,7 @@ impl SceneGeometry<'_, '_> {
     /// walkable ground.
     fn still_loading(&self) -> bool {
         self.baked()
-            .any(|(_, _, handle)| self.assets.get(handle).is_none())
+            .any(|(_, _, handle)| self.assets.get(&handle.0).is_none())
     }
 
     /// Where each piece stands and how much of it there is.
@@ -520,12 +511,12 @@ impl SceneGeometry<'_, '_> {
     /// check can run several times a second.
     fn placements(&self) -> impl Iterator<Item = (Affine3A, u32, u32)> + '_ {
         self.baked().filter_map(|(_, placement, handle)| {
-            let mesh = self.assets.get(handle)?;
-            let triangles = match mesh.indices() {
-                Some(indices) => indices.len() / 3,
-                None => mesh.count_vertices() / 3,
-            };
-            Some((placement, mesh.count_vertices() as u32, triangles as u32))
+            let mesh = self.assets.get(&handle.0)?;
+            Some((
+                placement,
+                mesh.vertex_positions.len() as u32,
+                (mesh.indices.len() / 3) as u32,
+            ))
         })
     }
 
@@ -545,7 +536,7 @@ impl SceneGeometry<'_, '_> {
                 tally.excluded += 1;
                 continue;
             }
-            let Some(mesh) = self.assets.get(handle) else {
+            let Some(mesh) = self.assets.get(&handle.0) else {
                 continue;
             };
             // Decoration below the voxel does not become ground, it becomes
@@ -669,9 +660,12 @@ impl GeometryTally {
 /// The box is transformed by its corners rather than by its extents: a rotated
 /// placement turns a thin plank into a box no axis-aligned scaling of the
 /// original describes.
-fn placed_extent(mesh: &Mesh, placement: Affine3A) -> Option<Vec3> {
-    let aabb = mesh.get_aabb()?;
-    let (center, half) = (Vec3::from(aabb.center), Vec3::from(aabb.half_extents));
+fn placed_extent(mesh: &AuroraMesh, placement: Affine3A) -> Option<Vec3> {
+    if mesh.vertex_positions.is_empty() {
+        return None;
+    }
+    let center = Vec3::from_slice(&mesh.aabb.center[..3]);
+    let half = Vec3::from_slice(&mesh.aabb.half_extent[..3]);
     let mut min = Vec3::splat(f32::INFINITY);
     let mut max = Vec3::splat(f32::NEG_INFINITY);
     for corner in 0..8u32 {
@@ -684,24 +678,39 @@ fn placed_extent(mesh: &Mesh, placement: Affine3A) -> Option<Vec3> {
     Some(max - min)
 }
 
-/// One mesh in world space, or `None` if the baker cannot read it.
+/// One mesh in world space, or `None` if it holds no triangles.
 ///
 /// The affine is applied to the vertices directly rather than through a
 /// `Transform`: a `GlobalTransform` under a non-uniform parent scale carries
 /// shear that no translation-rotation-scale can express.
-fn placed_trimesh(mesh: &Mesh, placement: Affine3A) -> Option<TriMesh> {
-    let mut tri = TriMesh::from_mesh(mesh)?;
-    for vertex in &mut tri.vertices {
-        *vertex = placement.transform_point3a(*vertex);
+fn placed_trimesh(mesh: &AuroraMesh, placement: Affine3A) -> Option<TriMesh> {
+    let flat = mesh.flatten();
+    if flat.indices.len() < 3 {
+        return None;
     }
     // A mirrored placement turns every face inside out, and a face pointing
     // down is not ground.
-    if placement.matrix3.determinant() < 0.0 {
-        for triangle in &mut tri.indices {
-            std::mem::swap(&mut triangle.y, &mut triangle.z);
-        }
-    }
-    Some(tri)
+    let mirrored = placement.matrix3.determinant() < 0.0;
+    let indices: Vec<UVec3> = flat
+        .indices
+        .chunks_exact(3)
+        .map(|t| {
+            if mirrored {
+                UVec3::new(t[0], t[2], t[1])
+            } else {
+                UVec3::new(t[0], t[1], t[2])
+            }
+        })
+        .collect();
+    Some(TriMesh {
+        vertices: flat
+            .positions
+            .iter()
+            .map(|&v| placement.transform_point3a(v.into()))
+            .collect(),
+        area_types: vec![AreaType::NOT_WALKABLE; indices.len()],
+        indices,
+    })
 }
 
 /// One hash per piece of scene geometry.
@@ -1378,7 +1387,7 @@ fn sync_navmesh_overlay(
     state: Res<TerrainNavmeshState>,
     terrains: Query<&jackdaw_scene_types::Terrain>,
     store: Res<TerrainDataStore>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
     existing: Query<(Entity, &AuroraMaterial3d), With<NavmeshOverlay>>,
     mut built: Local<Option<OverlayBuild>>,
@@ -1439,7 +1448,7 @@ fn sync_navmesh_overlay(
         return;
     };
     commands.spawn((
-        Mesh3d(meshes.add(mesh)),
+        AuroraMesh3d(meshes.add(mesh)),
         AuroraMaterial3d(materials.add(AuroraMaterial {
             base_color: color,
             unlit: true,
@@ -1463,16 +1472,12 @@ fn sync_navmesh_overlay(
 ///
 /// `None` when the bake produced no surface: an artifact carrying polygons and
 /// nothing else, or a bake over nothing.
-fn surface_mesh(artifact: &NavmeshArtifact, lift: f32) -> Option<Mesh> {
+fn surface_mesh(artifact: &NavmeshArtifact, lift: f32) -> Option<AuroraMesh> {
     if artifact.surface_triangles.is_empty() || artifact.surface_vertices.is_empty() {
         return None;
     }
     let up = Vec3::Y * lift;
-    let positions: Vec<[f32; 3]> = artifact
-        .surface_vertices
-        .iter()
-        .map(|v| (*v + up).to_array())
-        .collect();
+    let positions: Vec<Vec3> = artifact.surface_vertices.iter().map(|v| *v + up).collect();
     let mut indices = Vec::with_capacity(artifact.surface_triangles.len() * 3);
     for triangle in &artifact.surface_triangles {
         if triangle
@@ -1486,13 +1491,11 @@ fn surface_mesh(artifact: &NavmeshArtifact, lift: f32) -> Option<Mesh> {
     if indices.is_empty() {
         return None;
     }
-    let mut mesh = Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        bevy::asset::RenderAssetUsages::default(),
-    );
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_indices(bevy::mesh::Indices::U32(indices));
-    Some(mesh)
+    Some(AuroraMesh::from_triangles(Triangles {
+        positions,
+        indices,
+        ..default()
+    }))
 }
 
 /// Drops the drawn overlay along with the bake behind it.
@@ -1966,7 +1969,7 @@ mod tests {
         let side = 64u32;
         let mut app = App::new();
         app.add_plugins((bevy::app::TaskPoolPlugin::default(), AssetPlugin::default()));
-        app.init_asset::<Mesh>();
+        app.init_asset::<AuroraMesh>();
         app.init_asset::<AuroraMaterial>();
         app.init_resource::<Selection>();
         app.init_resource::<TerrainDataStore>();
@@ -2402,11 +2405,11 @@ mod tests {
     fn moving_a_scene_mesh_marks_a_bake_out_of_date() {
         let spawn_prop = |world: &mut World| -> Entity {
             let mesh = world
-                .resource_mut::<Assets<Mesh>>()
-                .add(Mesh::from(Cuboid::new(2.0, 2.0, 2.0)));
+                .resource_mut::<Assets<AuroraMesh>>()
+                .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
             world
                 .spawn((
-                    Mesh3d(mesh),
+                    AuroraMesh3d(mesh),
                     Transform::default(),
                     GlobalTransform::default(),
                 ))
@@ -2431,10 +2434,10 @@ mod tests {
 
         // A prop that was there when the bake was taken.
         let mesh = world
-            .resource_mut::<Assets<Mesh>>()
-            .add(Mesh::from(Cuboid::new(2.0, 2.0, 2.0)));
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
         world.spawn((
-            Mesh3d(mesh.clone()),
+            AuroraMesh3d(mesh.clone()),
             Transform::default(),
             GlobalTransform::default(),
         ));
@@ -2445,7 +2448,7 @@ mod tests {
         );
 
         // The same prop, as a handle whose asset has not arrived.
-        world.resource_mut::<Assets<Mesh>>().remove(&mesh);
+        world.resource_mut::<Assets<AuroraMesh>>().remove(&mesh);
         world.insert_resource(Time::<()>::default());
         world
             .resource_mut::<Time<()>>()
@@ -2488,13 +2491,13 @@ mod tests {
         );
         let mesh = surface_mesh(artifact, 0.5).expect("a bake with ground has a surface");
         assert_eq!(
-            mesh.count_vertices(),
+            mesh.vertex_positions.len(),
             artifact.surface_vertices.len(),
             "every surface vertex is drawn"
         );
         assert_eq!(
-            mesh.indices().map(bevy::mesh::Indices::len),
-            Some(artifact.surface_triangles.len() * 3),
+            mesh.indices.len(),
+            artifact.surface_triangles.len() * 3,
             "every surface triangle is drawn"
         );
 
@@ -2562,20 +2565,19 @@ mod tests {
             .map(|v| v.y)
             .fold(f32::INFINITY, f32::min);
         let mesh = world
-            .query_filtered::<&Mesh3d, With<NavmeshOverlay>>()
+            .query_filtered::<&AuroraMesh3d, With<NavmeshOverlay>>()
             .iter(world)
             .next()
             .expect("the overlay is drawn")
             .0
             .clone();
-        let meshes = world.resource::<Assets<Mesh>>();
+        let meshes = world.resource::<Assets<AuroraMesh>>();
         let mesh = meshes.get(&mesh).expect("the overlay has a mesh");
-        let Some(bevy::mesh::VertexAttributeValues::Float32x3(positions)) =
-            mesh.attribute(Mesh::ATTRIBUTE_POSITION)
-        else {
-            panic!("the overlay mesh has positions");
-        };
-        positions.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min) - floor
+        mesh.vertex_positions
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::INFINITY, f32::min)
+            - floor
     }
 
     /// The tint moves only when staleness flips, and `get_mut` raises
@@ -2696,11 +2698,11 @@ mod tests {
     /// A cube of `side` metres standing at the origin.
     fn spawn_cube(world: &mut World, side: f32) -> Entity {
         let mesh = world
-            .resource_mut::<Assets<Mesh>>()
-            .add(Mesh::from(Cuboid::from_length(side)));
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_shape(Cuboid::from_length(side)));
         world
             .spawn((
-                Mesh3d(mesh),
+                AuroraMesh3d(mesh),
                 Transform::default(),
                 GlobalTransform::default(),
             ))
@@ -3147,10 +3149,10 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("a place to write the artifact");
         let mut world = world_with_terrain(&dir);
         let mesh = world
-            .resource_mut::<Assets<Mesh>>()
-            .add(Mesh::from(Cuboid::new(2.0, 2.0, 2.0)));
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
         let mut cube = world.spawn((
-            Mesh3d(mesh),
+            AuroraMesh3d(mesh),
             Transform::default(),
             GlobalTransform::default(),
         ));
@@ -3193,11 +3195,11 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("a place to write the artifact");
         let mut world = world_with_terrain(&dir);
         let mesh = world
-            .resource_mut::<Assets<Mesh>>()
-            .add(Mesh::from(Cuboid::new(2.0, 2.0, 2.0)));
+            .resource_mut::<Assets<AuroraMesh>>()
+            .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
         let parent = world.spawn((Transform::default(), Visibility::Hidden)).id();
         world.spawn((
-            Mesh3d(mesh),
+            AuroraMesh3d(mesh),
             Transform::default(),
             GlobalTransform::default(),
             ChildOf(parent),
@@ -3210,29 +3212,6 @@ mod tests {
         assert_eq!(count, 0);
     }
 
-    /// A mesh the render world owns cannot be read on the main world, and
-    /// reading its attributes there panics.
-    #[test]
-    fn a_render_only_mesh_is_left_out_of_the_staleness_hash() {
-        let dir = std::env::temp_dir().join(format!("jd_render_only_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("a place to write the artifact");
-        let mut world = world_with_terrain(&dir);
-        let mut built = Mesh::from(Cuboid::new(2.0, 2.0, 2.0));
-        built.asset_usage = bevy::asset::RenderAssetUsages::RENDER_WORLD;
-        let mesh = world.resource_mut::<Assets<Mesh>>().add(built);
-        world.spawn((
-            Mesh3d(mesh),
-            Transform::default(),
-            GlobalTransform::default(),
-        ));
-        world.flush();
-
-        let hashes = world
-            .run_system_cached(|geometry: SceneGeometry| geometry_hashes(geometry.placements()))
-            .expect("the geometry gather runs");
-        assert!(hashes.is_empty(), "the hash skips a mesh it cannot read");
-    }
-
     #[test]
     fn a_bake_waits_for_the_scene_to_finish_loading() {
         let dir = std::env::temp_dir().join(format!("jd_loading_{}", std::process::id()));
@@ -3241,7 +3220,7 @@ mod tests {
         // A handle to an asset that never arrives stands in for the first
         // frames after a scene opens.
         world.spawn((
-            Mesh3d(Handle::<Mesh>::default()),
+            AuroraMesh3d(Handle::<AuroraMesh>::default()),
             Transform::default(),
             GlobalTransform::default(),
         ));
@@ -3257,7 +3236,7 @@ mod tests {
 
     #[test]
     fn a_mirrored_placement_keeps_its_faces_pointing_the_way_they_did() {
-        let mesh = Mesh::from(Plane3d::default().mesh().size(4.0, 4.0));
+        let mesh = AuroraMesh::from_shape(Plane3d::default().mesh().size(4.0, 4.0));
         let upright = placed_trimesh(&mesh, Affine3A::IDENTITY).expect("a plane converts");
         let mirrored = placed_trimesh(&mesh, Affine3A::from_scale(Vec3::new(-1.0, 1.0, 1.0)))
             .expect("a plane converts");
