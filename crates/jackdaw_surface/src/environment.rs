@@ -4,12 +4,14 @@
 //! `Tonemapping`, `ColorGrading`, `Fxaa`/`Smaa`/`Taa`, `Msaa` -- and drew the sky as a
 //! screen triangle wearing `SkyMaterial`. None of those exist on a ray tracer: the sky is
 //! evaluated in the miss shader, antialiasing is DLSS, and exposure is one camera component.
-//! So this reads the same authored `Environment` and writes aurora's resources instead.
+//! So this reads the same authored `Environment` and writes aurora's sky (on the main world)
+//! and camera exposure instead.
 
 use bevy::prelude::*;
 use bevy_aurora::{
     auto_exposure::{AuroraExposure, FixedExposure},
-    sky::{ProceduralSky, Sky as AuroraSky},
+    sky::{GradientSky, Sky as AuroraSky},
+    world::MainPhysicsWorldEntity,
 };
 use jackdaw_scene_types::{Environment, Sky};
 
@@ -21,96 +23,64 @@ impl Plugin for EnvironmentPlugin {
         app.add_systems(
             PostUpdate,
             (
-                // Aurora's sky resources come with its render side; a headless host has the
-                // scene's `Environment` but nothing to write it to.
-                follow_the_scene_sky.run_if(resource_exists::<AuroraSky>),
+                follow_the_scene_sky.run_if(resource_exists::<MainPhysicsWorldEntity>),
                 follow_the_scene_exposure,
             ),
         );
     }
 }
 
-/// The sun the sky draws its disc at: the scene's first directional light.
-#[derive(Clone, Copy, Debug)]
-pub struct SkySun {
-    /// Degrees above the horizon.
-    pub elevation: f32,
-    /// Degrees clockwise from -Z.
-    pub azimuth: f32,
-    pub illuminance: f32,
-}
-
-impl SkySun {
-    /// From the light's forward direction, which is the way its rays travel.
-    pub fn of(transform: &GlobalTransform, illuminance: f32) -> Self {
-        let to_sun = -transform.forward().as_vec3();
-        Self {
-            elevation: to_sun.y.clamp(-1.0, 1.0).asin().to_degrees(),
-            azimuth: (-to_sun.x).atan2(-to_sun.z).to_degrees().rem_euclid(360.0),
-            illuminance,
-        }
-    }
-}
-
-/// jackdaw's gradient sky as aurora's analytic one. `brightness` is candela per square metre
-/// with 1000 showing the colours as authored, which is the nits the three bands take.
-pub fn procedural_sky(sky: &Sky, sun: Option<SkySun>) -> ProceduralSky {
+/// jackdaw's gradient sky as aurora's. `brightness` is candela per square metre with 1000
+/// showing the colours as authored, which is the nits the three bands take.
+/// `horizon_softness` has no aurora term: the gradient's falloff is fixed.
+pub fn gradient_sky(sky: &Sky) -> GradientSky {
     let nits = sky.brightness;
-    ProceduralSky {
-        sun_elevation: sun.map_or(45.0, |s| s.elevation),
-        sun_azimuth: sun.map_or(0.0, |s| s.azimuth),
-        // Authored as an angular DIAMETER, aurora takes a radius.
-        sun_angular_radius: (sky.sun_size * 0.5).clamp(0.25, 20.0),
-        sun_radiance: sun.map_or(0.0, |s| s.illuminance * sky.sun_intensity),
+    GradientSky {
         zenith: sky.zenith,
         zenith_nits: nits,
         horizon: sky.horizon,
-        // `horizon_softness` has no aurora term: the analytic sky's falloff is fixed.
         horizon_nits: nits,
         ground: sky.ground,
         ground_nits: nits,
     }
 }
 
+/// The scene's sky onto the main world. The sun needs nothing here: aurora reads the scene's
+/// `DirectionalLight` itself.
+///
+/// TODO(aurora): `sun_size` / `sun_intensity` belong on a `SunDisk` on the light.
 fn follow_the_scene_sky(
+    mut commands: Commands,
     environments: Query<&Environment>,
-    suns: Query<(&DirectionalLight, &GlobalTransform)>,
-    mut sky: ResMut<AuroraSky>,
-    mut procedural: ResMut<ProceduralSky>,
+    main_world: Res<MainPhysicsWorldEntity>,
+    current: Query<(Option<&AuroraSky>, Option<&GradientSky>)>,
 ) {
     let Some(environment) = environments.iter().next() else {
         return;
     };
-    // Guarded writes rather than change detection on `Environment`: the sun is a separate
-    // entity and moving it has to reach the sky too.
+    let (sky, gradient) = current.get(main_world.0).unwrap_or((None, None));
+    // Guarded writes: inserting every frame would flag the components changed every frame.
     if !environment.sky.enabled {
         // A disabled sky is black, not absent -- a miss ray still has to be answered.
-        if !matches!(*sky, AuroraSky::Color { radiance } if radiance == Vec3::ZERO) {
-            *sky = AuroraSky::Color {
+        if !matches!(sky, Some(AuroraSky::Color { radiance }) if *radiance == Vec3::ZERO) {
+            commands.entity(main_world.0).insert(AuroraSky::Color {
                 radiance: Vec3::ZERO,
-            };
+            });
         }
         return;
     }
-    let sun = suns
-        .iter()
-        .next()
-        .map(|(light, transform)| SkySun::of(transform, light.illuminance));
-    // `ProceduralSky` is not PartialEq, and writing it every frame would flag the resource
-    // changed every frame; the sun's angles are what actually move.
-    let next = procedural_sky(&environment.sky, sun);
-    let moved = procedural.sun_elevation != next.sun_elevation
-        || procedural.sun_azimuth != next.sun_azimuth
-        || procedural.sun_radiance != next.sun_radiance
-        || procedural.zenith_nits != next.zenith_nits
-        || procedural.zenith != next.zenith
-        || procedural.horizon != next.horizon
-        || procedural.ground != next.ground;
-    if moved {
-        *procedural = next;
+    if !matches!(sky, Some(AuroraSky::Gradient)) {
+        commands.entity(main_world.0).insert(AuroraSky::Gradient);
     }
-    if !matches!(*sky, AuroraSky::Procedural) {
-        *sky = AuroraSky::Procedural;
+    let next = gradient_sky(&environment.sky);
+    let same = gradient.is_some_and(|g| {
+        g.zenith == next.zenith
+            && g.zenith_nits == next.zenith_nits
+            && g.horizon == next.horizon
+            && g.ground == next.ground
+    });
+    if !same {
+        commands.entity(main_world.0).insert(next);
     }
 }
 
