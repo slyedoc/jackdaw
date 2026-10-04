@@ -91,11 +91,8 @@ pub fn attach_pie(app: &mut App, transport: IpcChannelTransport) {
 
     if crate::pie_windowless::windowless_active(app) {
         crate::pie_windowless::setup_windowless(app);
-        // Select-mode picking needs a 3D raycast backend; UI picking alone
-        // only hits interface nodes.
-        if !app.is_plugin_added::<bevy::picking::mesh_picking::MeshPickingPlugin>() {
-            app.add_plugins(bevy::picking::mesh_picking::MeshPickingPlugin);
-        }
+        // Select-mode picking's 3D hits come from aurora's GPU pointer-picking
+        // backend (bevy_aurora::pointer_picking), part of its default plugins.
         // Forwarded image-targeted pointer events own the mouse pointer.
         // Disable window-targeted pointer derivation outright so a stray
         // window event can never fight the forwarded stream over the pointer

@@ -273,7 +273,6 @@ bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-fe
     "reflect_functions",
     "debug",
     "system_font_discovery",
-    "mesh_picking",
 ] }
 # `default-features = false` throughout: each of these crates defaults to a `render`
 # feature that turns on bevy/bevy_render, and cargo unifies features across the whole

@@ -89,7 +89,6 @@ pie = [
     "dep:jackdaw_camera_rig",
     "dep:wgpu-types",
     "bevy/bevy_image",
-    "bevy/mesh_picking",
 ]
 # Live frame view: renders the active camera rig offscreen and reads it back
 # through bevy's gpu readback. TODO(aurora): aurora has no render-target
