@@ -1,6 +1,6 @@
 use bevy::{
     asset::{embedded_asset, load_embedded_asset},
-    camera::{RenderTarget, visibility::RenderLayers},
+    camera::RenderTarget,
     ecs::error::BevyError,
     prelude::*,
 };
@@ -9,6 +9,7 @@ use wgpu_types::TextureFormat;
 use crate::default_style;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use bevy_aurora::world::PhysicsWorld;
 
 pub(super) struct MaterialPreviewPlugin;
 
@@ -100,8 +101,6 @@ impl Default for MaterialPreviewState {
     }
 }
 
-const PREVIEW_LAYER: usize = 1;
-
 fn setup_material_preview_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<AuroraMesh>>,
@@ -110,7 +109,24 @@ fn setup_material_preview_scene(
     mut preview_state: ResMut<MaterialPreviewState>,
     assets: Res<AssetServer>,
 ) {
-    let preview_layer = RenderLayers::layer(PREVIEW_LAYER);
+    // The preview's own world: it renders and is lit only there, never in a viewport.
+    let stage = commands
+        .spawn((
+            Name::new("Material Preview World"),
+            crate::EditorEntity,
+            PhysicsWorld,
+        ))
+        .id();
+    commands.spawn((
+        Name::new("Material Preview Light"),
+        crate::EditorEntity,
+        DirectionalLight {
+            illuminance: 20_000.0,
+            ..default()
+        },
+        Transform::from_xyz(2.0, 3.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ChildOf(stage),
+    ));
 
     let sphere = meshes.add(AuroraMesh::from_shape(
         Sphere::new(1.0)
@@ -149,7 +165,7 @@ fn setup_material_preview_scene(
         AuroraMaterial3d(mat),
         Transform::default(),
         Visibility::Inherited,
-        preview_layer.clone(),
+        ChildOf(stage),
     ));
 
     let preview_image = Image::new_target_texture(
@@ -188,7 +204,7 @@ fn setup_material_preview_scene(
         },
         RenderTarget::Image(preview_image_handle.into()),
         Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)).looking_at(Vec3::ZERO, Vec3::Y),
-        preview_layer,
+        ChildOf(stage),
     ));
 }
 

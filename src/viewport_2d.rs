@@ -9,7 +9,7 @@
 
 use bevy::{
     asset::uuid::Uuid,
-    camera::{NormalizedRenderTarget, RenderTarget, visibility::RenderLayers},
+    camera::{NormalizedRenderTarget, RenderTarget},
     image::{ImageSampler, ToExtents},
     input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
     picking::{
@@ -38,10 +38,7 @@ use crate::{
     prelude::*,
     selection::Selection,
     ui_stage::{CanvasAxis, stage_to_authored},
-    viewport::{
-        DEFAULT_VIEWPORT_HEIGHT, DEFAULT_VIEWPORT_WIDTH, InteractionGuards, UiCursorPos,
-        ViewportLayerCounter,
-    },
+    viewport::{DEFAULT_VIEWPORT_HEIGHT, DEFAULT_VIEWPORT_WIDTH, InteractionGuards, UiCursorPos},
 };
 
 use crate::viewport_host::{ViewportHost, ViewportMode, ViewportModeIntent};
@@ -353,10 +350,7 @@ pub struct Viewport2dPlugin;
 
 impl Plugin for Viewport2dPlugin {
     fn build(&self, app: &mut App) {
-        // The layer counter is shared with `crate::viewport`, whose plugin may
-        // not have been added yet: whichever lands first installs it.
-        app.init_resource::<ViewportLayerCounter>()
-            .init_resource::<Ui2dPanActive>()
+        app.init_resource::<Ui2dPanActive>()
             .add_observer(on_viewport_2d_panel_despawn)
             // Where `bevy_ui` runs its own `viewport_picking`: after this
             // frame's `PointerInput` is written, and early enough that the
@@ -1562,12 +1556,6 @@ pub(crate) fn build_2d_presentation(world: &mut World, parent: Entity) -> Entity
         .resource_mut::<Assets<Image>>()
         .add(viewport_2d_target_image());
 
-    // A private render layer per panel, so per-viewport overlays can be drawn to
-    // this camera alone. Layer 0 stays in the mask so default-layer scene
-    // content still draws here.
-    let viewport_layer = world.resource_mut::<ViewportLayerCounter>().next();
-    let camera_layers = RenderLayers::from_layers(&[0, viewport_layer]);
-
     let camera = world
         .spawn((
             Viewport2dCamera,
@@ -1578,7 +1566,6 @@ pub(crate) fn build_2d_presentation(world: &mut World, parent: Entity) -> Entity
                 ..default()
             },
             RenderTarget::Image(image_handle.clone().into()),
-            camera_layers,
         ))
         .id();
 

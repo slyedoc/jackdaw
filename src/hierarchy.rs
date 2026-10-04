@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use bevy::{
     input_focus::{FocusCause, InputFocus},
+    light::RectLight,
     prelude::*,
     ui::ui_transform::UiGlobalTransform,
 };
@@ -162,6 +163,7 @@ impl Plugin for HierarchyPlugin {
             .add_observer(refresh_icon_on_add::<DirectionalLight>)
             .add_observer(refresh_icon_on_add::<PointLight>)
             .add_observer(refresh_icon_on_add::<SpotLight>)
+            .add_observer(refresh_icon_on_add::<RectLight>)
             .add_observer(refresh_icon_on_add::<jackdaw_scene_types::UiSceneRoot>)
             .add_observer(refresh_icon_on_add::<jackdaw_scene_types::Scene2dRoot>)
             .add_observer(refresh_icon_on_add::<jackdaw_prefab::components::IsA>)
@@ -282,6 +284,7 @@ fn classify_entity(world: &World, entity: Entity) -> EntityCategory {
     if world.get::<PointLight>(entity).is_some()
         || world.get::<DirectionalLight>(entity).is_some()
         || world.get::<SpotLight>(entity).is_some()
+        || world.get::<RectLight>(entity).is_some()
     {
         return EntityCategory::Light;
     }

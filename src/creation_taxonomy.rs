@@ -11,8 +11,8 @@ use crate::entity_ops::{
     EntityAddAnimationPlayerOp, EntityAddAudioSourceOp, EntityAddCameraOp, EntityAddConeOp,
     EntityAddCubeOp, EntityAddCylinderOp, EntityAddDirectionalLightOp, EntityAddEmptyOp,
     EntityAddFogVolumeOp, EntityAddImageOp, EntityAddPlaneOp, EntityAddPointLightOp,
-    EntityAddPrefabOp, EntityAddPyramidOp, EntityAddReflectionProbeOp, EntityAddSphereOp,
-    EntityAddSpotLightOp, EntityAddTerrainOp, EntityAddWedgeOp,
+    EntityAddPrefabOp, EntityAddPyramidOp, EntityAddRectLightOp, EntityAddReflectionProbeOp,
+    EntityAddSphereOp, EntityAddSpotLightOp, EntityAddTerrainOp, EntityAddWedgeOp,
 };
 #[cfg(feature = "multiplayer")]
 use crate::entity_ops::{EntityAddNetworkRoomOp, EntityAddSpawnPointOp, EntityAddZoneTransitionOp};
@@ -179,6 +179,7 @@ fn builtin(taxonomy: &mut CreationTaxonomy) {
             op_action::<EntityAddDirectionalLightOp>(),
         ),
         entry("lights", "Spot Light", op_action::<EntityAddSpotLightOp>()),
+        entry("lights", "Rect Light", op_action::<EntityAddRectLightOp>()),
         entry("cameras", "Camera", op_action::<EntityAddCameraOp>()),
         #[cfg(feature = "camera_rig")]
         entry("cameras", "Camera Rig", op_action::<EntityAddCameraRigOp>()),

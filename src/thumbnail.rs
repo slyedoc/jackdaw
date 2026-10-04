@@ -9,8 +9,9 @@
 //! when the scene is saved.
 //!
 //! The off-screen setup copies [`crate::material_preview`]: a camera with
-//! `RenderTarget::Image`, its own [`RenderLayers`] so nothing leaks into a
-//! viewport, and its own [`EnvironmentMapLight`] because lighting is
+//! `RenderTarget::Image`, its own world (a `PhysicsWorld`: everything under it renders and
+//! is lit only there) so nothing leaks into a viewport, and its own [`EnvironmentMapLight`]
+//! because lighting is
 //! per-view rather than global. It differs in two ways: one target image is
 //! reused for every subject (the pixels are read back and written to disk, so
 //! nothing needs to stay resident), and the whole thing is driven by a
@@ -36,7 +37,7 @@ use std::time::SystemTime;
 
 use bevy::{
     asset::{RenderAssetUsages, embedded_asset, load_embedded_asset},
-    camera::{RenderTarget, visibility::RenderLayers},
+    camera::RenderTarget,
     gltf::GltfAssetLabel,
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
@@ -51,13 +52,7 @@ use path_slash::PathExt as _;
 use crate::asset_index::AssetIndex;
 use crate::entity_ops::GltfSource;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-
-/// Render layer the thumbnail stage owns exclusively. Layer 0 is the world,
-/// layer 1 is the material preview, and per-viewport grids start at layer 3
-/// (`crate::viewport::ViewportLayerCounter`); this one sits between them so
-/// a subject being photographed never appears in a viewport, and a viewport's
-/// grid never appears in a thumbnail.
-pub(crate) const THUMBNAIL_LAYER: usize = 2;
+use bevy_aurora::world::PhysicsWorld;
 
 /// Edge of the square render target, in pixels. The browser draws the result
 /// at [`THUMBNAIL_DISPLAY_SIZE`]; rendering larger keeps it crisp on a
@@ -279,6 +274,8 @@ pub struct Thumbnails {
     /// Thumbnails photographed since the editor started. Reported in the log
     /// so a first pass over a large kit can be measured.
     rendered: usize,
+    /// The stage's world: the camera, the light and every subject live under it.
+    stage: Option<Entity>,
 }
 
 impl Thumbnails {
@@ -448,7 +445,14 @@ fn setup_thumbnail_stage(
     project: Option<Res<crate::project::ProjectRoot>>,
     assets: Res<AssetServer>,
 ) {
-    let layer = RenderLayers::layer(THUMBNAIL_LAYER);
+    let stage = commands
+        .spawn((
+            Name::new("Thumbnail World"),
+            crate::EditorEntity,
+            PhysicsWorld,
+        ))
+        .id();
+    thumbnails.stage = Some(stage);
 
     let target = images.add(thumbnail_target_image());
     commands.insert_resource(ThumbnailTarget(target.clone()));
@@ -492,7 +496,7 @@ fn setup_thumbnail_stage(
         },
         RenderTarget::Image(target.into()),
         Transform::from_translation(Vec3::splat(3.0)).looking_at(Vec3::ZERO, Vec3::Y),
-        layer.clone(),
+        ChildOf(stage),
     ));
 
     // A key light on top of the environment map: image-based lighting alone
@@ -501,12 +505,10 @@ fn setup_thumbnail_stage(
         crate::EditorEntity,
         DirectionalLight {
             illuminance: 4000.0,
-            shadow_maps_enabled: false,
-            contact_shadows_enabled: false,
             ..default()
         },
         Transform::from_translation(Vec3::new(4.0, 6.0, 4.0)).looking_at(Vec3::ZERO, Vec3::Y),
-        layer,
+        ChildOf(stage),
     ));
 }
 
@@ -694,6 +696,7 @@ fn start_job(
     mtime: SystemTime,
     subject: Subject,
 ) -> Option<Job> {
+    let world = thumbnails.stage?;
     let job = |root, stage| Job {
         path: path.to_path_buf(),
         mtime,
@@ -721,7 +724,7 @@ fn start_job(
                     AuroraMaterial3d(material.clone()),
                     Transform::IDENTITY,
                     Visibility::Visible,
-                    RenderLayers::layer(THUMBNAIL_LAYER),
+                    ChildOf(world),
                 ))
                 .id();
             Some(job(Some(root), Stage::Dressing(material)))
@@ -733,7 +736,7 @@ fn start_job(
                     crate::EditorEntity,
                     Transform::IDENTITY,
                     Visibility::Hidden,
-                    RenderLayers::layer(THUMBNAIL_LAYER),
+                    ChildOf(world),
                 ))
                 .id();
             let document = path.to_path_buf();
@@ -795,11 +798,10 @@ fn step_job(
             if !state.is_loaded() {
                 return Step::Wait;
             }
-            // Spawned hidden: bevy resolves `RenderLayers` per entity and
-            // does not inherit it, so the glTF's own entities land on layer
-            // 0 -- the main viewport -- until they are tagged a frame later.
-            // `Visibility` *is* inherited, so hiding the root hides them all
-            // until the layer is right.
+            // Spawned hidden until framed, so a half-built model never shows.
+            let Some(world) = thumbnails.stage else {
+                return Step::Finish(ThumbState::Failed);
+            };
             let root = commands
                 .spawn((
                     ThumbnailSubject,
@@ -807,7 +809,7 @@ fn step_job(
                     WorldAssetRoot(scene.clone()),
                     Transform::IDENTITY,
                     Visibility::Hidden,
-                    RenderLayers::layer(THUMBNAIL_LAYER),
+                    ChildOf(world),
                 ))
                 .id();
             Step::Rooted(root, Stage::Spawned)
@@ -856,7 +858,6 @@ fn step_job(
             let (position, look_at) = frame_bounds(min, max, camera_fov(camera_query));
             aim_camera(camera_query, position, look_at);
 
-            apply_layer_recursive(commands, root, children_query);
             commands.entity(root).insert(Visibility::Visible);
 
             Step::Advance(Stage::Settling)
@@ -1029,12 +1030,7 @@ fn spawn_prefab_node(
         .unwrap_or_default();
 
     let entity = world
-        .spawn((
-            ChildOf(parent),
-            Transform::IDENTITY,
-            Visibility::Inherited,
-            RenderLayers::layer(THUMBNAIL_LAYER),
-        ))
+        .spawn((ChildOf(parent), Transform::IDENTITY, Visibility::Inherited))
         .id();
 
     let mut children = Vec::new();
@@ -1145,20 +1141,6 @@ fn decode_thumbnail(bytes: &[u8]) -> Option<Image> {
 /// Map an absolute file path to the asset path the `AssetServer` wants.
 fn to_asset_path(path: &Path) -> String {
     crate::entity_ops::to_asset_path(&path.to_slash_lossy())
-}
-
-/// Put every entity in the spawned hierarchy on the thumbnail layer.
-/// Bevy resolves `RenderLayers` per entity and does not inherit it down the
-/// hierarchy, so tagging the root alone would leave the meshes on layer 0.
-fn apply_layer_recursive(commands: &mut Commands, entity: Entity, children: &Query<&Children>) {
-    commands
-        .entity(entity)
-        .insert(RenderLayers::layer(THUMBNAIL_LAYER));
-    if let Ok(kids) = children.get(entity) {
-        for child in kids.iter() {
-            apply_layer_recursive(commands, child, children);
-        }
-    }
 }
 
 // -- Scene pictures ----------------------------------------------------------

@@ -1,6 +1,6 @@
 use bevy::{
     asset::{embedded_asset, load_embedded_asset},
-    camera::{RenderTarget, visibility::RenderLayers},
+    camera::RenderTarget,
     gizmos::{GizmoAsset, retained::Gizmo},
     image::ImageSampler,
     prelude::*,
@@ -70,15 +70,11 @@ pub struct SceneViewport;
 #[derive(Component)]
 pub struct ViewportPanelHost {
     pub camera: Entity,
-    /// Per-viewport infinite-grid entity. Spawned alongside the camera
-    /// on a private `RenderLayers` so each viewport renders its own
-    /// grid, oriented to its current view axis. Cleaned up together
-    /// with the camera on panel teardown.
+    /// Per-viewport infinite-grid entity, oriented to its viewport's view
+    /// axis. Cleaned up together with the camera on panel teardown.
     pub grid: Entity,
     /// Per-viewport axis-orientation indicator (the small XYZ gizmo
-    /// in the bottom-left). Lives on the same private `RenderLayers`
-    /// as the camera so adjacent viewports don't see each other's
-    /// indicators leaking through their shared world space.
+    /// in the bottom-left).
     pub axis_indicator: Entity,
 }
 
@@ -94,7 +90,7 @@ pub struct AxisIndicator {
 
 /// Shared retained-gizmo asset for the per-viewport axis indicator.
 /// One asset, many `Gizmo` entities (one per viewport), each with its
-/// own `Transform` + `RenderLayers`.
+/// own `Transform`.
 #[derive(Resource)]
 struct AxisIndicatorAsset(Handle<GizmoAsset>);
 
@@ -104,27 +100,6 @@ struct AxisIndicatorAsset(Handle<GizmoAsset>);
 /// viewports keep their own orientation.
 #[derive(Component)]
 pub struct ViewportGrid(pub Entity);
-
-/// Shared counter that hands out a unique [`RenderLayers`] index per
-/// viewport. Layer 0 is the default world; layer 1 is reserved for the
-/// material preview and layer 2 for the Project window's thumbnail stage
-/// ([`crate::thumbnail::THUMBNAIL_LAYER`]). Per-viewport grids start after
-/// those so they only render to "their" camera.
-#[derive(Resource)]
-pub(crate) struct ViewportLayerCounter(usize);
-
-impl Default for ViewportLayerCounter {
-    fn default() -> Self {
-        Self(crate::thumbnail::THUMBNAIL_LAYER)
-    }
-}
-
-impl ViewportLayerCounter {
-    pub(crate) fn next(&mut self) -> usize {
-        self.0 += 1;
-        self.0
-    }
-}
 
 /// Tracks which viewport panel currently has the mouse over it.
 ///
@@ -333,7 +308,6 @@ impl Plugin for ViewportPlugin {
             // the grid's shader in place. See `editor_grid_depth_patch`.
             .init_resource::<CameraFlyActive>()
             .init_resource::<ActiveViewport>()
-            .init_resource::<ViewportLayerCounter>()
             .insert_resource(GlobalAmbientLight::NONE)
             .add_systems(Startup, init_axis_indicator_asset)
             .add_systems(
@@ -458,14 +432,6 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
         "../assets/environment_maps/voortrekker_interior_1k_specular.ktx2"
     );
 
-    // Allocate a per-viewport render layer so we can attach an
-    // infinite grid that *only* this camera renders. Layer 0 stays
-    // in the camera's mask so scene content (default-layer entities)
-    // still draws here.
-    let viewport_layer = world.resource_mut::<ViewportLayerCounter>().next();
-    let camera_layers = RenderLayers::from_layers(&[0, viewport_layer]);
-    let grid_layers = RenderLayers::layer(viewport_layer);
-
     let grid_settings = world.resource::<GridSettings>().0;
     let grid = world
         .spawn((
@@ -474,7 +440,6 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
             grid_settings,
             Transform::IDENTITY,
             Visibility::Inherited,
-            grid_layers.clone(),
         ))
         .id();
 
@@ -501,17 +466,13 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
             // DLSS Ray Reconstruction.
             JackdawCameraSettings::default(),
             ViewportConfig::default(),
-            camera_layers,
             ViewportGrid(grid),
         ))
         .id();
 
-    // Per-viewport axis indicator: a retained-gizmo entity on the
-    // same private `RenderLayers` mask as the camera, so the lines
-    // never bleed into a sibling viewport with an overlapping
-    // world-space frustum. The shared `AxisIndicatorAsset` resource
-    // holds the actual line content; only the entity's `Transform`
-    // and `RenderLayers` differ across viewports.
+    // Per-viewport axis indicator: a retained-gizmo entity. The shared
+    // `AxisIndicatorAsset` resource holds the actual line content; only the
+    // entity's `Transform` differs across viewports.
     let asset_handle = world.resource::<AxisIndicatorAsset>().0.clone();
     let axis_indicator = world
         .spawn((
@@ -532,7 +493,6 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
             // the lines render at world origin instead of in front
             // of the camera.
             Visibility::Inherited,
-            grid_layers.clone(),
         ))
         .id();
 

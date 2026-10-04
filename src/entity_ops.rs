@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use bevy::{
     ecs::system::{SystemParam, SystemState},
     gltf::GltfAssetLabel,
+    light::{RectLight, SunDisk},
     prelude::*,
     world_serialization::WorldAsset,
 };
@@ -352,6 +353,7 @@ pub enum EntityTemplate {
     PointLight,
     DirectionalLight,
     SpotLight,
+    RectLight,
     Camera3d,
     #[cfg(feature = "camera_rig")]
     CameraRig,
@@ -374,6 +376,7 @@ impl EntityTemplate {
             Self::PointLight => "Point Light",
             Self::DirectionalLight => "Directional Light",
             Self::SpotLight => "Spot Light",
+            Self::RectLight => "Rect Light",
             Self::Camera3d => "Camera",
             #[cfg(feature = "camera_rig")]
             Self::CameraRig => "Camera Rig",
@@ -435,10 +438,7 @@ pub fn create_entity(
             .spawn((
                 Name::new("Point Light"),
                 SceneLight,
-                PointLight {
-                    shadow_maps_enabled: true,
-                    ..default()
-                },
+                PointLight::default(),
                 Transform::from_xyz(0.0, 3.0, 0.0),
             ))
             .id(),
@@ -446,10 +446,13 @@ pub fn create_entity(
             .spawn((
                 Name::new("Directional Light"),
                 SceneLight,
+                // The sun of its world: aurora draws its disc in the sky (SunDisk) and lights
+                // by its illuminance.
                 DirectionalLight {
-                    shadow_maps_enabled: true,
+                    illuminance: 20_000.0,
                     ..default()
                 },
+                SunDisk::EARTH,
                 Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.4, 0.0))
                     .with_translation(Vec3 {
                         x: 0.0,
@@ -462,11 +465,21 @@ pub fn create_entity(
             .spawn((
                 Name::new("Spot Light"),
                 SceneLight,
-                SpotLight {
-                    shadow_maps_enabled: true,
+                SpotLight::default(),
+                Transform::from_xyz(0.0, 3.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+            ))
+            .id(),
+        // A panel light facing down (it emits along its local -Z).
+        EntityTemplate::RectLight => commands
+            .spawn((
+                Name::new("Rect Light"),
+                SceneLight,
+                RectLight {
+                    width: 1.0,
+                    height: 1.0,
                     ..default()
                 },
-                Transform::from_xyz(0.0, 3.0, 0.0).looking_at(Vec3::ZERO, Vec3::Y),
+                Transform::from_xyz(0.0, 3.0, 0.0).looking_at(Vec3::ZERO, Vec3::Z),
             ))
             .id(),
         EntityTemplate::Camera3d => commands
@@ -2023,6 +2036,7 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
         .register_operator::<EntityAddPointLightOp>()
         .register_operator::<EntityAddDirectionalLightOp>()
         .register_operator::<EntityAddSpotLightOp>()
+        .register_operator::<EntityAddRectLightOp>()
         .register_operator::<EntityAddCameraOp>();
     #[cfg(feature = "camera_rig")]
     ctx.register_operator::<EntityAddCameraRigOp>();
@@ -2413,6 +2427,17 @@ pub(crate) fn entity_add_spot_light(
 ) -> OperatorResult {
     commands.queue(|world: &mut World| {
         create_entity_in_world(world, EntityTemplate::SpotLight);
+    });
+    OperatorResult::Finished
+}
+
+#[operator(id = "entity.add.rect_light", label = "Rect Light")]
+pub(crate) fn entity_add_rect_light(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
+    commands.queue(|world: &mut World| {
+        create_entity_in_world(world, EntityTemplate::RectLight);
     });
     OperatorResult::Finished
 }

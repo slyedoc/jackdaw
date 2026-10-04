@@ -3,6 +3,7 @@ use std::path::Path;
 
 use bevy::{
     ecs::reflect::AppTypeRegistry,
+    light::SunDisk,
     prelude::*,
     tasks::{Task, futures_lite::future},
 };
@@ -726,10 +727,10 @@ pub fn spawn_default_lighting(world: &mut World) {
         .spawn((
             Name::new("Sun"),
             DirectionalLight {
-                shadow_maps_enabled: true,
-                illuminance: 10000.0,
+                illuminance: 20_000.0,
                 ..default()
             },
+            SunDisk::EARTH,
             Transform::from_xyz(10.0, 20.0, 10.0).with_rotation(Quat::from_euler(
                 EulerRot::XYZ,
                 -0.8,

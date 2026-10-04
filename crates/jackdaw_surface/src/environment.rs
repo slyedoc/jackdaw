@@ -46,9 +46,7 @@ pub fn gradient_sky(sky: &Sky) -> GradientSky {
 }
 
 /// The scene's sky onto the main world. The sun needs nothing here: aurora reads the scene's
-/// `DirectionalLight` itself.
-///
-/// TODO(aurora): `sun_size` / `sun_intensity` belong on a `SunDisk` on the light.
+/// `DirectionalLight` (and its `SunDisk`) itself.
 fn follow_the_scene_sky(
     mut commands: Commands,
     environments: Query<&Environment>,

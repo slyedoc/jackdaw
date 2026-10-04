@@ -28,10 +28,6 @@ pub struct Sky {
     pub horizon_softness: f32,
     /// Sky luminance in candela per square metre; 1000 shows the colours as authored.
     pub brightness: f32,
-    /// Angular diameter of the disc drawn at the first directional light, in degrees.
-    pub sun_size: f32,
-    /// Disc brightness as a multiple of that light's illuminance.
-    pub sun_intensity: f32,
     /// How much of the sky the cloud covers, 0..1.
     pub cloud_coverage: f32,
     /// Cloud colour; its alpha is how much of the sky it hides.
@@ -51,8 +47,6 @@ impl Default for Sky {
             ground: Color::srgb(0.35, 0.36, 0.38),
             horizon_softness: 0.35,
             brightness: 1000.0,
-            sun_size: 1.0,
-            sun_intensity: 1.0,
             cloud_coverage: 0.0,
             cloud_color: Color::WHITE,
             cloud_scale: 1.0,

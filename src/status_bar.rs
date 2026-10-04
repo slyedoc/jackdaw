@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{light::RectLight, prelude::*};
 use bevy_aurora::mesh::AuroraMesh3d;
 use jackdaw_feathers::status_bar::{StatusBarCenter, StatusBarLeft, StatusBarRight};
 
@@ -500,6 +500,7 @@ pub fn update_scene_stats(
     point_lights: Query<(), (With<PointLight>, Without<EditorEntity>)>,
     dir_lights: Query<(), (With<DirectionalLight>, Without<EditorEntity>)>,
     spot_lights: Query<(), (With<SpotLight>, Without<EditorEntity>)>,
+    rect_lights: Query<(), (With<RectLight>, Without<EditorEntity>)>,
     cameras: Query<(), (With<Camera3d>, Without<EditorEntity>)>,
     mut text_query: Query<&mut Text, With<SceneStatsText>>,
 ) {
@@ -509,8 +510,10 @@ pub fn update_scene_stats(
 
     let total = scene_entities.iter().count();
     let mesh_count = meshes.iter().count();
-    let light_count =
-        point_lights.iter().count() + dir_lights.iter().count() + spot_lights.iter().count();
+    let light_count = point_lights.iter().count()
+        + dir_lights.iter().count()
+        + spot_lights.iter().count()
+        + rect_lights.iter().count();
     let camera_count = cameras.iter().count();
 
     let new_text = format!(

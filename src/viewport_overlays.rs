@@ -8,7 +8,7 @@ use crate::selection::Selected;
 use crate::viewport::{AxisIndicator, MainViewportCamera, SceneViewport};
 use crate::{JackdawDrawSystems, default_style};
 use avian3d::parry::transformation::convex_hull;
-use bevy::light::{FogVolume, VolumetricFog};
+use bevy::light::{FogVolume, RectLight, VolumetricFog};
 use bevy::picking::prelude::Pickable;
 use bevy::prelude::*;
 use bevy::ui::widget::ViewportNode;
@@ -56,6 +56,7 @@ impl Plugin for ViewportOverlaysPlugin {
                 (
                     draw_point_light_gizmo,
                     draw_spot_light_gizmo,
+                    draw_rect_light_gizmo,
                     draw_dir_light_gizmo,
                     draw_camera_gizmo,
                     draw_empty_entity_marker,
@@ -528,6 +529,40 @@ fn draw_spot_light_gizmo(
         gizmos.line(pos, tip - right * r, color);
         gizmos.line(pos, tip + up * r, color);
         gizmos.line(pos, tip - up * r, color);
+    }
+}
+
+/// Rect light: its rectangle always (it is the light's shape), plus the way it faces when
+/// selected.
+fn draw_rect_light_gizmo(
+    mut gizmos: Gizmos<EntityGizmoGroup>,
+    settings: Res<OverlaySettings>,
+    query: Query<
+        (
+            &RectLight,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
+        With<crate::entity_ops::SceneLight>,
+    >,
+) {
+    for (light, tf, inherited_vis, selected) in &query {
+        if !inherited_vis.get() {
+            continue;
+        }
+        let color = marker_color(selected);
+        let (_, rotation, pos) = tf.to_scale_rotation_translation();
+        gizmos.rect(
+            Isometry3d::new(pos, rotation),
+            Vec2::new(light.width, light.height),
+            color,
+        );
+        if selected || settings.show_bounding_boxes {
+            // It emits along its local -Z.
+            let reach = light.width.max(light.height);
+            gizmos.arrow(pos, pos + tf.forward().as_vec3() * reach, color);
+        }
     }
 }
 

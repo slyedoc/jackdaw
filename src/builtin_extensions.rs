@@ -15,6 +15,7 @@ use bevy::{
         tokens as feathers_tokens,
     },
     input_focus::tab_navigation::TabIndex,
+    light::RectLight,
     prelude::*,
     window::SystemCursorIcon,
 };
@@ -627,6 +628,10 @@ fn world_kind_icons() -> Vec<(String, Icon)> {
         (DirectionalLight::type_path().to_string(), Icon::Sun),
         (PointLight::type_path().to_string(), Icon::Lightbulb),
         (SpotLight::type_path().to_string(), Icon::Flashlight),
+        (
+            RectLight::type_path().to_string(),
+            Icon::RectangleHorizontal,
+        ),
         (AuroraMesh3d::type_path().to_string(), Icon::Box),
     ]
 }
