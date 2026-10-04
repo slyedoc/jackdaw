@@ -8,8 +8,8 @@
 //! which kind it holds.
 
 use crate::{
-    FoliageMaterial, LayeredSurfaceMaterial, WaterMaterial,
-    foliage::Foliage3d, surface_class::LayeredSurface3d, water::Water3d,
+    FoliageMaterial, LayeredSurfaceMaterial, WaterMaterial, foliage::Foliage3d,
+    surface_class::LayeredSurface3d, water::Water3d,
 };
 use bevy::asset::UntypedHandle;
 use bevy::prelude::*;

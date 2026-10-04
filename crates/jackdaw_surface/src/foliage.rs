@@ -24,7 +24,6 @@ use jackdaw_scene_types::{SceneWind, Wind};
 
 use crate::surface_class::{ExtendedSurface, Mirrors, mirror_extended};
 
-
 /// The material an entity wears to blow with the wind and pass light.
 /// TODO(aurora): no `foliage.rchit` yet, so the class is `OPAQUE` and a plant shades as its
 /// base: right colour and cutout, no wind and no light through the leaves. Aurora's
@@ -342,8 +341,6 @@ mod tests {
             turbulence_scale: 8.0,
         };
     }
-
-
 
     /// An unedited foliage material is a standard material with a cutout:
     /// nothing leans, nothing is tinted and nothing glows.

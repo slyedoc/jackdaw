@@ -27,6 +27,7 @@ pub mod registry;
 pub mod selection;
 pub mod sync;
 
+use bevy::prelude::*;
 pub use canvas::{GraphCanvasViewport, GraphCanvasWorld, canvas, canvas_world};
 pub use commands::{
     AddGraphNodeCmd, CreateConnectionCmd, MoveGraphNodesCmd, RemoveConnectionCmd,
@@ -38,12 +39,11 @@ pub use graph::{
     Connection, GraphCanvasView, GraphNode, GraphNodeSelected, NodeGraph, Terminal,
     TerminalDirection,
 };
+use jackdaw_commands::CommandHistory;
 pub use node_widget::{GraphNodeBody, GraphNodeView, body_label, node};
 pub use registry::{NodeTypeDescriptor, NodeTypeRegistry, TerminalDescriptor};
 pub use selection::GraphSelection;
 pub use sync::CanvasWorldIndex;
-use bevy::prelude::*;
-use jackdaw_commands::CommandHistory;
 
 /// Registers all node-graph types, resources, systems, and assets.
 pub struct NodeGraphPlugin;

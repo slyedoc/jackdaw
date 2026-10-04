@@ -294,7 +294,6 @@ impl Water {
     }
 }
 
-
 /// Registers the water material, its shader and its reflected type, so a scene
 /// naming one renders it.
 pub struct WaterPlugin;
@@ -317,7 +316,6 @@ impl Plugin for WaterPlugin {
             );
     }
 }
-
 
 /// Hand every water material the wind the scene is blowing by, so a wind
 /// authored once carries every surface wearing one.

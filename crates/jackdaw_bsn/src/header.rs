@@ -208,7 +208,8 @@ pub fn walk_document_files(dir: &Path) -> Vec<PathBuf> {
     found
         .into_iter()
         .filter(|path| {
-            !bevy::bsn_document::is_binary_path(path) || !text.contains(&bevy::bsn_document::text_twin(path))
+            !bevy::bsn_document::is_binary_path(path)
+                || !text.contains(&bevy::bsn_document::text_twin(path))
         })
         .collect()
 }

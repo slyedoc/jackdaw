@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 #[cfg(feature = "render")]
+use aurora_material::AuroraMaterial;
+#[cfg(feature = "render")]
 use bevy::prelude::Handle;
 #[cfg(feature = "reflect")]
 use bevy::prelude::{Reflect, ReflectDefault};
 use glam::{Quat, Vec2, Vec3};
-#[cfg(feature = "render")]
-use aurora_material::AuroraMaterial;
 
 pub mod mirror;
 pub use mirror::{

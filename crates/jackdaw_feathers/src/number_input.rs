@@ -138,112 +138,112 @@ impl Default for ScrubNumberInputProps {
 impl ScrubNumberInput {
     fn scene(props: ScrubNumberInputProps) -> impl Scene {
         bsn! {
-            @FeathersTextInputContainer
-            Node {
-                column_gap: px(0),
-                border: UiRect {
-                    left: px(if props.label_text.is_some() { 3.0 } else { 0.0 }),
-                },
-                padding: UiRect {
-                    left: px(0.0),
-                    right: px(0.0),
-                },
-            }
-            ThemeBorderColor({props.sigil_color})
-            BackgroundColor({crate::tokens::ELEVATED_BG})
-            ScrubNumberInput
-            on(number_input_on_insert_value)
-            on(number_input_on_insert_disabled)
-            on(number_input_on_remove_disabled)
-            Children [
-                {
-                    // Label section
-                    props.label_text.map(|text| {
-                        bsn_list! {
-                            Node {
-                                display: Display::Flex,
-                                align_items: AlignItems::Center,
-                                align_self: AlignSelf::Stretch,
-                                justify_content: JustifyContent::Center,
-                                padding: UiRect::axes(px(6), px(0)),
-                            }
-                            ThemeBackgroundColor(tokens::TEXT_INPUT_LABEL_BG)
-                            Children [
-                                Text(text)
-                                TextFont {
-                                    font: FontSourceTemplate::Handle(fonts::REGULAR),
-                                    font_size: size::COMPACT_FONT,
+                    @FeathersTextInputContainer
+                    Node {
+                        column_gap: px(0),
+                        border: UiRect {
+                            left: px(if props.label_text.is_some() { 3.0 } else { 0.0 }),
+                        },
+                        padding: UiRect {
+                            left: px(0.0),
+                            right: px(0.0),
+                        },
+                    }
+                    ThemeBorderColor({props.sigil_color})
+                    BackgroundColor({crate::tokens::ELEVATED_BG})
+                    ScrubNumberInput
+                    on(number_input_on_insert_value)
+                    on(number_input_on_insert_disabled)
+                    on(number_input_on_remove_disabled)
+                    Children [
+                        {
+                            // Label section
+                            props.label_text.map(|text| {
+                                bsn_list! {
+                                    Node {
+                                        display: Display::Flex,
+                                        align_items: AlignItems::Center,
+                                        align_self: AlignSelf::Stretch,
+                                        justify_content: JustifyContent::Center,
+                                        padding: UiRect::axes(px(6), px(0)),
+                                    }
+                                    ThemeBackgroundColor(tokens::TEXT_INPUT_LABEL_BG)
+                                    Children [
+                                        Text(text)
+                                        TextFont {
+                                            font: FontSourceTemplate::Handle(fonts::REGULAR),
+                                            font_size: size::COMPACT_FONT,
+                                        }
+                                        PropagateOver<TextFont>
+                                        ThemeTextColor(tokens::TEXT_INPUT_TEXT)
+                                    ]
                                 }
-                                PropagateOver<TextFont>
-                                ThemeTextColor(tokens::TEXT_INPUT_TEXT)
-                            ]
+                            })
                         }
-                    })
-                }
---
-                // The editable text entity
-                @FeathersTextInput {
-                    @max_characters: 20usize,
-                }
-                Node {
-                    flex_grow: 1.0,
-                    align_items: AlignItems::Center,
-                    align_self: AlignSelf::Stretch,
-                    border_radius: {
-                        if props.label_text.is_some() {
-                            RoundedCorners::Right.to_border_radius(4.0)
-                        } else {
-                            RoundedCorners::All.to_border_radius(4.0)
+        --
+                        // The editable text entity
+                        @FeathersTextInput {
+                            @max_characters: 20usize,
                         }
-                    },
-                }
-                Hovered
-                EditableTextFilter::new(|c| {
-                    c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
-                })
-                LineHeight::Px(24.0) // TODO: Make const for this
-                TextLayout {
-                    justify: Justify::Center,
-                }
-                ThemeTextColor(tokens::TEXT_INPUT_TEXT)
-                // Use a gradient to draw the moving bar, this lets us round corners
-                BackgroundGradient(vec![Gradient::Linear(LinearGradient {
-                    angle: PI * 0.5,
-                    stops: vec![
-                        ColorStop::new(Color::WHITE, percent(0)),
-                        ColorStop::new(Color::WHITE, percent(50)),
-                        ColorStop::new(Color::NONE, percent(50)),
-                        ColorStop::new(Color::NONE, percent(100)),
-                    ],
-                    color_space: InterpolationColorSpace::Srgba,
-                })])
-                EntityCursor::System(bevy::window::SystemCursorIcon::ColResize)
-                on(number_input_init)
-                on(number_input_on_enter_key)
-                on(number_input_on_focus_gained)
-                on(number_input_on_focus_lost)
-                on(number_input_hovered)
-                Children [
-                        // Invisible child on top of input field which intercepts drag
-                        // events (conditionally) and handles scrubbing gestures.
-                        ScrubberDragState
                         Node {
-                            position_type: PositionType::Absolute,
-                            left: px(0),
-                            top: px(0),
-                            bottom: px(0),
-                            right: px(0),
+                            flex_grow: 1.0,
+                            align_items: AlignItems::Center,
+                            align_self: AlignSelf::Stretch,
+                            border_radius: {
+                                if props.label_text.is_some() {
+                                    RoundedCorners::Right.to_border_radius(4.0)
+                                } else {
+                                    RoundedCorners::All.to_border_radius(4.0)
+                                }
+                            },
                         }
-                        on(scrubber_on_acquire_focus)
-                        on(scrubber_on_press)
-                        on(scrubber_on_release)
-                        on(scrubber_on_drag_start)
-                        on(scrubber_on_drag)
-                        on(scrubber_on_drag_end)
-                        on(scrubber_on_drag_cancel)
-                ]
-            ]
-        }
+                        Hovered
+                        EditableTextFilter::new(|c| {
+                            c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')
+                        })
+                        LineHeight::Px(24.0) // TODO: Make const for this
+                        TextLayout {
+                            justify: Justify::Center,
+                        }
+                        ThemeTextColor(tokens::TEXT_INPUT_TEXT)
+                        // Use a gradient to draw the moving bar, this lets us round corners
+                        BackgroundGradient(vec![Gradient::Linear(LinearGradient {
+                            angle: PI * 0.5,
+                            stops: vec![
+                                ColorStop::new(Color::WHITE, percent(0)),
+                                ColorStop::new(Color::WHITE, percent(50)),
+                                ColorStop::new(Color::NONE, percent(50)),
+                                ColorStop::new(Color::NONE, percent(100)),
+                            ],
+                            color_space: InterpolationColorSpace::Srgba,
+                        })])
+                        EntityCursor::System(bevy::window::SystemCursorIcon::ColResize)
+                        on(number_input_init)
+                        on(number_input_on_enter_key)
+                        on(number_input_on_focus_gained)
+                        on(number_input_on_focus_lost)
+                        on(number_input_hovered)
+                        Children [
+                                // Invisible child on top of input field which intercepts drag
+                                // events (conditionally) and handles scrubbing gestures.
+                                ScrubberDragState
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: px(0),
+                                    top: px(0),
+                                    bottom: px(0),
+                                    right: px(0),
+                                }
+                                on(scrubber_on_acquire_focus)
+                                on(scrubber_on_press)
+                                on(scrubber_on_release)
+                                on(scrubber_on_drag_start)
+                                on(scrubber_on_drag)
+                                on(scrubber_on_drag_end)
+                                on(scrubber_on_drag_cancel)
+                        ]
+                    ]
+                }
     }
 }
 

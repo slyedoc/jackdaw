@@ -809,6 +809,7 @@ dependencies = [
  "ash-window",
  "aurora_material",
  "aurora_mesh",
+ "avian3d",
  "bevy",
  "bytemuck",
  "crossbeam",

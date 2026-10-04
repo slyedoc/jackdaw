@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 
-use bevy::app::PluginGroup as _;
+use bevy::app::{PluginGroup, PluginGroupBuilder};
 use bevy::prelude::*;
-use bevy_aurora::AuroraMinimalPlugins;
 use jackdaw::prelude::*;
 use jackdaw_api_internal::lifecycle::{ExtensionAppExt as _, OperatorEntity, enable_extension};
 use jackdaw_api_internal::snapshot::{ActiveSnapshotter, SceneSnapshot};
@@ -15,6 +14,54 @@ use jackdaw_api_internal::snapshot::{ActiveSnapshotter, SceneSnapshot};
 #[allow(dead_code, reason = "shared across test binaries")]
 pub fn skip_setup_check() {
     jackdaw_project_build::bootstrap::skip_setup_check();
+}
+
+/// The aurora group the editor boots on, minus the device: the assets, types and loaders a
+/// scene can name (`Assets<AuroraMaterial>`, the surface-class registry, ...), and nothing that
+/// draws. No window or audio backend. With no GPU there is no transform readback, so bevy's
+/// own `TransformPlugin` fills `GlobalTransform` on the CPU.
+struct HeadlessAurora;
+
+impl PluginGroup for HeadlessAurora {
+    fn build(self) -> PluginGroupBuilder {
+        use bevy_aurora::{
+            animclip, assets, bsn, collision, material, mesh, render_texture, shader, skinning,
+            sky, sphere, surface_group, ui_render,
+        };
+        PluginGroupBuilder::start::<Self>()
+            // Before AssetPlugin: registers the `aurora://` source for the engine's own assets.
+            .add(assets::AuroraAssetSourcePlugin)
+            .add(bevy::log::LogPlugin::default())
+            .add(bevy::app::TaskPoolPlugin::default())
+            .add(bevy::diagnostic::FrameCountPlugin)
+            .add(bevy::time::TimePlugin)
+            .add(bevy::transform::TransformPlugin)
+            .add(bevy::diagnostic::DiagnosticsPlugin)
+            .add(bevy::input::InputPlugin)
+            .add(bevy::window::WindowPlugin {
+                close_when_requested: false,
+                ..default()
+            })
+            .add(bevy::a11y::AccessibilityPlugin)
+            .add(bevy::asset::AssetPlugin::default())
+            .add(bevy::scene::ScenePlugin)
+            .add(bevy::bsn_asset::BsnAssetPlugin)
+            .add(bevy::animation::AnimationPlugin)
+            .add(bevy::world_serialization::WorldSerializationPlugin)
+            // Aurora's asset, loader and reflection registrations only.
+            .add(shader::ShaderPlugin)
+            .add(material::MaterialPlugin)
+            .add(render_texture::RenderTexturePlugin)
+            .add(mesh::AuroraMeshPlugin)
+            .add(collision::CollisionPlugin)
+            .add(sphere::SpherePlugin)
+            .add(surface_group::SurfaceGroupPlugin)
+            .add(bsn::BsnPlugin)
+            .add(animclip::AnimClipPlugin)
+            .add(skinning::SkinTypesPlugin)
+            .add(sky::SkyPlugin)
+            .add(ui_render::UiTreePlugin)
+    }
 }
 
 pub fn headless_app() -> App {
@@ -32,20 +79,12 @@ pub fn headless_app() -> App {
 pub fn ambient_app() -> App {
     skip_setup_check();
     let mut app = App::new();
-    // The same aurora group the editor boots on, minus the device: the editor reads
-    // `Assets<AuroraMaterial>` and the surface-class registry, and bevy's `DefaultPlugins`
-    // carries neither. It has no window or audio backend to disable.
-    //
-    // The two additions mirror `src/main.rs`: aurora carries no state machinery, and
-    // CPU transform propagation is what the editor's picking and handles read.
+    // The two additions mirror `src/main.rs`: aurora carries no state machinery or gizmos.
     app.add_plugins(
-        AuroraMinimalPlugins
+        HeadlessAurora
             .build()
             .add(bevy::state::app::StatesPlugin)
-            .add(bevy::gizmos::GizmoPlugin)
-            .set(bevy_aurora::transform::TransformPlugin {
-                propagate_on_cpu: true,
-            }),
+            .add(bevy::gizmos::GizmoPlugin),
     )
     // Ambient plugins moved to the binary entry point (matches
     // the launcher's `src/main.rs` and the static template's

@@ -106,14 +106,6 @@ fn main() -> AppExit {
         // GizmoRenderPlugin is the draw half and is already in the group; this is the
         // render-free half that DefaultPlugins used to bring.
         .add(bevy::gizmos::GizmoPlugin)
-        // Aurora propagates only ROOT transforms by default, because the tracer reads its
-        // own GPU transforms and never touches `GlobalTransform`. An editor does: brush
-        // handles, gizmo placement, viewport picking and the scene tree all read a
-        // descendant's `GlobalTransform`, and every one of them would silently read the
-        // identity without CPU propagation.
-        .set(bevy_aurora::transform::TransformPlugin {
-            propagate_on_cpu: true,
-        })
         .set(AssetPlugin {
             file_path: project_root.join("assets").to_string_lossy().to_string(),
             ..default()

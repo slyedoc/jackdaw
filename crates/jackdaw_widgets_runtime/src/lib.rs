@@ -1365,10 +1365,9 @@ mod tests {
         use bevy::feathers::tokens;
 
         let mut theirs = ThemeProps::default();
-        let semantic =
-            bevy::feathers::theme::SemanticToken::new(smol_str::SmolStr::new(
-                tokens::BUTTON_BG.to_string(),
-            ));
+        let semantic = bevy::feathers::theme::SemanticToken::new(smol_str::SmolStr::new(
+            tokens::BUTTON_BG.to_string(),
+        ));
         theirs
             .token_assignments
             .insert(tokens::BUTTON_BG, semantic.clone());
