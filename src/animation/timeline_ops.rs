@@ -5,15 +5,13 @@
 
 use bevy::prelude::*;
 use jackdaw_animation::{
-    AnimationTrack, Clip, ClipEvent, ClipRecording, ImportedClipView, Interpolation, LoopMode,
-    OnionSkin, SelectedClip, SelectedTrack, TimelineCursor, TimelineDirty, TimelineSnap,
-    TimelineView, TimelineZoom,
+    AnimationTrack, Clip, ClipEvent, ClipRecording, Interpolation, LoopMode, OnionSkin,
+    SelectedClip, SelectedTrack, TimelineCursor, TimelineDirty, TimelineSnap, TimelineView,
+    TimelineZoom,
 };
 use jackdaw_api::prelude::*;
 use jackdaw_commands::{CommandHistory, EditorCommand};
 
-use super::markers::{clip_event_row, clip_event_row_in, clip_event_row_name};
-use super::preview::AnimationPreview;
 use crate::selection::Selection;
 
 /// The reflected type path of the authored clip, which is what a field edit
@@ -97,13 +95,11 @@ pub(crate) fn clip_loop_mode(
 pub(crate) fn clip_event_add(
     params: In<OperatorParameters>,
     selected: Res<SelectedClip>,
-    imported: Res<ImportedClipView>,
-    preview: Res<AnimationPreview>,
     cursor: Res<TimelineCursor>,
     snap: Res<TimelineSnap>,
     mut commands: Commands,
 ) -> OperatorResult {
-    let row = event_row(&selected, &imported, &preview)?;
+    let row = selected.0?;
     let time = params
         .as_float("time")
         .map_or_else(|| snap.round(cursor.seek_time), |time| time as f32)
@@ -129,24 +125,14 @@ pub(crate) fn clip_event_add(
 pub(crate) fn clip_event_remove(
     _: In<OperatorParameters>,
     selected: Res<SelectedClip>,
-    imported: Res<ImportedClipView>,
-    preview: Res<AnimationPreview>,
     cursor: Res<TimelineCursor>,
     children: Query<&Children>,
-    names: Query<&Name>,
-    placed: Query<(), With<Transform>>,
     events: Query<&ClipEvent>,
     mut commands: Commands,
 ) -> OperatorResult {
-    let row = event_row(&selected, &imported, &preview)?;
-    let holder = match &row {
-        EventRow::Authored(clip) => *clip,
-        EventRow::Named { owner, file, clip } => {
-            clip_event_row(*owner, file, clip, &children, &names, &placed)?
-        }
-    };
+    let row = selected.0?;
     let nearest = children
-        .get(holder)
+        .get(row)
         .into_iter()
         .flatten()
         .filter_map(|child| events.get(*child).ok().map(|event| (*child, event.time)))
@@ -163,9 +149,7 @@ pub(crate) fn clip_event_remove(
         run_event_edit(
             world,
             ClipEventEdit {
-                row,
-                on: None,
-                made_row: false,
+                clip: row,
                 event: Some(nearest),
                 time: held.time,
                 name: held.name,
@@ -176,30 +160,9 @@ pub(crate) fn clip_event_remove(
     OperatorResult::Finished
 }
 
-/// Where an event placed now would go, which is nowhere while a library clip
-/// plays on a preview model that goes away with the preview.
-fn event_row(
-    selected: &SelectedClip,
-    imported: &ImportedClipView,
-    preview: &AnimationPreview,
-) -> Option<EventRow> {
-    if let Some(clip) = selected.0 {
-        return Some(EventRow::Authored(clip));
-    }
-    let (file, clip) = imported.clip.as_deref()?.rsplit_once('#')?;
-    Some(EventRow::Named {
-        owner: preview.owner()?,
-        file: file.to_string(),
-        clip: clip.to_string(),
-    })
-}
-
-fn an_event_can_be_placed(
-    selected: Res<SelectedClip>,
-    imported: Res<ImportedClipView>,
-    preview: Res<AnimationPreview>,
-) -> bool {
-    event_row(&selected, &imported, &preview).is_some()
+/// An event goes on the chosen authored clip.
+fn an_event_can_be_placed(selected: Res<SelectedClip>) -> bool {
+    selected.0.is_some()
 }
 
 /// Take a track out of the compiled clip, or put it back.
@@ -446,29 +409,13 @@ fn set_field(
     mark_dirty(world);
 }
 
-/// What a clip event hangs under: a library clip is no entity, so its events
-/// hang under a child of the entity playing it, named for the clip.
-enum EventRow {
-    /// An authored clip, which holds its own events.
-    Authored(Entity),
-    /// A row named for a library clip, under the entity playing it.
-    Named {
-        owner: Entity,
-        file: String,
-        clip: String,
-    },
-}
-
 /// Adding or removing one clip event, as a step undo can take back.
 ///
 /// The event is respawned rather than restored by id: an id handed back is
 /// free to be someone else's by the time undo reaches for it.
 struct ClipEventEdit {
-    row: EventRow,
-    /// The row the event hangs under, once it exists.
-    on: Option<Entity>,
-    /// Whether this edit made that row, so undo takes it back away.
-    made_row: bool,
+    /// The authored clip the event hangs under.
+    clip: Entity,
     /// The live event, once one exists. Rewritten on every undo and redo.
     event: Option<Entity>,
     time: f32,
@@ -478,11 +425,9 @@ struct ClipEventEdit {
 }
 
 impl ClipEventEdit {
-    fn adding(row: EventRow, time: f32, name: String) -> Self {
+    fn adding(clip: Entity, time: f32, name: String) -> Self {
         Self {
-            row,
-            on: None,
-            made_row: false,
+            clip,
             event: None,
             time,
             name,
@@ -490,33 +435,11 @@ impl ClipEventEdit {
         }
     }
 
-    /// The row to hang the event under, made and put in the document when a
-    /// library clip has none yet.
-    fn open_row(&mut self, world: &mut World) -> Option<Entity> {
-        self.made_row = false;
-        let (owner, file, clip) = match &self.row {
-            EventRow::Authored(clip) => return world.entities().contains(*clip).then_some(*clip),
-            EventRow::Named { owner, file, clip } => (*owner, file.clone(), clip.clone()),
-        };
-        if !world.entities().contains(owner) {
-            return None;
-        }
-        if let Some(row) = clip_event_row_in(world, owner, &file, &clip) {
-            return Some(row);
-        }
-        let row = world
-            .spawn((Name::new(clip_event_row_name(&file, &clip)), ChildOf(owner)))
-            .id();
-        crate::scene_io::register_entity_in_ast(world, row);
-        self.made_row = true;
-        Some(row)
-    }
-
     fn spawn(&mut self, world: &mut World) {
-        let Some(row) = self.open_row(world) else {
+        if !world.entities().contains(self.clip) {
             return;
-        };
-        self.on = Some(row);
+        }
+        let row = self.clip;
         let event = world
             .spawn((
                 ClipEvent {
@@ -531,18 +454,10 @@ impl ClipEventEdit {
         self.event = Some(event);
     }
 
-    /// Take the event away, and the row with it when this edit made it; a row an
-    /// earlier event made stays, being where the next event goes.
+    /// Take the event away.
     fn despawn(&mut self, world: &mut World) {
         if let Some(event) = self.event.take() {
             crate::commands::despawn_scene_entity(world, event);
-        }
-        if !self.made_row {
-            return;
-        }
-        self.made_row = false;
-        if let Some(row) = self.on.take() {
-            crate::commands::despawn_scene_entity(world, row);
         }
     }
 }

@@ -62,14 +62,14 @@ pub struct PhysicsSimulationPlugin;
 
 impl Plugin for PhysicsSimulationPlugin {
     fn build(&self, app: &mut App) {
-        // `PhysicsPlugins` is owned by the hosting binary's
-        // `main.rs`. Asserting presence here lets user
-        // `MyGamePlugin`s add the same plugin without conflict.
+        // `PhysicsPlugins` comes with aurora's default plugins.
+        // Asserting presence here lets user `MyGamePlugin`s add
+        // the same plugin without conflict.
         // This plugin only owns jackdaw-specific physics state.
         debug_assert!(
             app.is_plugin_added::<PhysicsSchedulePlugin>(),
             "PhysicsSimulationPlugin requires PhysicsPlugins first; \
-             add `PhysicsPlugins::default()` in main.rs before JackdawEditorPlugins."
+             it comes with AuroraDefaultPlugins."
         );
         app.init_resource::<PhysicsToolState>()
             .add_systems(Startup, pause_physics_on_startup);

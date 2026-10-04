@@ -1309,9 +1309,6 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
 /// edited through the same index as any other asset.
 pub const MATERIAL_KIND: &str = "material";
 
-/// The kind an animation graph file holds.
-pub const ANIMATION_GRAPH_KIND: &str = "animation_graph";
-
 /// The kind a packed prefab holds.
 pub const PREFAB_KIND: &str = "prefab";
 
@@ -1325,7 +1322,7 @@ pub const FOLIAGE_KIND: &str = "foliage";
 pub const WATER_KIND: &str = "water";
 
 /// The types the editor has compiled in.
-fn compiled_kinds() -> [AssetKind; 6] {
+fn compiled_kinds() -> [AssetKind; 5] {
     use jackdaw_api_internal::lucide_icons::Icon;
     [
         AssetKind::compiled(
@@ -1335,13 +1332,11 @@ fn compiled_kinds() -> [AssetKind; 6] {
         )
         .with_icon(Icon::Palette),
         AssetKind::compiled(
-            ANIMATION_GRAPH_KIND,
-            "Animation Graph",
-            <jackdaw_animation_runtime::graph::AnimationGraphDef as bevy::reflect::TypePath>::type_path(),
+            PREFAB_KIND,
+            "Prefab",
+            jackdaw_prefab::components::PREFAB_TYPE,
         )
-        .with_icon(Icon::Workflow),
-        AssetKind::compiled(PREFAB_KIND, "Prefab", jackdaw_prefab::components::PREFAB_TYPE)
-            .with_icon(Icon::Package),
+        .with_icon(Icon::Package),
         AssetKind::compiled(
             LAYERED_SURFACE_KIND,
             "Layered Surface",

@@ -69,9 +69,12 @@ const SKIP_COMPONENT_PATHS: &[&str] = &[
     // multiplayer gate on clients). Persisting it plants a rig that fights
     // those systems on every load.
     "jackdaw_camera_rig::ActiveCameraRig",
-    // Which graph state is playing and for how long: written every frame by
-    // the evaluator, so a saved value would be stale before the file closed.
-    "jackdaw_animation_runtime::graph::AnimationGraphPlayback",
+    // An `AnimationRig`'s player and the bone bindings it stamps: derived from
+    // the rig and its names whenever it spawns, and a saved player would be
+    // stale before the file closed.
+    "bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer",
+    "bevy_animation::AnimationTargetId",
+    "bevy_animation::AnimatedBy",
     // Render-state handles are always derived in the editor (brush chunks,
     // terrain chunks, GLTF instances, reference-image quads) and rebuilt
     // from the authored components on load; serializing them would inline

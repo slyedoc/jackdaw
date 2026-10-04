@@ -13,7 +13,7 @@ use jackdaw_editor::prelude::*;
 fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(editor_window_plugin()))
-        .add_plugins((EnhancedInputPlugin, PhysicsPlugins::default()))
+        .add_plugins(EnhancedInputPlugin)
         .add_plugins(JackdawEditorPlugins::default())
         .run()
 }

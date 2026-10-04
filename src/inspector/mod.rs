@@ -1,6 +1,5 @@
 pub(crate) mod add_header;
 pub(crate) mod anim_diamond;
-mod animation_graph_card;
 pub(crate) mod asset_row;
 pub mod bindings_card;
 mod brush_display;

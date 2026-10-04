@@ -128,14 +128,10 @@ fn main() -> AppExit {
         // want to happen to the editor. Log an error instead.
         .set_error_handler(error_handler)
         .add_plugins(default_plugins)
-        // Ambient plugins added next to `DefaultPlugins`. The
-        // editor's `EditorCorePlugin` and `PhysicsSimulationPlugin`
-        // assert presence, so user `MyGamePlugin`s can add the
-        // same plugins without conflict.
+        // Ambient plugins added next to the default ones (which bring physics
+        // and animation graphs). `EditorCorePlugin` asserts presence, so user
+        // `MyGamePlugin`s can add the same plugin without conflict.
         .add_plugins(bevy_enhanced_input::prelude::EnhancedInputPlugin);
-    if std::env::var_os("JD_PERF_NO_PHYSICS").is_none() {
-        app.add_plugins(avian3d::prelude::PhysicsPlugins::default());
-    }
     app.add_plugins(editor_plugins);
 
     // The resolved asset root, so the open flow can tell whether a requested project is

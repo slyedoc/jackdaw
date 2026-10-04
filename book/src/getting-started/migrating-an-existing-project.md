@@ -124,8 +124,8 @@ impl Plugin for GamePlugin {
 }
 ```
 
-Keep ambient plugins such as `DefaultPlugins` and `PhysicsPlugins` in the
-standalone `main.rs`. To expose authorable components, derive Bevy reflection:
+Keep ambient plugins such as `DefaultPlugins` in the standalone `main.rs`
+(aurora's default plugins bring avian's `PhysicsPlugins` and bevy_animation_graph). To expose authorable components, derive Bevy reflection:
 
 ```rust
 #[derive(Component, Reflect, Default)]

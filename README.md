@@ -94,7 +94,6 @@ fn main() -> AppExit {
         .add_plugins((
             DefaultPlugins.set(editor_window_plugin()),
             EnhancedInputPlugin,
-            PhysicsPlugins::default(),
             JackdawEditorPlugins::default(),
         ))
         .run()

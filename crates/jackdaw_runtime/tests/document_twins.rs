@@ -5,12 +5,8 @@
 use std::path::Path;
 
 use bevy::asset::io::{AssetReaderError, AssetSourceBuilders, AssetSourceId};
-use bevy::asset::{AssetApp, AssetLoadError, AssetMode, AssetPlugin, LoadState};
+use bevy::asset::{AssetLoadError, AssetMode, AssetPlugin, LoadState};
 use bevy::prelude::*;
-use bevy::reflect::TypePath;
-use jackdaw_animation_runtime::{
-    AnimationGraphAsset, AnimationGraphDef, AnimationGraphLoader, register_animation_graph_types,
-};
 use jackdaw_runtime::{JackdawAssetSourcePlugin, JackdawPlugin, JackdawScene, JackdawSceneRoot};
 
 const ANCHOR: &str = "bevy_ecs::hierarchy::Children [
@@ -24,10 +20,6 @@ const SPARE: &str = "bevy_ecs::hierarchy::Children [
     bevy_transform::components::transform::Transform
 ]
 ";
-
-fn graph_text() -> String {
-    format!("{} {{ entry: \"idle\" }}\n", AnimationGraphDef::type_path())
-}
 
 fn source_plugin(dir: &Path) -> JackdawAssetSourcePlugin {
     JackdawAssetSourcePlugin {
@@ -84,46 +76,6 @@ fn a_scene_asked_for_as_text_spawns_from_its_binary_twin() {
         pump(&mut app, |app| named(app, "Anchor")),
         "the binary twin answered a reference written as text"
     );
-}
-
-#[test]
-fn a_graph_asked_for_as_text_loads_from_its_binary_twin() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(dir.path().join("animation")).unwrap();
-    jackdaw_bsn::write_document_text(
-        &dir.path().join("animation/walk.animgraph.bsb"),
-        &graph_text(),
-    )
-    .unwrap();
-
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(source_plugin(dir.path()));
-    app.add_plugins(AssetPlugin {
-        file_path: dir.path().to_string_lossy().into_owned(),
-        ..Default::default()
-    });
-    register_animation_graph_types(&mut app);
-    app.init_asset::<AnimationGraphAsset>()
-        .init_asset_loader::<AnimationGraphLoader>();
-
-    let handle: Handle<AnimationGraphAsset> = app
-        .world()
-        .resource::<AssetServer>()
-        .load("animation/walk.animgraph.bsn");
-
-    let loaded = pump(&mut app, |app| {
-        app.world()
-            .resource::<Assets<AnimationGraphAsset>>()
-            .get(&handle)
-            .is_some()
-    });
-    assert!(
-        loaded,
-        "a graph reference written as text reached the binary twin"
-    );
-    let graphs = app.world().resource::<Assets<AnimationGraphAsset>>();
-    assert_eq!(graphs.get(&handle).expect("the graph").def.entry, "idle");
 }
 
 #[test]

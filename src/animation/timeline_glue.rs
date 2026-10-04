@@ -5,17 +5,14 @@
 //! The animation crate draws and asks; nothing in it reaches for the
 //! selection, the command history or the asset server, all of which live here.
 
-use bevy::animation::AnimationTargetId;
 use bevy::prelude::*;
 use jackdaw_animation::{
-    AnimationTrack, Clip, ClipRecording, ImportedClipView, KeyframeRetimed,
-    KeyframesMarqueeSelected, SelectedClip, SelectedTrack, TimelineCursor, TimelineDirty,
-    TimelineSnap, TimelineZoom,
+    AnimationTrack, Clip, ClipRecording, KeyframeRetimed, KeyframesMarqueeSelected, SelectedTrack,
+    TimelineCursor, TimelineDirty, TimelineSnap, TimelineZoom,
 };
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::text_edit::{TextEditCommitEvent, TextEditValue};
 
-use super::preview::AnimationPreview;
 use crate::selection::Selection;
 
 /// How far up from a committed field the marker that owns it can sit.
@@ -370,77 +367,6 @@ pub(super) fn record_edited_fields(
     }
 }
 
-/// Say what the Timeline tab should show for the clip the library is
-/// previewing, so a glTF clip has a read-only sheet of its own.
-pub(super) fn describe_previewed_clip(
-    preview: Res<AnimationPreview>,
-    selected: Res<SelectedClip>,
-    mut view: ResMut<ImportedClipView>,
-    mut dirty: ResMut<TimelineDirty>,
-    gltfs: Res<Assets<bevy::gltf::Gltf>>,
-    asset_server: Res<AssetServer>,
-    clips: Res<Assets<AnimationClip>>,
-    targets: Query<(&AnimationTargetId, &Name)>,
-    children: Query<&Children>,
-    names: Query<&Name>,
-    placed: Query<(), With<Transform>>,
-) {
-    let wanted = preview
-        .clip()
-        .filter(|_| selected.0.is_none())
-        .map(|(file, name)| (file.to_string(), name.to_string()));
-    let Some((file, name)) = wanted else {
-        if view.clip.is_some() {
-            *view = ImportedClipView::default();
-            dirty.0 = true;
-        }
-        return;
-    };
-    let row = preview.owner().and_then(|owner| {
-        super::markers::clip_event_row(owner, &file, &name, &children, &names, &placed)
-    });
-    let spec = format!("{file}#{name}");
-    if view.clip.as_deref() == Some(spec.as_str()) {
-        if view.row != row {
-            view.row = row;
-            dirty.0 = true;
-        }
-        return;
-    }
-
-    let handle = asset_server.get_handle(crate::entity_ops::to_asset_path(&file));
-    let clip = handle
-        .and_then(|handle: Handle<bevy::gltf::Gltf>| gltfs.get(&handle))
-        .and_then(|gltf| gltf.named_animations.get(name.as_str()).cloned())
-        .and_then(|clip| clips.get(&clip));
-    let Some(clip) = clip else {
-        return;
-    };
-
-    let mut bones_a_skeleton_in_the_scene_can_name: Vec<String> = clip
-        .curves()
-        .keys()
-        .filter_map(|wanted| {
-            targets
-                .iter()
-                .find(|(id, _)| *id == wanted)
-                .map(|(_, name)| name.as_str().to_string())
-        })
-        .collect();
-    bones_a_skeleton_in_the_scene_can_name.sort_unstable();
-    bones_a_skeleton_in_the_scene_can_name.dedup();
-
-    *view = ImportedClipView {
-        clip: Some(spec),
-        name,
-        duration: clip.duration(),
-        bones: bones_a_skeleton_in_the_scene_can_name,
-        curve_count: clip.curves().len(),
-        row,
-    };
-    dirty.0 = true;
-}
-
 /// Keep the toolbar's readouts on what they read: the playhead in seconds and
 /// in frames, and how far the sheet is zoomed.
 ///
@@ -541,7 +467,6 @@ pub(super) fn plugin(app: &mut App) {
                 commit_retimed_keyframes,
                 apply_marquee_selection,
                 record_edited_fields,
-                describe_previewed_clip,
                 refresh_timeline_readouts,
             )
                 .run_if(in_state(crate::AppState::Editor)),

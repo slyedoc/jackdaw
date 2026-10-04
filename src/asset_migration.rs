@@ -90,12 +90,6 @@ pub(crate) fn open_edit(world: &World) -> Option<&'static str> {
     if crate::definition_assets::open_card_has_unsaved_edits(world) {
         return Some("an open asset has edits that are not saved");
     }
-    if world
-        .get_resource::<crate::animation::graph_doc::AnimationGraphDoc>()
-        .is_some_and(|doc| doc.dirty)
-    {
-        return Some("the open animation graph has edits that are not saved");
-    }
     None
 }
 

@@ -1,47 +1,18 @@
-//! The Animation panel and the clip library behind it.
+//! The Animation panel: the keyframe timeline and its operators.
 
-pub mod graph_doc;
-pub mod graph_ops;
-pub mod graph_window;
-pub mod library;
-pub mod markers;
 pub mod panel;
-pub mod preview;
 pub mod timeline_glue;
 pub mod timeline_ops;
 
-pub use graph_doc::AnimationGraphDoc;
-pub use graph_window::{GRAPH_WINDOW_ID, animation_graph_window_content};
-pub use library::{AnimationLibrary, LibraryClip, LibraryDemand, LibraryFile};
-pub use panel::{AnimationPanelState, AnimationPanelTab, animation_panel_content};
-pub use preview::{AnimationPreview, PreviewMannequin};
+pub use panel::animation_panel_content;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
 
 pub(crate) fn plugin(app: &mut App) {
-    // The library indexes glTF clips; no glTF loader is added on aurora, so the store is
-    // registered here rather than arriving with one.
-    if !app.world().contains_resource::<Assets<bevy::gltf::Gltf>>() {
-        app.init_asset::<bevy::gltf::Gltf>();
-    }
-    app.add_plugins((
-        graph_window::plugin,
-        library::plugin,
-        markers::plugin,
-        panel::plugin,
-        preview::plugin,
-        timeline_glue::plugin,
-    ));
+    app.add_plugins(timeline_glue::plugin);
 }
 
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
-    ctx.register_operator::<panel::AnimationPanelTabOp>()
-        .register_operator::<panel::AnimationLibrarySelectOp>()
-        .register_operator::<panel::AnimationLibraryAddStateOp>()
-        .register_operator::<preview::AnimationPreviewOp>()
-        .register_operator::<preview::AnimationPreviewPauseOp>()
-        .register_operator::<preview::AnimationPreviewStopOp>();
-    graph_ops::add_to_extension(ctx);
     timeline_ops::add_to_extension(ctx);
 }

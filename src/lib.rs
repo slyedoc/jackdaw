@@ -10,6 +10,7 @@ pub mod active_tool;
 pub mod add_entity_picker;
 pub mod alignment_guides;
 pub mod animation;
+pub mod animgraph;
 pub mod app_ops;
 pub mod asset_catalog;
 pub mod asset_drag;
@@ -512,6 +513,7 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(jackdaw_animation::AnimationPlugin)
         .add_plugins(jackdaw_animation_runtime::AnimationRuntimePlugin)
         .add_plugins(animation::plugin)
+        .add_plugins(animgraph::plugin)
         .add_plugins(windowing::WindowingPlugin)
         .add_plugins(jackdaw_panels::DockPlugin)
         .add_plugins(input_contexts::InputContextsPlugin)
@@ -686,7 +688,7 @@ impl Plugin for ExtensionPlugin {
                 .register_extension::<builtin_extensions::ProjectWindowExtension>()
                 .register_extension::<builtin_extensions::GamePanelExtension>()
                 .register_extension::<builtin_extensions::TimelineExtension>()
-                .register_extension::<builtin_extensions::AnimationGraphExtension>()
+                .register_extension::<animgraph::AnimationGraphExtension>()
                 .register_extension::<builtin_extensions::TerminalExtension>()
                 .register_extension::<build_panel::BuildPanelExtension>()
                 .register_extension::<builtin_extensions::InspectorExtension>()

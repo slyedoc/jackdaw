@@ -91,8 +91,11 @@ pub fn ambient_app() -> App {
     // `editor.rs.template`). Mirror that here so the editor's
     // internal `debug_assert!`s for `PhysicsSchedulePlugin` and
     // `EnhancedInputPlugin` find what they expect.
+    // The headless set is not AuroraDefaultPlugins, which brings physics and
+    // animation graphs to the editor; add them as it does.
     .add_plugins((
         avian3d::prelude::PhysicsPlugins::default(),
+        bevy_animation_graph::AnimationGraphPlugin::default(),
         bevy_enhanced_input::prelude::EnhancedInputPlugin,
     ));
     app

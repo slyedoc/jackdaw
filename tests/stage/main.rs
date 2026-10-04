@@ -7,9 +7,6 @@
 #[path = "../util/mod.rs"]
 mod util;
 
-mod animation_graph;
-mod animation_library;
-mod animation_markers;
 mod animation_timeline;
 mod asset_references;
 mod brush_ops;

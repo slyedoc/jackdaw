@@ -1164,9 +1164,6 @@ pub fn assets_handler(
         let paths: Vec<&String> = found.iter().map(|(path, _)| path).collect();
         return Ok(Some(json!({ "assets": paths })));
     }
-    if let Some(mut demand) = world.get_resource_mut::<crate::animation::LibraryDemand>() {
-        demand.requested = true;
-    }
     world.get_resource_or_init::<crate::asset_files::AssetKindCache>();
     let detailed: Vec<Value> = world.resource_scope(
         |world, mut cache: Mut<crate::asset_files::AssetKindCache>| {
@@ -1174,14 +1171,10 @@ pub fn assets_handler(
             let assets_dir = world
                 .get_resource::<crate::project::ProjectRoot>()
                 .map(crate::project::ProjectRoot::assets_dir);
-            let library = world.get_resource::<crate::animation::AnimationLibrary>();
             found
                 .into_iter()
                 .map(|(path, binary)| {
-                    let clips: Vec<&str> = library
-                        .and_then(|library| library.file(&path))
-                        .map(|file| file.clips.iter().map(|clip| clip.name.as_str()).collect())
-                        .unwrap_or_default();
+                    let clips: Vec<&str> = Vec::new();
                     let kind = asset_kinds
                         .zip(assets_dir.as_ref())
                         .and_then(|(kinds, assets)| {
