@@ -92,9 +92,12 @@ fn draw_infinite_grid(
         while step < min_step || radius / step > MAX_LINES_PER_AXIS as f32 {
             step *= interval;
         }
-        let count = (radius / step).ceil() as i32;
-        let snap = |v: f32| (v / step).round() * step;
-        let (cx, cz) = (snap(eye.x), snap(eye.z));
+        // Lines sit at whole multiples of `step` in grid space, numbered from the origin, so
+        // they stay put as the camera moves; only the fade window follows the eye.
+        let count = (radius / step).ceil() as i64;
+        let interval = interval as i64;
+        let (ex, ez) = (eye.x, eye.z);
+        let (kx, kz) = ((ex / step).round() as i64, (ez / step).round() as i64);
 
         // Alpha peaks at the point on the line nearest the eye and reaches zero at
         // `radius`, so each line is two gradient segments meeting under the camera. One
@@ -110,35 +113,30 @@ fn draw_infinite_grid(
                 outer,
             );
         };
-
-        for i in -count..=count {
-            let offset = i as f32 * step;
-            let major = i.rem_euclid(interval as i32) == 0;
-            let line_color = if major {
+        let color_of = |k: i64, axis: Color| {
+            if k == 0 {
+                axis
+            } else if k.rem_euclid(interval) == 0 {
                 settings.major_line_color
             } else {
                 settings.minor_line_color
-            };
+            }
+        };
 
-            let x = cx + offset;
-            let color = if x == 0.0 {
-                settings.z_axis_color
-            } else {
-                line_color
-            };
-            let mid = Vec3::new(x, 0.0, cz);
-            ray(mid, Vec3::new(x, 0.0, cz - radius), offset, color);
-            ray(mid, Vec3::new(x, 0.0, cz + radius), offset, color);
+        for i in -count..=count {
+            let k = kx + i;
+            let x = k as f32 * step;
+            let color = color_of(k, settings.z_axis_color);
+            let mid = Vec3::new(x, 0.0, ez);
+            ray(mid, Vec3::new(x, 0.0, ez - radius), x - ex, color);
+            ray(mid, Vec3::new(x, 0.0, ez + radius), x - ex, color);
 
-            let z = cz + offset;
-            let color = if z == 0.0 {
-                settings.x_axis_color
-            } else {
-                line_color
-            };
-            let mid = Vec3::new(cx, 0.0, z);
-            ray(mid, Vec3::new(cx - radius, 0.0, z), offset, color);
-            ray(mid, Vec3::new(cx + radius, 0.0, z), offset, color);
+            let k = kz + i;
+            let z = k as f32 * step;
+            let color = color_of(k, settings.x_axis_color);
+            let mid = Vec3::new(ex, 0.0, z);
+            ray(mid, Vec3::new(ex - radius, 0.0, z), z - ez, color);
+            ray(mid, Vec3::new(ex + radius, 0.0, z), z - ez, color);
         }
     }
 }
