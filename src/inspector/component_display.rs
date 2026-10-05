@@ -200,7 +200,10 @@ pub(crate) fn sync_inspector_to_selection(
 /// Whether the editor has a registration for the type the document names, or
 /// for the type an authored enum variant belongs to.
 fn known_to_the_editor(registry: &bevy::reflect::TypeRegistry, type_path: &str) -> bool {
-    if registry.get_with_type_path(type_path).is_some() {
+    // A hand-written document may spell a type by its short path, as bevy's loader allows.
+    if registry.get_with_type_path(type_path).is_some()
+        || (!type_path.contains("::") && registry.get_with_short_type_path(type_path).is_some())
+    {
         return true;
     }
     enclosing_type(type_path).is_some_and(|base| registry.get_with_type_path(base).is_some())

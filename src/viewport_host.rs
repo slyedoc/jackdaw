@@ -25,6 +25,8 @@ pub enum ViewportMode {
     ThreeD,
     /// The 2D canvas: an orthographic stage at the authored reference size.
     TwoD,
+    /// An animation graph or state machine document, drawn as a node canvas.
+    Graph,
 }
 
 impl ViewportMode {
@@ -43,6 +45,7 @@ impl ViewportMode {
         match value.trim().to_ascii_lowercase().as_str() {
             "3d" => Some(Self::ThreeD),
             "2d" => Some(Self::TwoD),
+            "graph" => Some(Self::Graph),
             _ => None,
         }
     }
@@ -77,6 +80,8 @@ pub struct ViewportHost {
     pub three_d: Entity,
     /// Root of the 2D presentation's column.
     pub two_d: Entity,
+    /// Root of the node-canvas column.
+    pub graph: Entity,
 }
 
 /// The panel that answers for the editor's one 2D canvas: the first showing the
@@ -118,11 +123,13 @@ fn first_host_in<'a>(
 pub fn build_viewport_panel_in(world: &mut World, parent: Entity, intent: ViewportModeIntent) {
     let three_d = crate::viewport::build_3d_presentation(world, parent);
     let two_d = crate::viewport_2d::build_2d_presentation(world, parent);
+    let graph = crate::animgraph::build_graph_presentation(world, parent);
     world.entity_mut(parent).insert(ViewportHost {
         mode: intent.mode,
         mode_chosen: intent.chosen,
         three_d,
         two_d,
+        graph,
     });
     // Directly, rather than waiting for the scheduled pass: a panel that spent
     // its first frame showing both columns would stack them.
@@ -153,7 +160,13 @@ pub(crate) fn apply_viewport_mode(
 ) {
     for (entity, host, three_d, two_d) in &hosts {
         let shows_3d = host.mode == ViewportMode::ThreeD;
-        for (column, shown) in [(host.three_d, shows_3d), (host.two_d, !shows_3d)] {
+        let shows_2d = host.mode == ViewportMode::TwoD;
+        let shows_graph = host.mode == ViewportMode::Graph;
+        for (column, shown) in [
+            (host.three_d, shows_3d),
+            (host.two_d, shows_2d),
+            (host.graph, shows_graph),
+        ] {
             let Ok(mut node) = nodes.get_mut(column) else {
                 continue;
             };
@@ -162,7 +175,7 @@ pub(crate) fn apply_viewport_mode(
                 node.display = display;
             }
         }
-        for (camera, active) in [(three_d.camera, shows_3d), (two_d.camera, !shows_3d)] {
+        for (camera, active) in [(three_d.camera, shows_3d), (two_d.camera, shows_2d)] {
             if let Ok(mut camera) = cameras.get_mut(camera)
                 && camera.is_active != active
             {
@@ -170,11 +183,10 @@ pub(crate) fn apply_viewport_mode(
             }
         }
         // A gesture cannot outlive the presentation it was started on.
-        if shows_3d {
-            if panning.0 == Some(entity) {
-                panning.0 = None;
-            }
-        } else {
+        if !shows_2d && panning.0 == Some(entity) {
+            panning.0 = None;
+        }
+        if !shows_3d {
             fly.0 = false;
         }
     }

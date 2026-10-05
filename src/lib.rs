@@ -2781,9 +2781,20 @@ fn handle_menu_action(event: On<MenuAction>, mut commands: Commands) {
     let Some(op_id) = event.action.strip_prefix(OP_PREFIX) else {
         return;
     };
+    // `op:id?key=value&...`: the same spelling a context-menu item's operator call takes.
+    let (op_id, query) = op_id.split_once('?').unwrap_or((op_id, ""));
     let op_id = op_id.to_string();
+    let params: Vec<(String, String)> = query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
     commands.queue(move |world: &mut World| {
-        if let Err(err) = world.operator(op_id.clone()).call() {
+        let mut call = world.operator(op_id.clone());
+        for (key, value) in params {
+            call = call.param(key, value);
+        }
+        if let Err(err) = call.call() {
             error!("operator dispatch failed for `{op_id}`: {err}");
         }
     });

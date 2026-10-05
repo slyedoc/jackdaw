@@ -276,7 +276,7 @@ impl ProjectWindowState {
         self.expanded.contains(directory)
     }
 
-    fn rebuild(&mut self) {
+    pub(crate) fn rebuild(&mut self) {
         self.needs_refresh = true;
         self.needs_tree_refresh = true;
     }
@@ -342,8 +342,8 @@ struct ProjectFolderTask(Task<Option<rfd::FileHandle>>);
 /// Where the context menu was opened, so the action observer can resolve the
 /// click against the row rather than the selection.
 #[derive(Resource, Default)]
-struct MenuTarget {
-    path: PathBuf,
+pub struct MenuTarget {
+    pub path: PathBuf,
 }
 
 pub struct ProjectWindowPlugin;
@@ -1629,6 +1629,8 @@ fn on_file_double_click(event: On<FileItemDoubleClicked>, mut commands: Commands
 const NEW_FOLDER_ACTION: &str = "project.new_folder";
 const NEW_SCENE_ACTION: &str = "project.new_scene";
 const NEW_ASSET_ACTION: &str = "project.new_asset";
+const NEW_ANIM_GRAPH_ACTION: &str = "project.new_anim_graph";
+const NEW_ANIM_FSM_ACTION: &str = "project.new_anim_fsm";
 const DUPLICATE_ACTION: &str = "project.duplicate";
 const RENAME_ACTION: &str = "project.rename";
 const REVEAL_ACTION: &str = "project.reveal";
@@ -1659,6 +1661,8 @@ fn open_context_menu(
         items.push((NEW_FOLDER_ACTION, "New Folder"));
         items.push((NEW_SCENE_ACTION, "New Scene"));
         items.push((NEW_ASSET_ACTION, crate::new_asset::NEW_ASSET_LABEL));
+        items.push((NEW_ANIM_GRAPH_ACTION, "New Animation Graph"));
+        items.push((NEW_ANIM_FSM_ACTION, "New State Machine"));
     }
     if jackdaw_bsn::is_document_path(path) {
         items.push(match jackdaw_bsn::is_binary_path(path) {
@@ -1691,6 +1695,15 @@ fn on_context_action(
     if action == RENAME_ACTION {
         state.renaming = Some(target.path.clone());
         state.needs_refresh = true;
+    } else if action == NEW_ANIM_GRAPH_ACTION || action == NEW_ANIM_FSM_ACTION {
+        commands
+            .operator("animgraph.new")
+            .param("path", target.path.to_string_lossy().into_owned())
+            .param(
+                "kind",
+                if action == NEW_ANIM_FSM_ACTION { "fsm" } else { "graph" }.to_string(),
+            )
+            .call();
     } else {
         let Some(operator) = operator_for_action(action) else {
             return;

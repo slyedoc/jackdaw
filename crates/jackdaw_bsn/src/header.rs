@@ -216,6 +216,7 @@ pub fn walk_document_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Every file under `dir` whose extension is one of `extensions`, as absolute
 /// paths, skipping hidden directories and following no symlink out of the tree.
+/// A multi-dot entry (`anim.ron`) matches the whole suffix.
 pub fn walk_files_with_extensions(dir: &Path, extensions: &[&str]) -> Vec<PathBuf> {
     let mut found = Vec::new();
     collect_files(dir, extensions, 0, &mut found);
@@ -245,15 +246,12 @@ fn collect_files(dir: &Path, extensions: &[&str], depth: usize, found: &mut Vec<
         }
         if file_type.is_dir() {
             collect_files(&path, extensions, depth + 1, found);
-        } else if path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| {
-                extensions
-                    .iter()
-                    .any(|wanted| extension.eq_ignore_ascii_case(wanted))
-            })
-        {
+        } else if extensions.iter().any(|wanted| {
+            let lower = name.to_ascii_lowercase();
+            lower
+                .strip_suffix(&wanted.to_ascii_lowercase())
+                .is_some_and(|stem| stem.ends_with('.') && stem.len() > 1)
+        }) {
             found.push(path);
         }
     }

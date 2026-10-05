@@ -347,14 +347,86 @@ fn extensions(taxonomy: &mut CreationTaxonomy, world: &mut World) {
     }
 }
 
+/// The node vocabulary, when the active document is an animation graph (every registered node
+/// type, grouped by what it works on) or a state machine (a state). Answers whether it was one.
+fn graph_nodes(taxonomy: &mut CreationTaxonomy, world: &mut World) -> bool {
+    use crate::animgraph::document::{DocKind, active_kind};
+    use bevy_animation_graph::core::animation_node::ReflectNodeLike;
+
+    match active_kind(world) {
+        None => false,
+        Some(DocKind::Fsm) => {
+            taxonomy.groups.push(group(GENERAL_GROUP, GENERAL_SECTION, 0));
+            taxonomy.entries.push(CreationEntry {
+                group: GENERAL_GROUP.into(),
+                label: "State".into(),
+                action: "op:animgraph.add_state".into(),
+            });
+            true
+        }
+        Some(DocKind::Graph) => {
+            // (category, order): the pose nodes first, the arithmetic last.
+            fn category(name: &str) -> (&'static str, i32) {
+                let has = |part: &str| name.contains(part);
+                if has("Event") || has("Fire") {
+                    ("Events", 70)
+                } else if has("Blend") {
+                    ("Blend", 90)
+                } else if has("Fsm") || has("Graph") {
+                    ("Graphs", 80)
+                } else if name.ends_with("F32") {
+                    ("Math: f32", 40)
+                } else if name.ends_with("Vec3") {
+                    ("Math: Vec3", 30)
+                } else if name.ends_with("Quat") || name.contains("Quat") {
+                    ("Math: Quat", 20)
+                } else if name.ends_with("Bool") || has("And") || has("Or") || has("Not") {
+                    ("Math: Bool", 10)
+                } else {
+                    ("Pose", 100)
+                }
+            }
+            let registry = world.resource::<AppTypeRegistry>().clone();
+            let registry = registry.read();
+            let mut nodes: Vec<(String, String)> = registry
+                .iter_with_data::<ReflectNodeLike>()
+                .map(|(registration, _)| {
+                    let info = registration.type_info();
+                    (
+                        info.type_path_table().short_path().to_string(),
+                        info.type_path().to_string(),
+                    )
+                })
+                .collect();
+            nodes.sort();
+            for (short, path) in nodes {
+                let (label, order) = category(&short);
+                let id = format!("animgraph.{}", label.to_lowercase());
+                if taxonomy.group(&id).is_none() {
+                    taxonomy.groups.push(group(&id, label, order));
+                }
+                taxonomy.entries.push(CreationEntry {
+                    group: id,
+                    label: short.trim_end_matches("Node").to_string(),
+                    action: format!("op:animgraph.add_node?node={path}"),
+                });
+            }
+            true
+        }
+    }
+}
+
 impl CreationTaxonomy {
     /// Read the whole vocabulary out of the world.
     pub fn collect(world: &mut World) -> Self {
         let mut taxonomy = Self::default();
-        builtin(&mut taxonomy);
-        widgets(&mut taxonomy, world);
-        assets(&mut taxonomy, world);
-        extensions(&mut taxonomy, world);
+        // An animation graph or state machine document creates nodes, not entities.
+        if !graph_nodes(&mut taxonomy, world) {
+            builtin(&mut taxonomy);
+            widgets(&mut taxonomy, world);
+            assets(&mut taxonomy, world);
+            extensions(&mut taxonomy, world);
+        }
         taxonomy.groups.sort_by_key(|group| {
             (
                 std::cmp::Reverse(group.order),

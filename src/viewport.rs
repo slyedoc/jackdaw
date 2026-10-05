@@ -973,6 +973,8 @@ pub(crate) fn update_active_viewport(
                         mode: host.mode,
                         three_d: None,
                     }),
+                // The node canvas takes its own pointer input.
+                ViewportMode::Graph => None,
             };
             if hit.is_some() {
                 hovered = hit;

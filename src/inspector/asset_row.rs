@@ -578,10 +578,18 @@ pub(crate) fn assets_for_row(world: &World, row: &AssetFieldRow) -> Vec<String> 
 fn file_extensions(asset_type_path: &str) -> &'static [&'static str] {
     use bevy::reflect::TypePath as _;
 
-    if asset_type_path == Image::type_path() {
-        IMAGE_EXTENSIONS
-    } else {
-        &[]
+    use bevy_animation_graph::core::{
+        animation_clip::GraphClip, animation_graph::AnimationGraph, skeleton::Skeleton,
+        state_machine::high_level::StateMachine,
+    };
+
+    match asset_type_path {
+        p if p == Image::type_path() => IMAGE_EXTENSIONS,
+        p if p == GraphClip::type_path() => &["anim.ron"],
+        p if p == AnimationGraph::type_path() => &["animgraph.bsn"],
+        p if p == StateMachine::type_path() => &["fsm.bsn"],
+        p if p == Skeleton::type_path() => &["skn.ron"],
+        _ => &[],
     }
 }
 
@@ -691,7 +699,14 @@ fn browse_for_asset(world: &mut World, row: Entity) {
         }
     }
     .set_title(format!("Select a file for {}", field.field_path))
-    .add_filter(short_type(&field.asset_type_path), extensions);
+    .add_filter(
+        short_type(&field.asset_type_path),
+        // The desktop dialog filters on the last extension only.
+        &extensions
+            .iter()
+            .map(|e| e.rsplit('.').next().unwrap_or(e))
+            .collect::<Vec<_>>(),
+    );
     let task = bevy::tasks::AsyncComputeTaskPool::get().spawn(
         crate::native_dialog::unless_suppressed(move || dialog.pick_file()),
     );
