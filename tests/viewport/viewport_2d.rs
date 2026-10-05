@@ -2392,7 +2392,6 @@ fn spawn_viewport_panel(
                 mode_chosen: true,
                 three_d,
                 two_d,
-                graph: Entity::PLACEHOLDER,
             },
             jackdaw_panels::area::DockTabContent {
                 window_id: jackdaw::viewport::VIEWPORT_WINDOW_ID.to_string(),

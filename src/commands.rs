@@ -185,6 +185,54 @@ pub(crate) fn field_edit_commit(
     if crate::definition_assets::commit_definition_field(world, type_path, field_path, new_json) {
         return;
     }
+    // A node of a graph held beside the scene: the edit goes to the held document, as one entry
+    // on the scene's history.
+    let held_path = world
+        .get_resource::<crate::selection::Selection>()
+        .and_then(crate::selection::Selection::primary)
+        .filter(|&entity| crate::animgraph::held::is_held(world, entity))
+        .and_then(|_| {
+            world
+                .get_resource::<crate::animgraph::held::HeldGraph>()?
+                .0
+                .as_ref()
+                .map(|doc| doc.path.clone())
+        });
+    if let Some(path) = held_path {
+        let (type_path, field_path, group_label) =
+            (type_path.to_string(), field_path.to_string(), group_label.to_string());
+        let new_json = new_json.clone();
+        let built = crate::animgraph::held::with_held(world, |world| {
+            field_edit_commit_built(world, &type_path, &field_path, &new_json, &group_label)
+        })
+        .flatten();
+        if let Some(inner) = built {
+            if let Some(doc) = world
+                .resource_mut::<crate::animgraph::held::HeldGraph>()
+                .0
+                .as_mut()
+            {
+                doc.dirty = true;
+            }
+            world
+                .resource_mut::<CommandHistory>()
+                .push_executed(Box::new(crate::animgraph::held::HeldCommand { path, inner }));
+        }
+        return;
+    }
+    if let Some(cmd) = field_edit_commit_built(world, type_path, field_path, new_json, group_label) {
+        world.resource_mut::<CommandHistory>().push_executed(cmd);
+    }
+}
+
+/// Build, execute and return a field edit's command, without pushing it.
+fn field_edit_commit_built(
+    world: &mut World,
+    type_path: &str,
+    field_path: &str,
+    new_json: &serde_json::Value,
+    group_label: &str,
+) -> Option<Box<dyn EditorCommand>> {
     // Immediate commits (no prior preview) still need a derived baseline.
     field_edit_begin(world, type_path, field_path);
     let mut targets = field_edit_session_targets(world);
@@ -224,7 +272,7 @@ pub(crate) fn field_edit_commit(
     clear_field_edit_session(world, type_path, field_path);
 
     if sub_commands.is_empty() {
-        return;
+        return None;
     }
 
     let mut cmd: Box<dyn EditorCommand> = if sub_commands.len() == 1 {
@@ -236,7 +284,7 @@ pub(crate) fn field_edit_commit(
         })
     };
     cmd.execute(world);
-    world.resource_mut::<CommandHistory>().push_executed(cmd);
+    Some(cmd)
 }
 
 /// Set one field on one entity's component, as one undo entry. Unlike

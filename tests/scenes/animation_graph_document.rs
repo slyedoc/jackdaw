@@ -1,5 +1,5 @@
-//! A `.animgraph.bsn` opens as a document: the viewport shows it as a node canvas, and canvas
-//! edits are document edits that undo and save like any other.
+//! A `.animgraph.bsn` is held open beside the scene: canvas edits are edits of the held document
+//! that undo on the scene's history and save to the graph's own file.
 
 use crate::util;
 
@@ -9,8 +9,6 @@ use bevy_animation_graph::core::animation_graph::{
     AnimationGraph, SourcePin, TargetPin, bsn::node_id,
 };
 use jackdaw::animgraph::document;
-use jackdaw::migrate_dialog::request_open_with_conversion;
-use jackdaw::viewport_host::{ViewportMode, ViewportModeIntent};
 
 const GRAPH: &str = r#"#walk
 AnimGraph { outputs: [Time, Data("pose", Pose)] }
@@ -27,7 +25,7 @@ Children [
 "#;
 
 fn open(app: &mut App, path: &std::path::Path) {
-    request_open_with_conversion(app.world_mut(), path);
+    jackdaw::animgraph::open_graph(app.world_mut(), path);
     for _ in 0..3 {
         app.update();
     }
@@ -55,10 +53,6 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
     std::fs::write(&path, GRAPH).expect("write graph");
     open(&mut app, &path);
 
-    assert_eq!(
-        app.world().resource::<ViewportModeIntent>().mode,
-        ViewportMode::Graph
-    );
     let built = graph(&app);
     assert_eq!(built.nodes.len(), 2);
     assert_eq!(built.edges_inverted.len(), 1);
@@ -98,7 +92,7 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
         Some(&Vec2::new(5.0, 6.0))
     );
 
-    assert!(jackdaw::scene_io::save_scene(app.world_mut()), "the document saves");
+    assert!(jackdaw::animgraph::held::save(app.world_mut()), "the graph saves");
     let saved = std::fs::read_to_string(&path).expect("read back");
     assert!(saved.contains("SpeedNode"), "{saved}");
     assert!(saved.contains("NodePosition(5.0, 6.0)"), "{saved}");
@@ -180,13 +174,16 @@ fn renaming_a_node_keeps_its_links() {
     edit(&mut app, |world| {
         world.resource_scope(|world, mut history: Mut<CommandHistory>| {
             history.execute(
-                Box::new(SetBsnField {
-                    entity: looped,
-                    type_path: "bevy_ecs::name::Name".into(),
-                    field_path: String::new(),
-                    old_value: Some(jackdaw_bsn::BsnValue::String("loop".into())),
-                    new_value: jackdaw_bsn::BsnValue::String("cycle".into()),
-                    was_derived: false,
+                Box::new(jackdaw::animgraph::held::HeldCommand {
+                    path: path.clone(),
+                    inner: Box::new(SetBsnField {
+                        entity: looped,
+                        type_path: "bevy_ecs::name::Name".into(),
+                        field_path: String::new(),
+                        old_value: Some(jackdaw_bsn::BsnValue::String("loop".into())),
+                        new_value: jackdaw_bsn::BsnValue::String("cycle".into()),
+                        was_derived: false,
+                    }),
                 }),
                 world,
             );
@@ -237,10 +234,6 @@ fn a_new_graph_and_a_new_state_machine_start_from_the_project_window() {
             assert!(tmp.path().join("state_machine_1.fsm.bsn").exists());
             assert!(document::active_fsm(app.world()).is_some(), "it opened and built");
         }
-        assert_eq!(
-            app.world().resource::<ViewportModeIntent>().mode,
-            ViewportMode::Graph
-        );
     }
 }
 
@@ -285,10 +278,17 @@ fn the_add_menu_makes_a_graph_in_the_shown_folder() {
     use jackdaw_api::prelude::*;
 
     let mut app = util::editor_test_app();
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let project = tempfile::tempdir().expect("tempdir");
+    let shown = project.path().join("assets/anim");
+    std::fs::create_dir_all(&shown).unwrap();
+    app.world_mut().insert_resource(jackdaw::project::ProjectRoot {
+        root: project.path().to_path_buf(),
+        config: default(),
+    });
+    app.update();
     app.world_mut()
         .resource_mut::<jackdaw::project_window::ProjectWindowState>()
-        .current_directory = tmp.path().to_path_buf();
+        .current_directory = shown.clone();
     let _ = app
         .world_mut()
         .operator("animgraph.new_graph")
@@ -297,7 +297,7 @@ fn the_add_menu_makes_a_graph_in_the_shown_folder() {
     for _ in 0..3 {
         app.update();
     }
-    assert!(tmp.path().join("graph_1.animgraph.bsn").exists());
+    assert!(shown.join("graph_1.animgraph.bsn").exists());
     assert!(document::active_graph(app.world()).is_some(), "and it opened");
 }
 
@@ -309,6 +309,18 @@ fn the_add_picker_offers_nodes_in_a_graph_and_states_in_a_state_machine() {
     let path = tmp.path().join("walk.animgraph.bsn");
     std::fs::write(&path, GRAPH).expect("write graph");
     open(&mut app, &path);
+    app.world_mut().spawn(jackdaw::animgraph::graph_window_content());
+    app.update();
+    let over_the_graph_window = |app: &mut App| {
+        for mut rel in app
+            .world_mut()
+            .query::<&mut bevy::ui::RelativeCursorPosition>()
+            .iter_mut(app.world_mut())
+        {
+            rel.cursor_over = true;
+        }
+    };
+    over_the_graph_window(&mut app);
 
     let items = jackdaw::add_entity_picker::collect_add_menu_items(app.world_mut());
     let clip = items
@@ -330,6 +342,7 @@ fn the_add_picker_offers_nodes_in_a_graph_and_states_in_a_state_machine() {
     let fsm = tmp.path().join("moves.fsm.bsn");
     std::fs::write(&fsm, MACHINE).expect("write machine");
     open(&mut app, &fsm);
+    over_the_graph_window(&mut app);
     let items = jackdaw::add_entity_picker::collect_add_menu_items(app.world_mut());
     assert_eq!(
         items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>(),
@@ -358,3 +371,171 @@ fn a_clip_node_names_its_clip() {
     );
     assert!(document::clip_of_node(app.world(), node_id("loop").uuid()).is_none());
 }
+
+/// Add > Character writes a character prefab holding the project's rig and a starter graph that
+/// loops its idle clip, and opens the character.
+#[test]
+fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
+    use jackdaw_api::prelude::*;
+
+    let mut app = util::editor_test_app();
+    app.world_mut()
+        .spawn(jackdaw::layout::inspector_components_content(default()));
+    let project = tempfile::tempdir().expect("tempdir");
+    let assets = project.path().join("assets");
+    std::fs::create_dir_all(assets.join("ual")).unwrap();
+    std::fs::create_dir_all(assets.join("anim/ual")).unwrap();
+    // A rig as aurora_files bakes one: bones named by a `Name` component, no root Transform.
+    std::fs::write(
+        assets.join("ual/Mannequin.bsn"),
+        "#Mannequin\nbevy_ecs::hierarchy::Children [\n    bevy_ecs::name::Name(\"Armature\")\n    bevy_transform::components::transform::Transform\n    bevy_aurora::material::AuroraMaterial3d(\n        bevy_aurora::material::AuroraMaterial {\n            base_color: bevy_color::color::Color::LinearRgba(bevy_color::linear_rgba::LinearRgba { red: 0.8, green: 0.4, blue: 0.0, alpha: 1.0 }),\n        },\n    )\n]\n",
+    )
+    .unwrap();
+    std::fs::write(assets.join("ual/Mannequin.skn.ron"), "()").unwrap();
+    std::fs::write(assets.join("anim/ual/Crouch_Idle_Loop.anim.ron"), "()").unwrap();
+    std::fs::write(assets.join("anim/ual/Idle_Loop.anim.ron"), "()").unwrap();
+    app.world_mut().insert_resource(jackdaw::project::ProjectRoot {
+        root: project.path().to_path_buf(),
+        config: default(),
+    });
+    app.update();
+
+    let _ = app
+        .world_mut()
+        .operator("animgraph.new_character")
+        .call()
+        .expect("the Add entry's operator resolves");
+    for _ in 0..4 {
+        app.update();
+    }
+
+    let character = std::fs::read_to_string(assets.join("character_1.bsn")).expect("written");
+    assert!(character.contains(r#"skeleton: "ual/Mannequin.skn.ron""#), "{character}");
+    assert!(character.contains(r#"graph: "character_1.animgraph.bsn""#), "{character}");
+    assert!(character.contains(r#"IsA { source: "ual/Mannequin.bsn""#), "{character}");
+    let graph = std::fs::read_to_string(assets.join("character_1.animgraph.bsn")).expect("written");
+    assert!(graph.contains("anim/ual/Idle_Loop.anim.ron"), "{graph}");
+
+    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
+    let root = ast.roots[0];
+    assert!(
+        ast.component_type_paths(root)
+            .iter()
+            .any(|path| path.ends_with("AnimationRig")),
+        "the character opened, its root carrying the rig"
+    );
+
+    // Selected, the character shows its Playback card (in the Animation tab).
+    let character = ast.ecs_for_ast(root).expect("the character is live");
+    jackdaw::selection::select_only(app.world_mut(), character);
+    for _ in 0..8 {
+        app.update();
+    }
+    let titles: Vec<String> = app
+        .world_mut()
+        .query::<&Text>()
+        .iter(app.world())
+        .map(|t| t.0.clone())
+        .collect();
+    assert!(titles.iter().any(|t| t == "Playback"), "{titles:?}");
+
+    // The rig is there under the character: its bones, by name, placed (a Transform all the way).
+    let armature = app
+        .world_mut()
+        .query::<(Entity, &Name)>()
+        .iter(app.world())
+        .find_map(|(e, n)| (n.as_str() == "Armature").then_some(e))
+        .expect("the rig's bones spawned, named");
+    let instance = app.world().get::<ChildOf>(armature).expect("under the instance").parent();
+    assert!(app.world().get::<Transform>(instance).is_some(), "the instance is placed");
+
+    // A material written inline in the rig is a real material, not an empty handle.
+    let material = app
+        .world()
+        .get::<bevy_aurora::material::AuroraMaterial3d>(armature)
+        .expect("the bone carries its material")
+        .0
+        .clone();
+    let material = app
+        .world()
+        .resource::<Assets<bevy_aurora::material::AuroraMaterial>>()
+        .get(&material)
+        .expect("the inline material was added to the store");
+    assert_eq!(
+        material.base_color,
+        Color::LinearRgba(LinearRgba::new(0.8, 0.4, 0.0, 1.0))
+    );
+}
+
+/// A graph held open is edited beside the scene: the scene's document and file never see it.
+#[test]
+fn a_held_graph_leaves_the_open_scene_alone() {
+    let mut app = util::editor_test_app();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let scene = tmp.path().join("yard.bsn");
+    std::fs::write(
+        &scene,
+        "bevy_ecs::hierarchy::Children [\n    #Crate\n    bevy_transform::components::transform::Transform\n]\n",
+    )
+    .expect("write scene");
+    jackdaw::migrate_dialog::request_open_with_conversion(app.world_mut(), &scene);
+    for _ in 0..3 {
+        app.update();
+    }
+    let graph_path = tmp.path().join("walk.animgraph.bsn");
+    std::fs::write(&graph_path, GRAPH).expect("write graph");
+    open(&mut app, &graph_path);
+
+    let (clip, looped) = (node_id("clip"), node_id("loop"));
+    edit(&mut app, |world| {
+        document::connect(
+            world,
+            SourcePin::NodeData(clip, "pose".into()),
+            TargetPin::NodeData(looped, "pose".into()),
+        );
+    });
+    assert_eq!(graph(&app).edges_inverted.len(), 2, "the held graph took the edit");
+
+    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
+    let names: Vec<String> = ast
+        .roots
+        .iter()
+        .flat_map(|&r| std::iter::once(r).chain(ast.descendants_of(r)))
+        .filter_map(|n| ast.get_name(n).map(str::to_string))
+        .collect();
+    assert_eq!(names, ["Crate"], "the scene's document is the scene alone");
+
+    assert!(jackdaw::scene_io::save_scene(app.world_mut()), "the scene saves");
+    let saved = std::fs::read_to_string(&scene).expect("read back");
+    assert!(!saved.contains("ClipNode") && !saved.contains("Links"), "{saved}");
+}
+
+/// An inspector edit on a held node lands in the held graph, and saves with it.
+#[test]
+fn an_inspector_edit_on_a_held_node_lands_in_the_graph() {
+    use jackdaw_api::prelude::*;
+
+    let mut app = util::editor_test_app();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("walk.animgraph.bsn");
+    std::fs::write(&path, GRAPH).expect("write graph");
+    open(&mut app, &path);
+    let looped = document::node_entity(app.world(), node_id("loop").uuid()).expect("loop node");
+    jackdaw::selection::select_only(app.world_mut(), looped);
+    let _ = app
+        .world_mut()
+        .operator("field.set")
+        .param("entity", looped)
+        .param("type_path", "bevy_animation_graph::builtin_nodes::LoopNode".to_string())
+        .param("field", "interpolation_period".to_string())
+        .param("value", "0.5".to_string())
+        .call()
+        .expect("field.set resolves");
+    for _ in 0..3 {
+        app.update();
+    }
+    assert!(jackdaw::animgraph::held::save(app.world_mut()));
+    let saved = std::fs::read_to_string(&path).expect("read back");
+    assert!(saved.contains("interpolation_period: 0.5"), "{saved}");
+}
+

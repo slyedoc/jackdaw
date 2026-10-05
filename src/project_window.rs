@@ -1586,6 +1586,12 @@ fn open_path(world: &mut World, path: &Path, is_directory: bool) {
         return;
     }
 
+    // A graph or state machine is edited beside the scene, not opened over it.
+    if crate::animgraph::is_graph_path(&path) {
+        crate::animgraph::open_graph(world, &path);
+        return;
+    }
+
     let is_document = jackdaw_bsn::is_document_path(&path)
         || path
             .extension()

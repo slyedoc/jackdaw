@@ -28,9 +28,8 @@ use bevy_animation_graph::core::{
 use jackdaw_bsn::{BsnApplyAssets, SceneBsnAst};
 use uuid::Uuid;
 
-use super::{ArmGraph, CanvasView, seed_fsm_layout, seed_layout};
+use super::{CanvasView, seed_fsm_layout, seed_layout};
 use crate::commands::{CommandHistory, EditorCommand, SpawnEntity, sync_component_to_ast};
-use crate::viewport_host::{ViewportMode, ViewportModeIntent, focus_viewport, set_viewport_mode};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DocKind {
@@ -67,34 +66,32 @@ fn doc_kind(ast: &SceneBsnAst, root: Entity) -> Option<DocKind> {
 /// to the canvas while one is open.
 pub(super) fn track_graph_document(
     mut commands: Commands,
-    ast: Res<SceneBsnAst>,
+    held: Res<super::super::held::HeldGraph>,
     registry: Res<AppTypeRegistry>,
     server: Res<AssetServer>,
-    scenes: Res<crate::scenes::Scenes>,
-    intent: Option<Res<ViewportModeIntent>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut fsms: ResMut<Assets<StateMachine>>,
     mut doc: ResMut<ActiveGraphDoc>,
     mut view: ResMut<CanvasView>,
 ) {
-    let found = ast
-        .roots
-        .first()
-        .and_then(|&root| Some((root, doc_kind(&ast, root)?, ast.ecs_for_ast(root)?)));
-    let Some((root_ast, kind, root)) = found else {
-        if doc.0.take().is_some() {
+    let Some(ast) = held.ast() else {
+        // Swapped in for an edit, or nothing held.
+        if held.0.is_none() && doc.0.take().is_some() {
             view.graph = None;
             view.fsm = None;
             view.dirty = true;
-            if intent.is_some_and(|i| i.mode == ViewportMode::Graph) {
-                commands.queue(|world: &mut World| {
-                    set_viewport_mode(world, ViewportMode::ThreeD, false);
-                });
-            }
         }
         return;
     };
-    let path = scenes.tabs.get(scenes.active).and_then(|tab| tab.path.clone());
+    let held_doc = held.0.as_ref().expect("a held document");
+    let found = ast
+        .roots
+        .first()
+        .and_then(|&root| Some((root, doc_kind(ast, root)?, ast.ecs_for_ast(root)?)));
+    let Some((root_ast, kind, root)) = found else {
+        return;
+    };
+    let path = Some(held_doc.path.clone());
     let fresh = doc
         .0
         .as_ref()
@@ -146,18 +143,14 @@ pub(super) fn track_graph_document(
         next.fsm = None;
     }
     match kind {
-        DocKind::Graph => match graph_from_document(&ast, root_ast, &registry, Some(&assets)) {
+        DocKind::Graph => match graph_from_document(ast, root_ast, &registry, Some(&assets)) {
             Ok(graph) => {
-                let handle = match next.graph.clone() {
-                    Some(handle) => {
-                        let _ = graphs.insert(handle.id(), graph.clone());
-                        handle
-                    }
-                    None => graphs.add(graph.clone()),
-                };
+                // The asset characters load by this path: replacing it in place is what makes
+                // every character playing the graph follow the edit.
+                let handle = server.load::<AnimationGraph>(held_doc.asset_path.clone());
+                let _ = graphs.insert(handle.id(), graph.clone());
                 if fresh {
                     seed_layout(&mut view, &graph);
-                    commands.insert_resource(ArmGraph(handle.clone()));
                 } else {
                     refresh_positions(&mut view, &graph);
                 }
@@ -167,19 +160,12 @@ pub(super) fn track_graph_document(
             }
             Err(err) => warn!("animation graph document: {err}"),
         },
-        DocKind::Fsm => match fsm_from_document(&ast, root_ast, &registry, Some(&assets)) {
+        DocKind::Fsm => match fsm_from_document(ast, root_ast, &registry, Some(&assets)) {
             Ok(fsm) => {
-                let handle = match next.fsm.clone() {
-                    Some(handle) => {
-                        let _ = fsms.insert(handle.id(), fsm.clone());
-                        handle
-                    }
-                    None => fsms.add(fsm.clone()),
-                };
+                let handle = server.load::<StateMachine>(held_doc.asset_path.clone());
+                let _ = fsms.insert(handle.id(), fsm.clone());
                 if fresh {
                     seed_fsm_layout(&mut view, &fsm);
-                    let wrapper = graphs.add(fsm_preview_graph(handle.clone(), &fsm));
-                    commands.insert_resource(ArmGraph(wrapper));
                 } else {
                     for (id, pos) in &fsm.editor_metadata.states {
                         view.positions.insert(id.uuid(), *pos);
@@ -196,70 +182,7 @@ pub(super) fn track_graph_document(
     view.ragdoll = None;
     view.path = None;
     view.dirty = true;
-    if fresh {
-        commands.queue(|world: &mut World| focus_viewport(world, ViewportMode::Graph));
-    }
     doc.0 = Some(next);
-}
-
-/// A graph that plays a state machine, so the preview can: its data inputs become the graph's
-/// (number inputs default to zero, which is what gives them a slider), its pose the graph's.
-fn fsm_preview_graph(handle: Handle<StateMachine>, fsm: &StateMachine) -> AnimationGraph {
-    use bevy_animation_graph::builtin_nodes::fsm_node::FsmNode;
-    use bevy_animation_graph::core::{
-        animation_graph::GraphInputPin,
-        animation_node::AnimationNode,
-        context::spec_context::NodeInput,
-        edge_data::{DataSpec, DataValue},
-    };
-    let mut graph = AnimationGraph::new();
-    let node = AnimationNode::new("fsm", FsmNode::new(handle));
-    let id = node.id;
-    graph.add_node(node);
-    for input in fsm.node_spec.sorted_inputs() {
-        if let NodeInput::Data(pin, spec) = input {
-            let input = GraphInputPin::Passthrough(pin.clone());
-            graph.io_spec.add_input_data(input.clone(), spec);
-            if spec == DataSpec::F32 {
-                graph.set_default_data(input.clone(), DataValue::F32(0.0));
-            }
-            graph.add_edge(SourcePin::InputData(input), TargetPin::NodeData(id, pin));
-        }
-    }
-    graph.io_spec.add_output_time();
-    graph.io_spec.add_output_data("pose".into(), DataSpec::Pose);
-    graph.add_edge(SourcePin::NodeData(id, "pose".into()), TargetPin::OutputData("pose".into()));
-    graph.add_edge(SourcePin::NodeTime(id), TargetPin::OutputTime);
-    graph
-}
-
-/// A graph that loops one clip, so the preview can play it. Root motion is extracted, so a
-/// clip that travels plays in place.
-pub(super) fn clip_preview_graph(
-    clip: Handle<bevy_animation_graph::core::animation_clip::GraphClip>,
-) -> AnimationGraph {
-    use bevy::reflect::structs::GetField;
-    use bevy_animation_graph::builtin_nodes::{clip_node::ClipNode, loop_node::LoopNode};
-    use bevy_animation_graph::core::{
-        animation_node::AnimationNode, edge_data::DataSpec, pose::RootMotionMode,
-    };
-    let mut clip_node = ClipNode::new(clip, None, None);
-    if let Some(mode) = clip_node.get_field_mut::<RootMotionMode>("root_motion_mode") {
-        *mode = RootMotionMode::GroundPlane;
-    }
-    let mut graph = AnimationGraph::new();
-    let clip_node = AnimationNode::new("clip", clip_node);
-    let looped = AnimationNode::new("loop", LoopNode::new(0.1));
-    let (clip, looped_id) = (clip_node.id, looped.id);
-    graph.add_node(clip_node);
-    graph.add_node(looped);
-    graph.io_spec.add_output_time();
-    graph.io_spec.add_output_data("pose".into(), DataSpec::Pose);
-    graph.add_edge(SourcePin::NodeData(clip, "pose".into()), TargetPin::NodeData(looped_id, "pose".into()));
-    graph.add_edge(SourcePin::NodeTime(clip), TargetPin::NodeTime(looped_id, "time".into()));
-    graph.add_edge(SourcePin::NodeData(looped_id, "pose".into()), TargetPin::OutputData("pose".into()));
-    graph.add_edge(SourcePin::NodeTime(looped_id), TargetPin::OutputTime);
-    graph
 }
 
 /// Take the document's positions without moving the view.
@@ -394,21 +317,49 @@ fn follow_renames(world: &mut World, root: Entity, renames: Vec<(String, String)
     if fixes.is_empty() {
         return;
     }
-    for fix in &mut fixes {
-        fix.execute(world);
-    }
+    let Some(path) = world
+        .resource::<super::super::held::HeldGraph>()
+        .0
+        .as_ref()
+        .map(|doc| doc.path.clone())
+    else {
+        return;
+    };
+    let mut fix: Box<dyn EditorCommand> = Box::new(super::super::held::HeldCommand {
+        path,
+        inner: Box::new(crate::commands::CommandGroup {
+            commands: fixes,
+            label: "Follow rename".into(),
+        }),
+    });
+    fix.execute(world);
     let mut history = world.resource_mut::<CommandHistory>();
     let mut commands: Vec<Box<dyn EditorCommand>> = history.undo_stack.pop().into_iter().collect();
-    commands.extend(fixes);
+    commands.push(fix);
     history.push_executed(Box::new(crate::commands::CommandGroup {
         commands,
         label: "Rename node".into(),
     }));
 }
 
+/// Run an edit on the held document, as one undo entry on the scene tab's history.
 fn run(world: &mut World, command: Box<dyn EditorCommand>) {
+    let Some(path) = world
+        .resource::<super::super::held::HeldGraph>()
+        .0
+        .as_ref()
+        .map(|doc| doc.path.clone())
+    else {
+        return;
+    };
     world.resource_scope(|world, mut history: Mut<CommandHistory>| {
-        history.execute(command, world);
+        history.execute(
+            Box::new(super::super::held::HeldCommand {
+                path,
+                inner: command,
+            }),
+            world,
+        );
     });
 }
 

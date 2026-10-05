@@ -347,12 +347,16 @@ fn extensions(taxonomy: &mut CreationTaxonomy, world: &mut World) {
     }
 }
 
-/// The node vocabulary, when the active document is an animation graph (every registered node
-/// type, grouped by what it works on) or a state machine (a state). Answers whether it was one.
+/// The node vocabulary, when a graph is held open and the pointer is over its window: every
+/// registered node type, grouped by what it works on, or for a state machine a state. Answers
+/// whether it was one.
 fn graph_nodes(taxonomy: &mut CreationTaxonomy, world: &mut World) -> bool {
     use crate::animgraph::document::{DocKind, active_kind};
     use bevy_animation_graph::core::animation_node::ReflectNodeLike;
 
+    if !crate::animgraph::adding_nodes(world) {
+        return false;
+    }
     match active_kind(world) {
         None => false,
         Some(DocKind::Fsm) => {

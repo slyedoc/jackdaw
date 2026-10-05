@@ -1,19 +1,26 @@
-//! The animation graph editor: bevy_animation_graph's graphs, state machines, clips and
-//! ragdolls, edited in two windows (the graph canvas and a live preview of the rig).
+//! Animation: characters (a rig playing a bevy_animation_graph graph) and the graph editor. A
+//! graph is edited beside the scene in the Animation Graph window, and the scene's characters
+//! playing it are its preview.
 
+mod character;
 mod editor;
+pub mod held;
 
-pub use editor::{AnimGraphRoot, build_graph_presentation, document};
+pub(crate) use character::inject_animation_card;
+pub(crate) use editor::pin_name as pin_label;
+
+pub use editor::{AnimGraphRoot, document, graph_window_content};
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::icons::Icon;
 
 pub(crate) const GRAPH_WINDOW_ID: &str = "jackdaw.animation_graph";
-pub(crate) const PREVIEW_WINDOW_ID: &str = "jackdaw.animation_preview";
 
 pub(crate) fn plugin(app: &mut App) {
+    app.init_resource::<held::HeldGraph>();
     editor::plugin(app);
+    character::plugin(app);
     app.add_systems(Update, follow_the_project);
 }
 
@@ -48,12 +55,32 @@ impl JackdawExtension for AnimationGraphExtension {
     }
 
     fn register(&self, ctx: &mut ExtensionContext) {
+        ctx.register_operator::<AnimgraphSaveOp>()
+            .register_operator::<character::AnimgraphTogglePlaybackOp>()
+            .register_operator::<character::AnimgraphEditGraphOp>();
+        // The Animation tab: a character's rig and its Playback card.
+        ctx.register_inspector_category(jackdaw_api::inspector::InspectorCategory {
+            id: "animation".into(),
+            label: "Animation".into(),
+            icon: Icon::PersonStanding,
+            order: 35,
+        });
+        ctx.register_component_category::<jackdaw_animation_runtime::AnimationRig>("animation");
+        ctx.entity_mut().world_scope(|world| {
+            if let Some(mut registry) =
+                world.get_resource_mut::<jackdaw_api::inspector::InspectorRegistry>()
+            {
+                registry.set_component_category_prefix("animation_card::", "animation");
+            }
+        });
         ctx.register_operator::<AnimgraphAddNodeOp>()
             .register_operator::<AnimgraphAddStateOp>();
         ctx.register_operator::<AnimgraphNewOp>()
             .register_operator::<AnimgraphNewGraphOp>()
-            .register_operator::<AnimgraphNewFsmOp>();
-        ctx.register_menu_entry::<AnimgraphNewGraphOp>(TopLevelMenu::Add)
+            .register_operator::<AnimgraphNewFsmOp>()
+            .register_operator::<AnimgraphNewCharacterOp>();
+        ctx.register_menu_entry::<AnimgraphNewCharacterOp>(TopLevelMenu::Add)
+            .register_menu_entry::<AnimgraphNewGraphOp>(TopLevelMenu::Add)
             .register_menu_entry::<AnimgraphNewFsmOp>(TopLevelMenu::Add);
         ctx.register_window(
             WindowDescriptor::new(GRAPH_WINDOW_ID)
@@ -63,16 +90,6 @@ impl JackdawExtension for AnimationGraphExtension {
                 .with_priority(2)
                 .with_build(|window| {
                     window.spawn(editor::graph_window_content());
-                }),
-        );
-        ctx.register_window(
-            WindowDescriptor::new(PREVIEW_WINDOW_ID)
-                .with_name("Animation Preview")
-                .with_icon(Icon::PersonStanding.unicode())
-                .with_default_area(DefaultArea::BottomDock)
-                .with_priority(3)
-                .with_build(|window| {
-                    window.spawn(editor::preview_window_content());
                 }),
         );
     }
@@ -143,15 +160,21 @@ pub fn animgraph_new_fsm(_: In<OperatorParameters>, mut commands: Commands) -> O
 }
 
 fn create_in_shown_folder(world: &mut World, fsm: bool) {
-    let folder = world
-        .get_resource::<crate::project_window::ProjectWindowState>()
-        .map(|state| state.current_directory.clone())
-        .filter(|dir| dir.is_dir())
-        .or_else(|| world.resource::<AnimGraphRoot>().0.clone());
-    match folder {
+    match shown_folder(world) {
         Some(folder) => create_and_open(world, &folder, fsm),
         None => warn!("animgraph: no project folder to make it in"),
     }
+}
+
+/// The folder the Project window is showing, when it is inside the project's assets; else the
+/// assets folder itself.
+fn shown_folder(world: &World) -> Option<std::path::PathBuf> {
+    let assets = world.resource::<AnimGraphRoot>().0.clone()?;
+    let shown = world
+        .get_resource::<crate::project_window::ProjectWindowState>()
+        .map(|state| state.current_directory.clone())
+        .filter(|dir| dir.is_dir() && dir.starts_with(&assets));
+    Some(shown.unwrap_or(assets))
 }
 
 /// Write a starter file into `path` (a folder, or a file whose folder is meant) and open it.
@@ -184,7 +207,42 @@ fn create_and_open(world: &mut World, path: &std::path::Path, fsm: bool) {
     if let Some(mut state) = world.get_resource_mut::<crate::project_window::ProjectWindowState>() {
         state.rebuild();
     }
-    crate::scenes::operators::scene_open_system(world, &file);
+    open_graph(world, &file);
+}
+
+/// Open a graph or state machine for editing: held beside the scene, its canvas brought forward.
+pub fn open_graph(world: &mut World, path: &std::path::Path) {
+    held::hold(world, path);
+    focus_graph_window(world);
+}
+
+/// Whether `path` names a graph or state machine document.
+pub(crate) fn is_graph_path(path: &std::path::Path) -> bool {
+    let name = path.to_string_lossy();
+    name.ends_with(".animgraph.bsn") || name.ends_with(".fsm.bsn")
+}
+
+/// Bring the Animation Graph window's tab forward, if the dock has it.
+fn focus_graph_window(world: &mut World) {
+    use jackdaw_panels::tree::{DockNode, DockTree};
+    let Some(mut tree) = world.get_resource_mut::<DockTree>() else {
+        return;
+    };
+    let Some(leaf_id) = tree.find_leaf_with_window(GRAPH_WINDOW_ID) else {
+        return;
+    };
+    let Some(leaf) = tree.get(leaf_id).and_then(DockNode::as_leaf) else {
+        return;
+    };
+    let Some(tab) = leaf
+        .tabs()
+        .find_map(|(window, tab)| (window == GRAPH_WINDOW_ID).then_some(tab))
+    else {
+        return;
+    };
+    if leaf.active != Some(tab) {
+        tree.set_active(leaf_id, tab);
+    }
 }
 
 fn graph_open(world: &World) -> bool {
@@ -243,4 +301,163 @@ pub fn animgraph_add_state(_: In<OperatorParameters>, mut commands: Commands) ->
         document::add_state(world, at);
     });
     OperatorResult::Finished
+}
+
+/// Add > Character: a character prefab (`character_N.bsn`) holding the project's rig and an
+/// `AnimationRig`, with a starter graph beside it, in the folder the Project window shows; then
+/// open it. Place it in a scene like any prefab; open the file to change the character.
+#[operator(
+    id = "animgraph.new_character",
+    label = "Character",
+    description = "Make a character: a prefab of the project's rig playing a starter animation graph.",
+    allows_undo = false
+)]
+pub fn animgraph_new_character(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(create_character);
+    OperatorResult::Finished
+}
+
+fn create_character(world: &mut World) {
+    let (Some(assets), Some(folder)) = (world.resource::<AnimGraphRoot>().0.clone(), shown_folder(world))
+    else {
+        warn!("animgraph: no project to make a character in");
+        return;
+    };
+    let Some((rig, skeleton)) = find_rig(&assets) else {
+        warn!("animgraph: the project has no rig (a `.skn.ron` beside its `.bsn`)");
+        return;
+    };
+    let Some(name) = (1..1000)
+        .map(|n| format!("character_{n}"))
+        .find(|name| !folder.join(format!("{name}.bsn")).exists())
+    else {
+        return;
+    };
+    let relative = |path: &std::path::Path| {
+        path.strip_prefix(&assets)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+    let graph_file = folder.join(format!("{name}.animgraph.bsn"));
+    let idle = find_idle_clip(&assets);
+    if let Err(err) = std::fs::write(&graph_file, starter_graph(&name, idle.as_deref())) {
+        warn!("animgraph: {} cannot be written: {err}", graph_file.display());
+        return;
+    }
+    let character_file = folder.join(format!("{name}.bsn"));
+    let character = format!(
+        "#{name}
+jackdaw::prefab::components::Prefab
+bevy_transform::components::transform::Transform
+jackdaw_animation_runtime::AnimationRig {{ graph: \"{graph}\", skeleton: \"{skeleton}\" }}
+bevy_ecs::hierarchy::Children [
+    jackdaw::prefab::components::IsA {{ source: \"{rig}\", deleted: [] }}
+    jackdaw::prefab::components::PrefabEntityId(0)
+    bevy_transform::components::transform::Transform
+]
+",
+        graph = relative(&graph_file),
+    );
+    if let Err(err) = std::fs::write(&character_file, character) {
+        warn!("animgraph: {} cannot be written: {err}", character_file.display());
+        return;
+    }
+    if let Some(mut state) = world.get_resource_mut::<crate::project_window::ProjectWindowState>() {
+        state.rebuild();
+    }
+    crate::scenes::operators::scene_open_system(world, &character_file);
+}
+
+/// The project's rig: a `.skn.ron` with its `.bsn` beside it (a Mannequin first), as asset paths.
+fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
+    let mut rigs: Vec<(String, String)> = jackdaw_bsn::walk_files_with_extensions(assets, &["skn.ron"])
+        .into_iter()
+        .filter_map(|skeleton| {
+            let stem = skeleton.to_string_lossy().strip_suffix(".skn.ron")?.to_string();
+            let rig = std::path::PathBuf::from(format!("{stem}.bsn"));
+            rig.exists().then(|| {
+                let asset = |p: &std::path::Path| {
+                    p.strip_prefix(assets).unwrap_or(p).to_string_lossy().replace('\\', "/")
+                };
+                (asset(&rig), asset(&skeleton))
+            })
+        })
+        .collect();
+    rigs.sort_by_key(|(rig, _)| !rig.contains("Mannequin"));
+    rigs.into_iter().next()
+}
+
+/// An idle clip to start a character on, as an asset path.
+fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
+    let clips = jackdaw_bsn::walk_files_with_extensions(assets, &["anim.ron"]);
+    let stem = |p: &std::path::PathBuf| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_lowercase().trim_end_matches(".anim.ron").to_string())
+            .unwrap_or_default()
+    };
+    // A plain idle first: "Crouch_Idle_Loop" also contains "idle_loop".
+    let exact = |want: &str| clips.iter().find(|p| stem(p) == want);
+    let starts = |want: &str| clips.iter().find(|p| stem(p).starts_with(want));
+    let contains = |want: &str| clips.iter().find(|p| stem(p).contains(want));
+    exact("idle_loop")
+        .or_else(|| exact("idle"))
+        .or_else(|| starts("idle"))
+        .or_else(|| contains("idle"))
+        .map(|p| {
+        p.strip_prefix(assets).unwrap_or(p).to_string_lossy().replace('\\', "/")
+    })
+}
+
+/// A graph that loops `clip` (travel extracted, so the character idles in place); empty without one.
+fn starter_graph(name: &str, clip: Option<&str>) -> String {
+    let Some(clip) = clip else {
+        return NEW_GRAPH.replace("{name}", name);
+    };
+    format!(
+        "#{name}
+AnimGraph {{
+    outputs: [Time, Data(\"pose\", Pose)],
+    input_position: Vec2 {{ x: -240.0, y: 40.0 }},
+    output_position: Vec2 {{ x: 620.0, y: 40.0 }},
+}}
+Links([
+    Link(Data(\"pose\"), Node(\"loop\", \"pose\")),
+    Link(Time(\"\"), NodeTime(\"loop\")),
+])
+Children [
+    #idle
+    ClipNode {{ clip: \"{clip}\", root_motion_mode: GroundPlane }}
+    NodePosition(40.0, 40.0)
+    --
+    #loop
+    LoopNode {{ interpolation_period: 0.2 }}
+    Links([
+        Link(Data(\"pose\"), Node(\"idle\", \"pose\")),
+        Link(Time(\"time\"), NodeTime(\"idle\")),
+    ])
+    NodePosition(330.0, 40.0)
+]
+"
+    )
+}
+
+/// Save the graph held open in the Animation Graph window.
+#[operator(
+    id = "animgraph.save",
+    label = "Save Graph",
+    description = "Save the animation graph held open in the Animation Graph window.",
+    allows_undo = false
+)]
+pub fn animgraph_save(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(|world: &mut World| {
+        held::save(world);
+    });
+    OperatorResult::Finished
+}
+
+/// Whether Ctrl+A and the Add picker should offer nodes: a graph is held open and the pointer
+/// is over its window.
+pub(crate) fn adding_nodes(world: &mut World) -> bool {
+    document::active_kind(world).is_some() && editor::pointer_over_graph_window(world)
 }

@@ -160,8 +160,6 @@ pub(crate) fn viewport_camera(world: &mut World) -> Option<Entity> {
         ViewportMode::TwoD => world
             .get::<crate::viewport_2d::Viewport2dPanelHost>(panel)
             .map(|host| host.camera),
-        // The node canvas is UI, not a camera's view.
-        ViewportMode::Graph => None,
     }
 }
 

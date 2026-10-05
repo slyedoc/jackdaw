@@ -12,17 +12,14 @@
 //! docs/animgraph_editor.md).
 
 use bevy::{
-    animation::{AnimatedBy, AnimationTargetId},
-    feathers::{controls::FeathersSlider, theme::ThemedText},
+    feathers::theme::ThemedText,
     feathers_inspector::{BuildAssetInspector, BuildCustomInspector, ReflectInspectorWidget},
-    image::Image,
     input::mouse::MouseScrollUnit,
     prelude::*,
     ui::{
-        AlignItems, BackgroundColor, ComputedNode, Display, FlexDirection, JustifyContent,
-        Overflow, PositionType, UiRect, Val,
+        AlignItems, BackgroundColor, ComputedNode, FlexDirection, JustifyContent, Overflow,
+        PositionType, UiRect, Val,
     },
-    ui_widgets::{SliderValue, ValueChange, slider_self_update},
 };
 use bevy_animation_graph::core::{
     animation_clip::{GraphClip, loader::GraphClipSerial},
@@ -39,7 +36,6 @@ use bevy_animation_graph::core::{
     skeleton::Skeleton,
     state_machine::high_level::{StateId, StateMachine},
 };
-use bevy_aurora::prelude::*;
 use bevy_aurora::ui_render::UiPolyline;
 use uuid::Uuid;
 
@@ -162,10 +158,6 @@ struct Selected {
     dirty: bool,
 }
 
-/// The centre pane's input-slider column.
-#[derive(Component)]
-struct InputsHost;
-
 /// The browser pane, so the pre-spawned rows can be parented to it.
 #[derive(Component)]
 struct Browser;
@@ -173,20 +165,6 @@ struct Browser;
 /// The inspector pane's parent, so the pre-spawned body can be parented to it.
 #[derive(Component)]
 struct InspectorHost;
-
-/// The rig the preview plays on, and the graph currently armed on it.
-#[derive(Resource)]
-struct Preview {
-    /// Prefab root, so it can be despawned when the rig changes.
-    root: Entity,
-    armature: Option<Entity>,
-    graph: Option<Handle<AnimationGraph>>,
-    skeleton: Handle<Skeleton>,
-}
-
-/// One generated slider's binding: which graph input it drives.
-#[derive(Component, Clone, Default)]
-struct GraphInput(String);
 
 /// A handle kept alive while its asset is open, plus what to bind once it finishes loading.
 #[derive(Resource)]
@@ -243,18 +221,13 @@ pub(crate) fn plugin(app: &mut App) {
     app.insert_resource(BrowserDirty(true));
     app.add_observer(attach_canvas);
     app.add_observer(attach_inspector);
-    app.add_observer(attach_preview_image);
-    app.add_systems(Startup, spawn_preview_stage);
     app.add_systems(
         Update,
         (
             scan_library.run_if(resource_changed::<AnimGraphRoot>),
-            choose_preview_rig.run_if(resource_changed::<Library>),
             rebuild_browser,
             bind_when_loaded,
-            document::track_graph_document
-                .run_if(resource_exists_and_changed::<jackdaw_bsn::SceneBsnAst>),
-            arm_preview,
+            document::track_graph_document.run_if(resource_changed::<super::held::HeldGraph>),
             draw_canvas,
             highlight_selected,
             highlight_pins,
@@ -265,6 +238,7 @@ pub(crate) fn plugin(app: &mut App) {
             show_pin_values,
             show_node_params,
             save_graph.run_if(graph_window_hovered),
+            show_held_header,
             close_clip_timeline,
         ),
     );
@@ -324,181 +298,12 @@ fn scan_library(
     );
 }
 
-/// The preview rig's world: the mannequin, a floor and a sun, filmed by a camera into an
-/// image the Animation Preview window shows. A world of its own (a `PhysicsWorld`), so none
-/// of it shows in, or is lit by, the scene being edited.
-#[derive(Resource)]
-pub struct PreviewTarget(pub Handle<Image>);
-
-fn spawn_preview_stage(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<AuroraMesh>>,
-    mut images: ResMut<Assets<Image>>,
-    mut materials: ResMut<Assets<AuroraMaterial>>,
-) {
-    let stage = commands
-        .spawn((
-            Name::new("Animation Preview World"),
-            crate::EditorEntity,
-            bevy_aurora::world::PhysicsWorld,
-        ))
-        .id();
-    let target = images.add(Image::new_target_texture(
-        960,
-        640,
-        wgpu_types::TextureFormat::Rgba8Unorm,
-        Some(wgpu_types::TextureFormat::Rgba8UnormSrgb),
-    ));
-    commands.insert_resource(PreviewTarget(target.clone()));
-    commands.spawn((
-        Name::new("Animation Preview Camera"),
-        crate::EditorEntity,
-        Camera3d::default(),
-        Camera {
-            order: -1,
-            ..default()
-        },
-        bevy::camera::RenderTarget::Image(target.into()),
-        Transform::from_xyz(0.0, 1.15, -4.2).looking_at(Vec3::new(0.0, 0.95, 0.0), Vec3::Y),
-        ChildOf(stage),
-    ));
-    commands.spawn((
-        Name::new("Animation Preview Sun"),
-        crate::EditorEntity,
-        DirectionalLight {
-            illuminance: 20_000.0,
-            ..default()
-        },
-        Transform::from_xyz(3.0, 8.0, -4.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ChildOf(stage),
-    ));
-    // A floor under the rig: without one a walk cycle plays against the sky with nothing for
-    // the feet to meet and no contact shadow to read the pose against.
-    commands.spawn((
-        Name::new("Animation Preview Floor"),
-        crate::EditorEntity,
-        AuroraMesh3d(meshes.add(AuroraMesh::from_shape(
-            Plane3d::default().mesh().size(40.0, 40.0),
-        ))),
-        AuroraMaterial3d(materials.add(AuroraMaterial {
-            base_color: Color::srgb(0.18, 0.19, 0.21),
-            perceptual_roughness: 0.85,
-            ..default()
-        })),
-        // Just below the origin the rig stands on, so the mesh never z-fights the feet.
-        Transform::from_xyz(0.0, -0.002, 0.0),
-        ChildOf(stage),
-    ));
-    commands.insert_resource(PreviewStage(stage));
-    // The rig arrives with the project (`choose_preview_rig`).
-    commands.insert_resource(Preview {
-        root: Entity::PLACEHOLDER,
-        armature: None,
-        graph: None,
-        skeleton: Handle::default(),
-    });
-}
-
-/// The preview world's root, which the rig spawns under.
-#[derive(Resource)]
-struct PreviewStage(Entity);
-
-/// The rig the preview plays graphs on: a skeleton in the project with its rig scene beside it
-/// (`<rig>.skn.ron` next to `<rig>.bsn`, as aurora_files' `animlib_import` writes them),
-/// preferring the mannequin, whose clips are an identity retarget and so show a graph as
-/// authored.
-fn choose_preview_rig(
-    mut commands: Commands,
-    library: Res<Library>,
-    root: Res<AnimGraphRoot>,
-    stage: Option<Res<PreviewStage>>,
-    assets: Res<AssetServer>,
-    mut preview: ResMut<Preview>,
-    mut chosen: Local<Option<String>>,
-) {
-    let (Some(stage), Some(dir)) = (stage, root.0.as_ref()) else {
-        return;
-    };
-    let rigs: Vec<(String, String)> = library
-        .entries
-        .iter()
-        .filter(|e| e.kind == Kind::Skeleton)
-        .filter_map(|e| {
-            let scene = format!("{}.bsn", e.path.strip_suffix(".skn.ron")?);
-            dir.join(&scene).is_file().then(|| (e.path.clone(), scene))
-        })
-        .collect();
-    let rig = rigs
-        .iter()
-        .find(|(skeleton, _)| skeleton.contains("Mannequin"))
-        .or(rigs.first())
-        .cloned();
-    if rig.as_ref().map(|(skeleton, _)| skeleton) == chosen.as_ref() {
-        return;
-    }
-    *chosen = rig.as_ref().map(|(skeleton, _)| skeleton.clone());
-    if preview.root != Entity::PLACEHOLDER {
-        commands.entity(preview.root).despawn();
-    }
-    preview.root = Entity::PLACEHOLDER;
-    preview.armature = None;
-    let Some((skeleton, scene)) = rig else {
-        return;
-    };
-    info!("animation preview rig: {scene}");
-    preview.root = commands
-        .spawn((
-            Name::new("Animation Preview Rig"),
-            crate::EditorEntity,
-            bevy::scene::ScenePatchInstance(assets.load(scene)),
-            Transform::from_rotation(Quat::from_rotation_y(std::f32::consts::PI)),
-            Visibility::Visible,
-            ChildOf(stage.0),
-        ))
-        .id();
-    preview.skeleton = assets.load(skeleton);
-    // A graph armed on the old rig re-arms on the new one.
-    if let Some(graph) = preview.graph.take() {
-        commands.insert_resource(ArmGraph(graph));
-    }
-}
-
-/// Marks the node the preview image is shown in.
-#[derive(Component)]
-struct PreviewImageHost;
-
-/// The Animation Preview window: the rig, filmed.
-pub fn preview_window_content() -> impl Bundle {
-    (
-        Node {
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            ..default()
-        },
-        BackgroundColor(Color::srgb(0.06, 0.06, 0.07)),
-        children![
-            (
-                PreviewImageHost,
-                Node {
-                    width: Val::Percent(100.0),
-                    height: Val::Percent(100.0),
-                    ..default()
-                },
-            ),
-        ],
-    )
-}
-
 /// Double-click on a clip node: its clip's event tracks take the canvas, Esc gives it back.
 fn open_clip_timeline(world: &mut World, id: Uuid) {
     let Some(handle) = document::clip_of_node(world, id) else {
         return;
     };
     let path = handle.path().map(|p| p.path().to_string_lossy().into_owned());
-    let preview = world
-        .resource_mut::<Assets<AnimationGraph>>()
-        .add(document::clip_preview_graph(handle.clone()));
-    world.insert_resource(ArmGraph(preview));
     let mut view = world.resource_mut::<CanvasView>();
     view.clip = Some(handle);
     view.path = path;
@@ -510,16 +315,12 @@ fn open_clip_timeline(world: &mut World, id: Uuid) {
 
 /// Esc on a clip opened from a graph: back to the graph.
 fn close_clip_timeline(
-    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     doc: Res<ActiveGraphDoc>,
     mut view: ResMut<CanvasView>,
 ) {
     if !keys.just_pressed(KeyCode::Escape) || view.clip.is_none() || doc.0.is_none() {
         return;
-    }
-    if let Some(graph) = view.graph.clone() {
-        commands.insert_resource(ArmGraph(graph));
     }
     view.clip = None;
     view.path = None;
@@ -528,7 +329,32 @@ fn close_clip_timeline(
     view.dirty = true;
 }
 
-/// Marks the viewport's node-canvas column.
+/// The held graph's name and unsaved mark, over the canvas.
+#[derive(Component)]
+struct HeldHeader;
+
+fn show_held_header(
+    held: Res<super::held::HeldGraph>,
+    view: Res<CanvasView>,
+    mut texts: Query<&mut Text, With<HeldHeader>>,
+) {
+    let shown = match (&view.path, held.0.as_ref()) {
+        (Some(clip), _) if view.clip.is_some() || view.ragdoll.is_some() => clip.clone(),
+        (_, Some(doc)) => format!(
+            "{}{}",
+            doc.asset_path,
+            if doc.dirty { "  (unsaved)" } else { "" }
+        ),
+        (_, None) => "Open a graph from the Project window, or Edit Graph on a character".into(),
+    };
+    for mut text in &mut texts {
+        if text.0 != shown {
+            text.0 = shown.clone();
+        }
+    }
+}
+
+/// Marks the canvas area, for the window's hover test.
 #[derive(Component)]
 struct CanvasRoot;
 
@@ -564,102 +390,13 @@ pub(crate) fn take_drop_point(world: &mut World) -> Vec2 {
     (local - pan) / zoom
 }
 
-/// The viewport's node-canvas column. Hidden until the viewport is in graph mode.
-pub fn build_graph_presentation(world: &mut World, parent: Entity) -> Entity {
-    world
-        .spawn((
-            Name::new("graph canvas"),
-            CanvasRoot,
-            bevy::ui::RelativeCursorPosition::default(),
-            BackgroundColor(Color::srgba(0.06, 0.06, 0.07, 1.0)),
-            Node {
-                display: Display::None,
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_grow: 1.0,
-                flex_direction: FlexDirection::Row,
-                ..default()
-            },
-            ChildOf(parent),
-            children![
-                (
-                    Name::new("canvas area"),
-                    Node {
-                        flex_grow: 1.0,
-                        height: Val::Percent(100.0),
-                        overflow: Overflow::clip(),
-                        ..default()
-                    },
-                    children![(
-                        Name::new("canvas"),
-                        Canvas,
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(0.0),
-                            top: Val::Px(0.0),
-                            right: Val::Px(0.0),
-                            bottom: Val::Px(0.0),
-                            // Node boxes are absolutely positioned and pan freely.
-                            overflow: Overflow::clip(),
-                            ..default()
-                        },
-                    )],
-                ),
-                // What is being edited, playing: the preview rig, and the graph's inputs.
-                (
-                    Name::new("preview"),
-                    BackgroundColor(Color::srgba(0.05, 0.05, 0.06, 1.0)),
-                    Node {
-                        width: Val::Percent(32.0),
-                        min_width: Val::Px(260.0),
-                        height: Val::Percent(100.0),
-                        flex_direction: FlexDirection::Column,
-                        overflow: Overflow::scroll_y(),
-                        ..default()
-                    },
-                    children![
-                        (
-                            PreviewImageHost,
-                            Node {
-                                width: Val::Percent(100.0),
-                                ..default()
-                            },
-                        ),
-                        (
-                            Name::new("inputs"),
-                            InputsHost,
-                            Node {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(4.0),
-                                padding: UiRect::all(Val::Px(8.0)),
-                                ..default()
-                            },
-                        ),
-                    ],
-                ),
-            ],
-        ))
-        .id()
-}
-
-fn attach_preview_image(
-    add: On<Add<PreviewImageHost>>,
-    mut commands: Commands,
-    target: Option<Res<PreviewTarget>>,
-) {
-    if let Some(target) = target {
-        commands
-            .entity(add.entity)
-            .insert(ImageNode::new(target.0.clone()));
-    }
-}
-
 /// Marks the inspector pane's scrolling body.
 #[derive(Component)]
 struct InspectorBody;
 
-/// The Animation Graph window: the browser of the project's animation assets, and the
-/// inspector for the single-value ones (clips, skeletons, ragdolls).
+/// The Animation Graph window: the browser of the project's animation assets, the canvas for the
+/// graph held open (with its name, unsaved mark and Save above it), and the inspector for the
+/// single-value assets (clips, skeletons, ragdolls).
 pub fn graph_window_content() -> impl Bundle {
     let pane = BackgroundColor(Color::srgba(0.06, 0.06, 0.07, 0.94));
     (
@@ -678,8 +415,9 @@ pub fn graph_window_content() -> impl Bundle {
                 Browser,
                 pane,
                 Node {
-                    flex_grow: 1.0,
-                    min_width: Val::Px(200.0),
+                    width: Val::Percent(18.0),
+                    min_width: Val::Px(180.0),
+                    max_width: Val::Px(300.0),
                     height: Val::Percent(100.0),
                     flex_direction: FlexDirection::Column,
                     row_gap: Val::Px(2.0),
@@ -689,12 +427,69 @@ pub fn graph_window_content() -> impl Bundle {
                 },
             ),
             (
+                Name::new("canvas column"),
+                Node {
+                    flex_grow: 1.0,
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                children![
+                    (
+                        Name::new("held header"),
+                        BackgroundColor(Color::srgba(0.09, 0.10, 0.12, 1.0)),
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(8.0),
+                            padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        children![
+                            (Text::new(String::new()), ThemedText, HeldHeader),
+                            (
+                                jackdaw_feathers::button::button(
+                                    jackdaw_feathers::button::ButtonProps::new("Save")
+                                ),
+                                jackdaw_feathers::button::ButtonOperatorCall::new("animgraph.save"),
+                            ),
+                        ],
+                    ),
+                    (
+                        Name::new("canvas area"),
+                        CanvasRoot,
+                        bevy::ui::RelativeCursorPosition::default(),
+                        BackgroundColor(Color::srgba(0.06, 0.06, 0.07, 1.0)),
+                        Node {
+                            flex_grow: 1.0,
+                            overflow: Overflow::clip(),
+                            ..default()
+                        },
+                        children![(
+                            Name::new("canvas"),
+                            Canvas,
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(0.0),
+                                top: Val::Px(0.0),
+                                right: Val::Px(0.0),
+                                bottom: Val::Px(0.0),
+                                overflow: Overflow::clip(),
+                                ..default()
+                            },
+                        )],
+                    ),
+                ],
+            ),
+            (
                 Name::new("inspector"),
                 InspectorHost,
                 pane,
                 Node {
-                    flex_grow: 1.0,
-                    min_width: Val::Px(220.0),
+                    width: Val::Percent(22.0),
+                    min_width: Val::Px(200.0),
+                    max_width: Val::Px(360.0),
                     height: Val::Percent(100.0),
                     flex_direction: FlexDirection::Column,
                     overflow: Overflow::scroll_y(),
@@ -911,9 +706,7 @@ fn spawn_dir(
                         let Some(file) = root.0.as_ref().map(|r| r.join(&entry.path)) else {
                             return;
                         };
-                        commands.queue(move |world: &mut World| {
-                            crate::scenes::operators::scene_open_system(world, &file);
-                        });
+                        commands.queue(move |world: &mut World| super::open_graph(world, &file));
                         return;
                     }
                     // Typed load per kind so the right loader runs; the binding itself is
@@ -981,15 +774,12 @@ fn bind_when_loaded(
         view.path = Some(opening.path.clone());
         view.dirty = true;
     }
-    commands.queue(|world: &mut World| {
-        crate::viewport_host::focus_viewport(world, crate::viewport_host::ViewportMode::Graph);
-    });
     info!("opened {}", opening.path);
 }
 
 /// `GraphInputPin`'s `Debug` is `Passthrough("speed")`; the pin NAME is what belongs on a
 /// slider. No public accessor for it, so unwrap the one shape it prints.
-fn pin_name(pin: &impl std::fmt::Debug) -> String {
+pub(crate) fn pin_name(pin: &impl std::fmt::Debug) -> String {
     let text = format!("{pin:?}");
     text.split_once('"')
         .and_then(|(_, rest)| rest.rsplit_once('"'))
@@ -1217,135 +1007,6 @@ fn source_node(source: &SourcePin) -> Option<NodeId> {
         SourcePin::NodeData(id, _) | SourcePin::NodeTime(id) => Some(*id),
         SourcePin::InputData(_) | SourcePin::InputTime(_) => None,
     }
-}
-
-/// A graph waiting to be put on the preview rig.
-#[derive(Resource)]
-struct ArmGraph(Handle<AnimationGraph>);
-
-/// Find the rig's armature (once it streams in), swap in an `AnimationGraphPlayer` for the
-/// requested graph, and rebuild the input sliders from the graph's own `io_spec`.
-fn arm_preview(
-    mut commands: Commands,
-    arm: Option<Res<ArmGraph>>,
-    mut preview: ResMut<Preview>,
-    graphs: Res<Assets<AnimationGraph>>,
-    names: Query<&Name>,
-    children: Query<&Children>,
-    host: Single<(Entity, Option<&Children>), With<InputsHost>>,
-) {
-    let Some(arm) = arm else { return };
-    let Some(graph) = graphs.get(&arm.0) else {
-        return;
-    };
-    // Hydrate the name-path components a text `.bsn` cannot carry, exactly as zero's
-    // locomotion module does, then bind the player.
-    let Some(armature) = children.get(preview.root).ok().and_then(|kids| {
-        kids.iter()
-            .find(|&k| names.get(k).is_ok_and(|n| n.as_str() == "Armature"))
-    }) else {
-        return;
-    };
-    let Ok(bones) = children.get(armature) else {
-        return;
-    };
-    let root_name = Name::new("Armature");
-    commands.entity(armature).insert((
-        AnimationTargetId::from_names([root_name.clone()].iter()),
-        AnimatedBy(preview.root),
-    ));
-    let mut stack: Vec<(Entity, Vec<Name>)> = bones
-        .iter()
-        .map(|bone| (bone, vec![root_name.clone()]))
-        .collect();
-    while let Some((bone, path)) = stack.pop() {
-        let Ok(name) = names.get(bone) else { continue };
-        let mut path = path;
-        path.push(name.clone());
-        commands.entity(bone).insert((
-            AnimationTargetId::from_names(path.iter()),
-            AnimatedBy(armature),
-        ));
-        if let Ok(kids) = children.get(bone) {
-            stack.extend(kids.iter().map(|kid| (kid, path.clone())));
-        }
-    }
-    commands
-        .entity(armature)
-        .remove::<AnimationPlayer>()
-        .insert(AnimationGraphPlayer::new(preview.skeleton.clone()).with_graph(arm.0.clone()));
-    preview.armature = Some(armature);
-    preview.graph = Some(arm.0.clone());
-
-    // One row per F32 input, seeded from the graph's own default. `default_data` rather than
-    // `io_spec.input_data` because the spec's map has no public reader — and the defaults are
-    // what a slider wants to start at anyway.
-    let (host_entity, existing) = *host;
-    if let Some(existing) = existing {
-        for child in existing.iter() {
-            commands.entity(child).despawn();
-        }
-    }
-    let mut rows = Vec::new();
-    let mut inputs: Vec<(String, f32)> = graph
-        .default_data
-        .iter()
-        .filter_map(|(pin, value)| match value {
-            DataValue::F32(v) => Some((pin_name(pin), *v)),
-            _ => None,
-        })
-        .collect();
-    inputs.sort_by(|a, b| a.0.cmp(&b.0));
-    for (name, value) in inputs {
-        // Range is a guess until a graph declares one: 0 ..= max(4, 2x the default) covers a
-        // speed in m/s and a 0..1 factor alike without clipping either.
-        let max = (value * 2.0).max(4.0);
-        let pin = name.clone();
-        let readout = commands
-            .spawn((
-                Text::new(format!("{name}  {value:.2}")),
-                ThemedText,
-                GraphInput(pin.clone()),
-            ))
-            .id();
-        let observer_pin = pin.clone();
-        let slider_pin = pin.clone();
-        let slider = commands
-            .spawn_scene(bsn! {
-                @FeathersSlider { @min: 0.0, @max: {max} }
-                SliderValue({value})
-                GraphInput({slider_pin.clone()})
-                on(slider_self_update)
-            })
-            .observe(
-                move |change: On<ValueChange<f32>>,
-                      mut players: Query<&mut AnimationGraphPlayer>,
-                      mut texts: Query<(&mut Text, &GraphInput)>| {
-                    let v = change.value;
-                    for mut player in &mut players {
-                        player.set_input_data(observer_pin.clone(), DataValue::F32(v));
-                    }
-                    for (mut text, input) in &mut texts {
-                        if input.0 == observer_pin {
-                            text.0 = format!("{observer_pin}  {v:.2}");
-                        }
-                    }
-                },
-            )
-            .id();
-        let row = commands
-            .spawn(Node {
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(2.0),
-                ..default()
-            })
-            .add_children(&[readout, slider])
-            .id();
-        rows.push(row);
-    }
-    commands.entity(host_entity).add_children(&rows);
-    commands.remove_resource::<ArmGraph>();
-    info!("preview armed, {} f32 inputs", rows.len());
 }
 
 /// What a canvas box stands for, and therefore where a drag on it writes back.
@@ -2141,11 +1802,18 @@ struct PinValue(PinSocket);
 /// reads empty rather than stale. That is the honest answer: a node behind a zero-weight blend
 /// genuinely did not run.
 fn show_pin_values(
-    preview: Res<Preview>,
-    players: Query<&AnimationGraphPlayer>,
+    view: Res<CanvasView>,
+    characters: Query<(&jackdaw_animation_runtime::AnimationRig, &AnimationGraphPlayer)>,
     mut values: Query<(&mut Text, &PinValue)>,
 ) {
-    let Some(player) = preview.armature.and_then(|a| players.get(a).ok()) else {
+    // A character in the scene playing the graph on the canvas.
+    let Some(graph) = view.graph.as_ref() else {
+        return;
+    };
+    let Some(player) = characters
+        .iter()
+        .find_map(|(rig, player)| (rig.graph.id() == graph.id()).then_some(player))
+    else {
         return;
     };
     let Some(arena) = player.get_context_arena() else {
@@ -2372,6 +2040,7 @@ fn curve(commands: &mut Commands, from: Vec2, to: Vec2, zoom: f32, color: Color)
 /// documents and save with the scene. A `.bak` is left the first time, because a hand-authored
 /// file's inner comments do not survive a round trip through the serializer.
 fn save_graph(
+    mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     view: Res<CanvasView>,
     clips: Res<Assets<GraphClip>>,
@@ -2382,10 +2051,24 @@ fn save_graph(
     {
         return;
     }
-    write_graph(&view, &clips, &ragdolls);
+    if view.clip.is_some() || view.ragdoll.is_some() {
+        write_graph(&view, &clips, &ragdolls);
+    } else {
+        commands.queue(|world: &mut World| {
+            super::held::save(world);
+        });
+    }
 }
 
-/// Serialize the open clip or ragdoll.
+/// Whether the pointer is over the Animation Graph window now: Ctrl+A there adds nodes.
+pub(crate) fn pointer_over_graph_window(world: &mut World) -> bool {
+    world
+        .query_filtered::<&bevy::ui::RelativeCursorPosition, With<GraphWindowRoot>>()
+        .iter(world)
+        .any(|r| r.cursor_over())
+}
+
+/// Serialize the open clip or ragdoll; else save the held graph.
 fn write_graph(view: &CanvasView, clips: &Assets<GraphClip>, ragdolls: &Assets<Ragdoll>) {
     if view.clip.is_some() {
         write_clip(view, clips);
@@ -2960,7 +2643,7 @@ fn draw_ragdoll_list(
     );
 }
 
-/// Draw the ragdoll in the preview, every frame.
+/// Draw the ragdoll on the selected character, every frame.
 ///
 /// A body has an offset in the CHARACTER's space and its colliders have offsets relative to
 /// that, so a collider lands at `rig * body.offset * collider.local_offset`. Composing through
@@ -2971,14 +2654,18 @@ fn draw_ragdoll(
     view: Res<CanvasView>,
     selected: Res<Selected>,
     ragdolls: Res<Assets<Ragdoll>>,
-    preview: Res<Preview>,
+    selection: Res<crate::selection::Selection>,
+    characters: Query<(), With<jackdaw_animation_runtime::AnimationRig>>,
     places: Query<&GlobalTransform>,
 ) {
     let Some(ragdoll) = view.ragdoll.as_ref().and_then(|h| ragdolls.get(h)) else {
         return;
     };
-    let rig = places
-        .get(preview.root)
+    // On the selected character, else at the origin.
+    let rig = selection
+        .primary()
+        .filter(|&e| characters.contains(e))
+        .and_then(|e| places.get(e).ok())
         .map(|t| t.affine())
         .unwrap_or_default();
 

@@ -295,14 +295,12 @@ fn home_frames_the_canvas_only_while_a_2d_panel_is_current() {
         .id;
     let three_d = app.world_mut().spawn_empty().id();
     let two_d = app.world_mut().spawn_empty().id();
-    let graph = app.world_mut().spawn_empty().id();
     app.world_mut().spawn((
         jackdaw::viewport_host::ViewportHost {
             mode: jackdaw::viewport_host::ViewportMode::TwoD,
             mode_chosen: true,
             three_d,
             two_d,
-            graph,
         },
         jackdaw_panels::area::DockTabContent {
             window_id: jackdaw::viewport::VIEWPORT_WINDOW_ID.to_string(),

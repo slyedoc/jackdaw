@@ -864,6 +864,16 @@ pub(crate) fn build_inspector_displays(
             collapse_state,
         );
     }
+    // A character: its Playback card goes in the Animation tab.
+    if entity_ref.contains::<jackdaw_animation_runtime::AnimationRig>() {
+        crate::animgraph::inject_animation_card(
+            commands,
+            source_entity,
+            inspector_entity,
+            &icon_font.0,
+            false,
+        );
+    }
 }
 
 /// Despawn inspector card and picker children as one queued world step so
