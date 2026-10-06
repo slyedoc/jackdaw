@@ -702,6 +702,7 @@ fn dispatch_operator(
         ExecutionContext::Execute => op.execute,
         ExecutionContext::Invoke => op.invoke,
     };
+    let since = world.increment_change_tick();
     info!("OPERATOR: {id}");
     let result = world.run_system_with(system, params);
 
@@ -710,13 +711,16 @@ fn dispatch_operator(
         OperatorResult::Running if op.modal => {
             world
                 .entity_mut(op_entity)
-                .insert(ActiveModalOperator { before_snapshot });
+                .insert(ActiveModalOperator {
+                    before_snapshot,
+                    since,
+                });
         }
         OperatorResult::Running => {}
         OperatorResult::Finished => {
             if op.allows_undo
                 && let Err(err) =
-                    world.run_system_cached_with(save_history, (op.label, before_snapshot))
+                    world.run_system_cached_with(save_history, (op.label, before_snapshot, since))
             {
                 error!("Failed to finalize modal operator {}: {err:?}", op.label);
             }
@@ -742,10 +746,16 @@ fn dispatch_operator(
 /// Capture the current state, diff against `before`, and push a
 /// `SnapshotDiff` onto [`CommandHistory`] if the scene changed.
 fn save_history(
-    In((label, before)): In<(&'static str, Option<Box<dyn SceneSnapshot>>)>,
+    In((label, before, since)): In<(
+        &'static str,
+        Option<Box<dyn SceneSnapshot>>,
+        bevy::ecs::change_detection::Tick,
+    )>,
     world: &mut World,
 ) {
     let Some(before) = before else { return };
+    // Before the capture: marking what changed authored is what lets the capture see it.
+    jackdaw_commands::components_edited(world, since);
     let after = world
         .resource_scope(|world, snapshotter: Mut<ActiveSnapshotter>| snapshotter.0.capture(world));
     if before.equals(&*after) {
@@ -965,7 +975,10 @@ fn finalize_modal(
         return;
     }
     if let Err(err) =
-        world.run_system_cached_with(save_history, (op.label, snapshot.before_snapshot))
+        world.run_system_cached_with(
+            save_history,
+            (op.label, snapshot.before_snapshot, snapshot.since),
+        )
     {
         error!("Failed to finalize modal operator {}: {err:?}", op.label);
     }

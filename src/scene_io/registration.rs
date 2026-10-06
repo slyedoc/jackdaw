@@ -108,6 +108,7 @@ pub fn adopt_entity(world: &mut World, entity: Entity) {
             continue;
         }
         world.entity_mut(entity).insert(SceneEntity);
+        super::freeze_authored(world, entity);
         if let Some(children) = world.get::<Children>(entity) {
             stack.extend(children.iter());
         }

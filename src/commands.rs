@@ -920,12 +920,13 @@ pub(crate) fn write_field(
 ) {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
-    let Some(reflect_component) = registry
-        .get_with_type_path(type_path)
-        .and_then(|registration| registration.data::<ReflectComponent>())
-    else {
+    let Some(registration) = registry.get_with_type_path(type_path) else {
         return;
     };
+    let Some(reflect_component) = registration.data::<ReflectComponent>() else {
+        return;
+    };
+    crate::scene_io::author(world, entity, registration.type_id());
     let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
         return;
     };

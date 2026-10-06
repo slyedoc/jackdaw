@@ -1,6 +1,25 @@
 pub mod keybinds;
 
-use bevy::prelude::*;
+use bevy::{ecs::change_detection::Tick, prelude::*};
+
+/// Called when components on scene entities may have been edited since a tick, by an undoable
+/// operator or a command, before the edit is recorded: so what changed can be marked authored.
+#[derive(Resource, Clone, Copy)]
+pub struct OnComponentsEdited(pub fn(&mut World, Tick));
+
+/// Tell [`OnComponentsEdited`] that components may have changed since `since`.
+pub fn components_edited(world: &mut World, since: Tick) {
+    if let Some(hook) = world.get_resource::<OnComponentsEdited>().copied() {
+        (hook.0)(world, since);
+    }
+}
+
+/// Run `edit` and announce what it may have changed.
+fn edit(world: &mut World, edit: impl FnOnce(&mut World)) {
+    let since = world.increment_change_tick();
+    edit(world);
+    components_edited(world, since);
+}
 
 /// Set while the keybind settings dialog is waiting for the user to press
 /// the chord it is about to record.
@@ -82,6 +101,8 @@ pub struct CommandHistory {
     /// so an enclosing span counts an inner span once rather than once
     /// per entry the inner span collapsed.
     pushes: u64,
+    /// Bumped by every push, undo and redo; never reset.
+    edits: u64,
 }
 
 /// Where the undo stack stood when a span was opened. Hand it back to
@@ -96,15 +117,17 @@ impl Default for CommandHistory {
             redo_stack: Vec::new(),
             budget_bytes: HISTORY_BUDGET_BYTES,
             pushes: 0,
+            edits: 0,
         }
     }
 }
 
 impl CommandHistory {
     pub fn execute(&mut self, mut command: Box<dyn EditorCommand>, world: &mut World) {
-        command.execute(world);
+        edit(world, |world| command.execute(world));
         self.undo_stack.push(command);
         self.pushes += 1;
+        self.edits += 1;
         self.redo_stack.clear();
         self.trim_to_budget();
     }
@@ -140,6 +163,11 @@ impl CommandHistory {
         self.pushes = span.0 + 1;
     }
 
+    /// How many times the history changed: a count that moves whenever an edit lands.
+    pub fn edits(&self) -> u64 {
+        self.edits
+    }
+
     /// Bytes both stacks currently hold.
     pub fn heap_bytes(&self) -> usize {
         self.undo_stack
@@ -167,14 +195,16 @@ impl CommandHistory {
 
     pub fn undo(&mut self, world: &mut World) {
         if let Some(mut command) = self.undo_stack.pop() {
-            command.undo(world);
+            edit(world, |world| command.undo(world));
+            self.edits += 1;
             self.redo_stack.push(command);
         }
     }
 
     pub fn redo(&mut self, world: &mut World) {
         if let Some(mut command) = self.redo_stack.pop() {
-            command.execute(world);
+            edit(world, |world| command.execute(world));
+            self.edits += 1;
             self.undo_stack.push(command);
         }
     }
@@ -182,6 +212,7 @@ impl CommandHistory {
     pub fn push_executed(&mut self, command: Box<dyn EditorCommand>) {
         self.undo_stack.push(command);
         self.pushes += 1;
+        self.edits += 1;
         self.redo_stack.clear();
         self.trim_to_budget();
     }

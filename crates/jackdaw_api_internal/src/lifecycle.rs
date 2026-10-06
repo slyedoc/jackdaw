@@ -179,6 +179,8 @@ pub struct OperatorChordSite(pub &'static str);
 #[derive(Component)]
 pub struct ActiveModalOperator {
     pub(crate) before_snapshot: Option<Box<dyn SceneSnapshot>>,
+    /// The change tick before the modal started: what it edits changed after this.
+    pub(crate) since: bevy::ecs::change_detection::Tick,
 }
 
 /// Convenience [`SystemParam`] for querying the active modal operator.

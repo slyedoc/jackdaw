@@ -8,6 +8,7 @@ use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 
 mod load;
+mod authored;
 mod registration;
 pub(crate) mod save;
 pub mod stamp;
@@ -22,6 +23,7 @@ pub(crate) use load::{
     SidecarImport, clear_scene_entities, despawn_scene_entities, import_terrain_sidecars,
     is_unresolved,
 };
+pub use authored::{author, freeze_authored};
 pub use registration::{
     SceneEntity, SceneRootOf, SceneRoots, adopt_entities, adopt_entity, despawn_tab_world,
     ensure_scene_world, is_ui_root, place_root, scene_parent, scene_world, set_tab_open,
@@ -248,6 +250,7 @@ pub struct SceneIoPlugin;
 
 impl Plugin for SceneIoPlugin {
     fn build(&self, app: &mut App) {
+        app.add_plugins(authored::plugin);
         app.init_resource::<SceneFilePath>()
             .init_resource::<SceneDirtyState>()
             .add_systems(
