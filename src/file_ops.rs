@@ -381,9 +381,9 @@ fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<
     let parent = path.parent()?.to_path_buf();
     let suffix = file_suffix(&path);
     let stem = match name {
-        Some(name) => crate::definition_assets::sanitize_definition_name(&crate::bsn_files::path_stem(
-            Path::new(name),
-        )),
+        Some(name) => crate::definition_assets::sanitize_definition_name(
+            &crate::bsn_files::path_stem(Path::new(name)),
+        ),
         None => next_free_stem(&parent, &crate::bsn_files::path_stem(&path), &suffix),
     };
     let target = parent.join(format!("{stem}{suffix}"));

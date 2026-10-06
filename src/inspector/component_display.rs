@@ -72,7 +72,13 @@ pub(crate) fn sync_inspector_to_selection(
     components: &Components,
     type_registry: Res<AppTypeRegistry>,
     selection: Res<Selection>,
-    entity_query: Query<(&Archetype, EntityRef), Without<EditorEntity>>,
+    entity_query: Query<
+        (&Archetype, EntityRef),
+        Or<(
+            Without<EditorEntity>,
+            With<crate::scene_io::SceneEnvironment>,
+        )>,
+    >,
     inspectors: Query<(Entity, Option<&InspectorTarget>), With<Inspector>>,
     names: Query<&Name>,
     icon_font: Res<IconFont>,
@@ -386,8 +392,7 @@ pub(crate) fn build_inspector_displays(
     // Sort: game EditorCategory groups, then Game, then engine groups,
     // then by group name, authored before derived, then alphabetical.
     let is_derived_path = |type_path: &str| -> bool {
-        !authored_type_paths.is_empty()
-            && !authored_type_paths.contains(type_path)
+        !authored_type_paths.is_empty() && !authored_type_paths.contains(type_path)
     };
     comp_list.sort_by(|a, b| {
         crate::type_metadata::group_order(&b.type_path, &b.chrome.category)
@@ -670,7 +675,13 @@ pub(crate) fn on_inspector_dirty(
     components: &Components,
     type_registry: Res<AppTypeRegistry>,
     inspectors: Query<(Entity, &InspectorTarget), With<Inspector>>,
-    entity_query: Query<(&Archetype, EntityRef), Without<EditorEntity>>,
+    entity_query: Query<
+        (&Archetype, EntityRef),
+        Or<(
+            Without<EditorEntity>,
+            With<crate::scene_io::SceneEnvironment>,
+        )>,
+    >,
     selection: Res<Selection>,
     names: Query<&Name>,
     icon_font: Res<IconFont>,

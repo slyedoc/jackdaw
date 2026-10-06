@@ -93,9 +93,11 @@ fn spawn_file(world: &mut World, path: &Path, asset_path: &str) -> Result<Entity
     let document = BsnDocument::parse(&text).map_err(|e| format!("{e:?}"))?;
     let registry = world.resource::<AppTypeRegistry>().clone();
     let server = world.resource::<AssetServer>().clone();
-    let mut handles = |type_id, path: AssetPath<'static>| server.load_builder().load_erased(type_id, path);
-    let scene = DynamicScene::from_document_with_handles(&document, asset_path, &registry, &mut handles)
-        .map_err(|e| e.render(&text))?;
+    let mut handles =
+        |type_id, path: AssetPath<'static>| server.load_builder().load_erased(type_id, path);
+    let scene =
+        DynamicScene::from_document_with_handles(&document, asset_path, &registry, &mut handles)
+            .map_err(|e| e.render(&text))?;
     Ok(world.spawn_scene(scene).map_err(|e| format!("{e:?}"))?.id())
 }
 

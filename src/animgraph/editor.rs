@@ -188,10 +188,7 @@ struct GraphWindowRoot;
 /// The pointer is over the Animation Graph window or the viewport's canvas, and no text field
 /// has the keyboard.
 fn graph_window_hovered(
-    roots: Query<
-        &bevy::ui::RelativeCursorPosition,
-        Or<(With<GraphWindowRoot>, With<CanvasRoot>)>,
-    >,
+    roots: Query<&bevy::ui::RelativeCursorPosition, Or<(With<GraphWindowRoot>, With<CanvasRoot>)>>,
     focus: Option<Res<bevy::input_focus::InputFocus>>,
 ) -> bool {
     focus.is_none_or(|f| f.get().is_none()) && roots.iter().any(|r| r.cursor_over())
@@ -305,7 +302,9 @@ fn open_clip_timeline(world: &mut World, id: Uuid) {
     let Some(handle) = document::clip_of_node(world, id) else {
         return;
     };
-    let path = handle.path().map(|p| p.path().to_string_lossy().into_owned());
+    let path = handle
+        .path()
+        .map(|p| p.path().to_string_lossy().into_owned());
     let mut view = world.resource_mut::<CanvasView>();
     view.clip = Some(handle);
     view.path = path;
@@ -337,13 +336,18 @@ fn open_linked(world: &mut World, asset_path: &str) {
 
 /// Esc in a document opened from a node: back to the one it was opened from.
 fn step_out_of_graph(world: &mut World) {
-    if !world.resource::<ButtonInput<KeyCode>>().just_pressed(KeyCode::Escape)
+    if !world
+        .resource::<ButtonInput<KeyCode>>()
+        .just_pressed(KeyCode::Escape)
         || world.resource::<CanvasView>().clip.is_some()
         || !pointer_over_graph_window(world)
     {
         return;
     }
-    let Some(back) = world.get_resource_mut::<GraphTrail>().and_then(|mut t| t.0.pop()) else {
+    let Some(back) = world
+        .get_resource_mut::<GraphTrail>()
+        .and_then(|mut t| t.0.pop())
+    else {
         return;
     };
     super::open_graph(world, &back);
@@ -1446,125 +1450,135 @@ fn spawn_box(commands: &mut Commands, boxed: &Boxed, px: Vec2, zoom: f32) -> Ent
     // box underneath would move with the drag and the canvas would pan behind that.
     let pin_row = |commands: &mut Commands, label: &str, socket: PinSocket, right: bool| {
         let color = pin_color(&socket);
-        let row = commands
-            .spawn((
-                Node {
-                    height: Val::Px(PIN_H * zoom),
-                    align_items: AlignItems::Center,
-                    justify_content: if right {
-                        JustifyContent::FlexEnd
-                    } else {
-                        JustifyContent::FlexStart
+        let row =
+            commands
+                .spawn((
+                    Node {
+                        height: Val::Px(PIN_H * zoom),
+                        align_items: AlignItems::Center,
+                        justify_content: if right {
+                            JustifyContent::FlexEnd
+                        } else {
+                            JustifyContent::FlexStart
+                        },
+                        padding: UiRect::horizontal(Val::Px(6.0 * zoom)),
+                        overflow: Overflow::clip(),
+                        ..default()
                     },
-                    padding: UiRect::horizontal(Val::Px(6.0 * zoom)),
-                    overflow: Overflow::clip(),
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-                socket.clone(),
-                Children::spawn((
-                    Spawn((
-                        Text::new(label.to_string()),
-                        ThemedText,
-                        font(10.0),
-                        TextLayout {
-                            linebreak: bevy::text::LineBreak::NoWrap,
-                            ..default()
-                        },
+                    BackgroundColor(Color::NONE),
+                    socket.clone(),
+                    Children::spawn((
+                        Spawn((
+                            Text::new(label.to_string()),
+                            ThemedText,
+                            font(10.0),
+                            TextLayout {
+                                linebreak: bevy::text::LineBreak::NoWrap,
+                                ..default()
+                            },
+                        )),
+                        // Filled every frame from the running graph's own cache. Empty on an
+                        // input pin, which has no value of its own — it shows whatever its edge
+                        // brought, which is already on the far end of the link.
+                        Spawn((
+                            Text::new(String::new()),
+                            PinValue(socket),
+                            TextColor(Color::srgb(0.55, 0.82, 0.62)),
+                            font(10.0),
+                            Node {
+                                margin: UiRect::left(Val::Px(6.0 * zoom)),
+                                ..default()
+                            },
+                            TextLayout {
+                                linebreak: bevy::text::LineBreak::NoWrap,
+                                ..default()
+                            },
+                        )),
                     )),
-                    // Filled every frame from the running graph's own cache. Empty on an
-                    // input pin, which has no value of its own — it shows whatever its edge
-                    // brought, which is already on the far end of the link.
-                    Spawn((
-                        Text::new(String::new()),
-                        PinValue(socket),
-                        TextColor(Color::srgb(0.55, 0.82, 0.62)),
-                        font(10.0),
-                        Node {
-                            margin: UiRect::left(Val::Px(6.0 * zoom)),
-                            ..default()
-                        },
-                        TextLayout {
-                            linebreak: bevy::text::LineBreak::NoWrap,
-                            ..default()
-                        },
-                    )),
-                )),
-            ))
-            .observe(
-                |mut start: On<PointerDragStart>,
-                 mut wiring: ResMut<Wiring>,
-                 mut wire_start: ResMut<WireStart>,
-                 sockets: Query<&PinSocket>,
-                 parents: Query<&ChildOf>,
-                 windows: Query<&Window>,
-                 canvases: Query<(&ComputedNode, &bevy::ui::UiGlobalTransform), With<Canvas>>| {
-                    if start.button != PointerButton::Primary {
-                        return;
-                    }
-                    start.propagate(false);
-                    wiring.0 = std::iter::once(start.entity)
-                        .chain(parents.iter_ancestors(start.entity))
-                        .find_map(|e| sockets.get(e).ok().cloned());
-                    let outgoing = matches!(
-                        wiring.0,
-                        Some(PinSocket::Source(..) | PinSocket::StateOut(_))
-                    );
-                    wire_start.0 = canvas_cursor(&windows, &canvases).map(|at| (at, outgoing));
-                },
-            )
-            .observe(|mut drag: On<PointerDrag>| drag.propagate(false))
-            .observe(|mut end: On<PointerDragEnd>, mut wiring: ResMut<Wiring>, mut wire_start: ResMut<WireStart>| {
-                end.propagate(false);
-                wiring.0 = None;
-                wire_start.0 = None;
-            })
-            // The drop lands on the pin under the cursor and names the pin the drag began on,
-            // so both ends arrive in one event and no pending-link bookkeeping is needed.
-            .observe(
-                |mut drop: On<PointerDragDrop>,
-                 sockets: Query<&PinSocket>,
-                 parents: Query<&ChildOf>,
-                 mut wiring: ResMut<Wiring>,
-                 mut wire_start: ResMut<WireStart>,
-                 mut commands: Commands| {
-                    drop.propagate(false);
-                    wire_start.0 = None;
-                    // The pin the drag began on was recorded at its start: the entity the drag
-                    // names is whatever was hit, usually the pin's label.
-                    let from = wiring.0.take();
-                    let onto = std::iter::once(drop.entity)
-                        .chain(parents.iter_ancestors(drop.entity))
-                        .find_map(|e| sockets.get(e).ok());
-                    let (Some(from), Some(onto)) = (from, onto) else {
-                        return;
-                    };
-                    let Some(wire) = from.connects(onto) else {
-                        info!("wiring: those two pins do not connect");
-                        return;
-                    };
-                    commands.queue(move |world: &mut World| match wire {
-                        Wire::Edge(source, target) => document::connect(world, source, target),
-                        Wire::Transition(from, to) => {
-                            document::add_transition(world, from.uuid(), to.uuid());
+                ))
+                .observe(
+                    |mut start: On<PointerDragStart>,
+                     mut wiring: ResMut<Wiring>,
+                     mut wire_start: ResMut<WireStart>,
+                     sockets: Query<&PinSocket>,
+                     parents: Query<&ChildOf>,
+                     windows: Query<&Window>,
+                     canvases: Query<
+                        (&ComputedNode, &bevy::ui::UiGlobalTransform),
+                        With<Canvas>,
+                    >| {
+                        if start.button != PointerButton::Primary {
+                            return;
                         }
-                    });
-                },
-            )
-            .observe(
-                |mut click: On<PointerClick>, sockets: Query<&PinSocket>, mut commands: Commands| {
-                    if click.button != PointerButton::Secondary {
-                        return;
-                    }
-                    click.propagate(false);
-                    let Ok(PinSocket::Target(target, _)) = sockets.get(click.entity) else {
-                        return;
-                    };
-                    let target = target.clone();
-                    commands.queue(move |world: &mut World| document::cut(world, target));
-                },
-            )
-            .id();
+                        start.propagate(false);
+                        wiring.0 = std::iter::once(start.entity)
+                            .chain(parents.iter_ancestors(start.entity))
+                            .find_map(|e| sockets.get(e).ok().cloned());
+                        let outgoing = matches!(
+                            wiring.0,
+                            Some(PinSocket::Source(..) | PinSocket::StateOut(_))
+                        );
+                        wire_start.0 = canvas_cursor(&windows, &canvases).map(|at| (at, outgoing));
+                    },
+                )
+                .observe(|mut drag: On<PointerDrag>| drag.propagate(false))
+                .observe(
+                    |mut end: On<PointerDragEnd>,
+                     mut wiring: ResMut<Wiring>,
+                     mut wire_start: ResMut<WireStart>| {
+                        end.propagate(false);
+                        wiring.0 = None;
+                        wire_start.0 = None;
+                    },
+                )
+                // The drop lands on the pin under the cursor and names the pin the drag began on,
+                // so both ends arrive in one event and no pending-link bookkeeping is needed.
+                .observe(
+                    |mut drop: On<PointerDragDrop>,
+                     sockets: Query<&PinSocket>,
+                     parents: Query<&ChildOf>,
+                     mut wiring: ResMut<Wiring>,
+                     mut wire_start: ResMut<WireStart>,
+                     mut commands: Commands| {
+                        drop.propagate(false);
+                        wire_start.0 = None;
+                        // The pin the drag began on was recorded at its start: the entity the drag
+                        // names is whatever was hit, usually the pin's label.
+                        let from = wiring.0.take();
+                        let onto = std::iter::once(drop.entity)
+                            .chain(parents.iter_ancestors(drop.entity))
+                            .find_map(|e| sockets.get(e).ok());
+                        let (Some(from), Some(onto)) = (from, onto) else {
+                            return;
+                        };
+                        let Some(wire) = from.connects(onto) else {
+                            info!("wiring: those two pins do not connect");
+                            return;
+                        };
+                        commands.queue(move |world: &mut World| match wire {
+                            Wire::Edge(source, target) => document::connect(world, source, target),
+                            Wire::Transition(from, to) => {
+                                document::add_transition(world, from.uuid(), to.uuid());
+                            }
+                        });
+                    },
+                )
+                .observe(
+                    |mut click: On<PointerClick>,
+                     sockets: Query<&PinSocket>,
+                     mut commands: Commands| {
+                        if click.button != PointerButton::Secondary {
+                            return;
+                        }
+                        click.propagate(false);
+                        let Ok(PinSocket::Target(target, _)) = sockets.get(click.entity) else {
+                            return;
+                        };
+                        let target = target.clone();
+                        commands.queue(move |world: &mut World| document::cut(world, target));
+                    },
+                )
+                .id();
         // The pin's dot, on the box's outer edge: where a wire starts and lands.
         let dot = commands
             .spawn((
@@ -1715,13 +1729,15 @@ fn spawn_box(commands: &mut Commands, boxed: &Boxed, px: Vec2, zoom: f32) -> Ent
     );
     if matches!(kind, BoxKind::Inputs | BoxKind::Outputs) {
         // The rails are the graph's own pins: clicking one puts the graph in the inspector.
-        commands.entity(entity).observe(move |mut click: On<PointerClick>, mut commands: Commands| {
-            if click.button != PointerButton::Primary {
-                return;
-            }
-            click.propagate(false);
-            commands.queue(document::select_root);
-        });
+        commands.entity(entity).observe(
+            move |mut click: On<PointerClick>, mut commands: Commands| {
+                if click.button != PointerButton::Primary {
+                    return;
+                }
+                click.propagate(false);
+                commands.queue(document::select_root);
+            },
+        );
     }
     if let BoxKind::Node(id) = kind {
         commands.entity(entity).insert(CanvasNode(id)).observe(
@@ -1731,16 +1747,16 @@ fn spawn_box(commands: &mut Commands, boxed: &Boxed, px: Vec2, zoom: f32) -> Ent
                 }
                 click.propagate(false);
                 let double = click.count >= 2;
-            commands.queue(move |world: &mut World| {
-                document::select_node(world, id);
-                if double {
-                    if document::clip_of_node(world, id).is_some() {
-                        open_clip_timeline(world, id);
-                    } else if let Some(path) = document::document_of_node(world, id) {
-                        open_linked(world, &path);
+                commands.queue(move |world: &mut World| {
+                    document::select_node(world, id);
+                    if double {
+                        if document::clip_of_node(world, id).is_some() {
+                            open_clip_timeline(world, id);
+                        } else if let Some(path) = document::document_of_node(world, id) {
+                            open_linked(world, &path);
+                        }
                     }
-                }
-            });
+                });
             },
         );
     }
@@ -1817,24 +1833,26 @@ fn draw_wire_preview(
     let Ok(canvas) = canvas.single() else {
         return;
     };
-    let preview = commands.spawn((
-        WirePreview,
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(0.0),
-            top: Val::Px(0.0),
-            right: Val::Px(0.0),
-            bottom: Val::Px(0.0),
-            ..default()
-        },
-        UiPolyline {
-            points,
-            thickness: LINK_THICKNESS * view.zoom,
-            color: Color::srgba(0.9, 0.9, 0.9, 0.8),
-            closed: false,
-        },
-        Pickable::IGNORE,
-    )).id();
+    let preview = commands
+        .spawn((
+            WirePreview,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                right: Val::Px(0.0),
+                bottom: Val::Px(0.0),
+                ..default()
+            },
+            UiPolyline {
+                points,
+                thickness: LINK_THICKNESS * view.zoom,
+                color: Color::srgba(0.9, 0.9, 0.9, 0.8),
+                closed: false,
+            },
+            Pickable::IGNORE,
+        ))
+        .id();
     attach(&mut commands, canvas, None, vec![preview]);
 }
 
@@ -1862,7 +1880,10 @@ struct PinValue(PinSocket);
 /// genuinely did not run.
 fn show_pin_values(
     view: Res<CanvasView>,
-    characters: Query<(&jackdaw_animation_runtime::AnimationRig, &AnimationGraphPlayer)>,
+    characters: Query<(
+        &jackdaw_animation_runtime::AnimationRig,
+        &AnimationGraphPlayer,
+    )>,
     mut values: Query<(&mut Text, &PinValue)>,
 ) {
     // A character in the scene playing the graph on the canvas.
@@ -2180,7 +2201,6 @@ mod tests {
         assert!(out.connects(&wrong_type).is_none());
         assert!(out.connects(&time_in).is_none());
     }
-
 }
 
 // ------------------------------------------------------------------ timeline

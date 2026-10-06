@@ -24,7 +24,6 @@ mod new_asset;
 mod positionable_mirror_plane;
 mod project_startup;
 mod project_window;
-mod scene_environment;
 mod scene_wind;
 mod selection_undo;
 mod synthetic_input;

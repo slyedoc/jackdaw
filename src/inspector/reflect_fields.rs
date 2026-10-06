@@ -2023,7 +2023,6 @@ fn apply_field_json_with_undo(
     field_path: &str,
     new_json: serde_json::Value,
 ) {
-
     crate::commands::field_edit_commit(
         world,
         type_path,
@@ -3293,9 +3292,8 @@ pub(super) fn apply_enum_variant_with_undo(
         resolve_enum_info(type_path, field_path, &reg)
             .and_then(|enum_info| build_variant_default_json(enum_info, variant_name, &reg))
     };
-    let new_json = registered
-        .unwrap_or_else(|| serde_json::Value::String(variant_name.to_string()));
-
+    let new_json =
+        registered.unwrap_or_else(|| serde_json::Value::String(variant_name.to_string()));
 
     crate::commands::field_edit_commit(
         world,

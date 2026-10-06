@@ -13,9 +13,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use crate::bsn_files;
 use bevy::prelude::*;
 use jackdaw_api::prelude::AssetKinds;
-use crate::bsn_files;
 
 /// What a file whose root is one entity of its own (not a wrapper, not an asset value) is listed
 /// as: something placed as an instance.

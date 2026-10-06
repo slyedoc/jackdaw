@@ -204,7 +204,16 @@ pub(crate) fn on_add_component_button_click(
     selection: Res<Selection>,
     type_registry: Res<AppTypeRegistry>,
     components: &Components,
-    entity_query: Query<&Archetype, (With<Selected>, Without<EditorEntity>)>,
+    entity_query: Query<
+        &Archetype,
+        (
+            With<Selected>,
+            Or<(
+                Without<EditorEntity>,
+                With<crate::scene_io::SceneEnvironment>,
+            )>,
+        ),
+    >,
     denylist: Res<PickerDenylist>,
     project_types: Res<crate::project_types::ProjectTypes>,
     type_metadata: Res<crate::type_metadata::TypeMetadata>,
@@ -258,7 +267,6 @@ pub(crate) fn on_add_component_button_click(
         type_path_full: p.type_path_full,
     })
     .collect();
-
 
     let picker = PickerProps::new(spawn_item, on_select)
         .items(searchable_components)

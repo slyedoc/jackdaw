@@ -1,8 +1,5 @@
 use bevy::feathers::controls::{ButtonVariant, FeathersToolButton};
-use bevy::{
-    prelude::*,
-    ui_widgets::observe,
-};
+use bevy::{prelude::*, ui_widgets::observe};
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::{
     button::{
@@ -16,7 +13,6 @@ use jackdaw_feathers::{
     tree_view::tree_container_drop_observers,
 };
 use jackdaw_localization::LocalizedText;
-
 
 use crate::{
     EditorEntity,
@@ -406,6 +402,9 @@ pub(crate) fn toolbar() -> impl Scene {
             --
             // Which gizmos draw: opens the overlays panel.
             @overlays_button()
+            --
+            // The scene's environment (sky, exposure, physics) into the inspector.
+            @toolbar_op_button(crate::environment_ops::EnvironmentSelectOp::ID, Icon::CloudSun)
         ]
     }
 }
@@ -950,31 +949,29 @@ pub fn inspector_components_content(_icon_font: Handle<Font>) -> impl Bundle {
                             ..Default::default()
                         },
                         BackgroundColor(Color::NONE),
-                        children![
-                            (
+                        children![(
+                            Node {
+                                flex_direction: FlexDirection::Row,
+                                align_items: AlignItems::Center,
+                                column_gap: px(tokens::SPACING_XS),
+                                width: percent(100),
+                                ..Default::default()
+                            },
+                            children![(
                                 Node {
-                                    flex_direction: FlexDirection::Row,
-                                    align_items: AlignItems::Center,
-                                    column_gap: px(tokens::SPACING_XS),
-                                    width: percent(100),
+                                    flex_grow: 1.0,
                                     ..Default::default()
                                 },
                                 children![(
-                                    Node {
-                                        flex_grow: 1.0,
-                                        ..Default::default()
-                                    },
-                                    children![(
-                                        crate::inspector::InspectorSearch,
-                                        text_edit::text_edit(
-                                            TextEditProps::default()
-                                                .with_placeholder("Filter...")
-                                                .allow_empty()
-                                        ),
-                                    )],
-                                ),],
-                            ),
-                        ],
+                                    crate::inspector::InspectorSearch,
+                                    text_edit::text_edit(
+                                        TextEditProps::default()
+                                            .with_placeholder("Filter...")
+                                            .allow_empty()
+                                    ),
+                                )],
+                            ),],
+                        ),],
                     ),
                     (
                         Inspector,

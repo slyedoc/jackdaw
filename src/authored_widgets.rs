@@ -5,8 +5,8 @@
 //! observers fire only for `AuthoredWidget`, which here mirrors `AstNodeRef`,
 //! so editor chrome keeps its own state machines.
 
-use bevy::prelude::*;
 use crate::scene_io::SceneEntity as AstNodeRef;
+use bevy::prelude::*;
 use jackdaw_widgets_runtime::AuthoredWidget;
 
 pub use jackdaw_widgets_runtime::register_widget_defaults;

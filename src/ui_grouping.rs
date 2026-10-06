@@ -449,7 +449,9 @@ pub fn ungroup_selection(world: &mut World) {
     };
     if world.get::<Node>(container).is_none()
         || world.get::<EditorEntity>(container).is_some()
-        || world.get::<crate::scene_io::SceneEntity>(container).is_none()
+        || world
+            .get::<crate::scene_io::SceneEntity>(container)
+            .is_none()
     {
         return;
     }

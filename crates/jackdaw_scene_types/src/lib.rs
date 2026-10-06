@@ -19,7 +19,6 @@
 
 pub mod asset_path;
 pub mod brush_chunks;
-pub mod environment;
 #[cfg(feature = "render")]
 pub mod mesh_rebuild;
 pub mod node_id;
@@ -27,10 +26,6 @@ pub mod types;
 
 pub use asset_path::to_asset_path;
 pub use brush_chunks::{MeshChunk, build_brush_chunks};
-pub use environment::{
-    Ambient, AmbientMode, Antialiasing, Environment, Fog, FogMode, PostProcess, Reflections,
-    ShadowFiltering, Sky, Tonemapper,
-};
 #[cfg(feature = "render")]
 pub use mesh_rebuild::{DEFAULT_BRUSH_MATERIAL, evaluate_brush_geometry};
 pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
@@ -95,17 +90,6 @@ impl Plugin for SceneTypesPlugin {
             .register_type::<DetailMesh>()
             .register_type::<DetailPresser>()
             .register_type::<Wind>()
-            .register_type::<Environment>()
-            .register_type::<Sky>()
-            .register_type::<Fog>()
-            .register_type::<FogMode>()
-            .register_type::<Ambient>()
-            .register_type::<AmbientMode>()
-            .register_type::<Reflections>()
-            .register_type::<PostProcess>()
-            .register_type::<Tonemapper>()
-            .register_type::<Antialiasing>()
-            .register_type::<ShadowFiltering>()
             .register_type::<NavmeshExclude>()
             .register_type::<ScatterGroup>()
             .register_type::<ScatterInstance>()

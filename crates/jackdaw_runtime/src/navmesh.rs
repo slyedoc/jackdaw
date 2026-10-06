@@ -43,7 +43,11 @@ pub(crate) fn attach_navmeshes(
             continue;
         };
         let scene = assets.join(path.path());
-        let Some(stem) = scene.file_name().and_then(|n| n.to_str()).map(crate::bsn_files::asset_stem) else {
+        let Some(stem) = scene
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(crate::bsn_files::asset_stem)
+        else {
             continue;
         };
         let path = scene.with_file_name(format!("{stem}.{}", navmesh::EXTENSION));

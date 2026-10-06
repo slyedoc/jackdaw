@@ -170,13 +170,25 @@ fn attach_sidecars(
         }
         let scene_dir = std::iter::once(entity)
             .chain(parents.iter_ancestors(entity))
-            .find_map(|at| instances.get(at).ok()?.0.path()?.path().parent().map(Path::to_path_buf))
+            .find_map(|at| {
+                instances
+                    .get(at)
+                    .ok()?
+                    .0
+                    .path()?
+                    .path()
+                    .parent()
+                    .map(Path::to_path_buf)
+            })
             .unwrap_or_default();
         match sidecar::resolve_path(&root.join(scene_dir), &terrain.data_path) {
             Ok(path) => {
                 commands.entity(entity).insert(TerrainSidecar(path));
             }
-            Err(err) => warn!("terrain data path {:?} is unusable: {err}", terrain.data_path),
+            Err(err) => warn!(
+                "terrain data path {:?} is unusable: {err}",
+                terrain.data_path
+            ),
         }
     }
 }
@@ -793,7 +805,8 @@ mod tests {
         app.register_asset_reflect::<Image>();
         app.register_asset_reflect::<AuroraMaterial>();
         app.init_resource::<JackdawCatalog>();
-        app.world_mut().insert_resource(crate::AssetFolder(Some(assets_root.to_path_buf())));
+        app.world_mut()
+            .insert_resource(crate::AssetFolder(Some(assets_root.to_path_buf())));
         app.add_systems(Startup, crate::load_asset_files);
         app.update();
         app

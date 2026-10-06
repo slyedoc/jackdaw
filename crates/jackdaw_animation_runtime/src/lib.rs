@@ -88,7 +88,8 @@ fn arm_rigs(
             None => top.iter().collect(),
         };
         if armed.is_none() {
-            let mut stack: Vec<(Entity, Vec<&str>)> = start.into_iter().map(|e| (e, Vec::new())).collect();
+            let mut stack: Vec<(Entity, Vec<&str>)> =
+                start.into_iter().map(|e| (e, Vec::new())).collect();
             while let Some((entity, mut path)) = stack.pop() {
                 let Ok(name) = names.get(entity) else {
                     continue;
@@ -122,7 +123,8 @@ impl Plugin for AnimationRuntimePlugin {
     fn build(&self, app: &mut App) {
         // A game on plain `DefaultPlugins` has no graph runtime of its own.
         if !app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>()
-            && !app.is_plugin_added::<bevy_animation_graph::core::plugin::AnimationGraphCorePlugin>()
+            && !app
+                .is_plugin_added::<bevy_animation_graph::core::plugin::AnimationGraphCorePlugin>()
         {
             app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
         }
@@ -189,7 +191,10 @@ mod tests {
         let root = EntityPath::default().child("Armature");
         skeleton.add_bone(root.clone(), Transform::IDENTITY, Transform::IDENTITY);
         skeleton.set_root(root.id());
-        let skeleton = app.world_mut().resource_mut::<Assets<Skeleton>>().add(skeleton);
+        let skeleton = app
+            .world_mut()
+            .resource_mut::<Assets<Skeleton>>()
+            .add(skeleton);
 
         let character = app
             .world_mut()

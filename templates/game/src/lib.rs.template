@@ -36,10 +36,16 @@ impl Plugin for GamePlugin {
     }
 }
 
-/// Load the authored scene; `JackdawPlugin` spawns its entities as
-/// children of this root.
-fn spawn_scene(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(JackdawSceneRoot(asset_server.load("scene.bsn")));
+/// Load the authored scene onto the main environment: its sky, exposure and gravity land there
+/// and its entities become the environment's children.
+fn spawn_scene(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    main: Res<MainPhysicsEnvironmentEntity>,
+) {
+    commands
+        .entity(main.0)
+        .insert(ScenePatchInstance(asset_server.load("scene.bsn")));
 }
 
 /// Spin-rate in radians per second. Attach it in the inspector; the

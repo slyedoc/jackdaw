@@ -142,14 +142,16 @@ pub fn author(world: &mut World, entity: Entity, type_id: TypeId) {
     }
 }
 
-/// After an edit: what changed on a scene entity since `since` joins its authored set. An entity
-/// whose set arrived during the edit (respawned from text) already holds what its file says.
+/// After an edit: what changed on a scene entity, or on the tab's environment, since `since` joins
+/// its authored set. An entity whose set arrived during the edit (respawned from text) already
+/// holds what its file says.
 fn mark_edited(world: &mut World, since: Tick) {
     let now = world.read_change_tick();
-    let entities: Vec<Entity> = world
+    let mut entities: Vec<Entity> = world
         .query_filtered::<Entity, With<SceneEntity>>()
         .iter(world)
         .collect();
+    entities.extend(super::scene_environment(world));
     let skipped = skipped_types(world);
     let mut marks: Vec<(Entity, HashSet<TypeId>)> = Vec::new();
     let mut unset: Vec<Entity> = Vec::new();

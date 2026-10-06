@@ -87,7 +87,12 @@ fn changed_since(world: &World, entities: &[Entity], since: Tick, now: Tick) -> 
 /// Follow the held document: rebuild its graph whenever it changes.
 pub(super) fn track_graph_document(world: &mut World, mut last: Local<Option<(Entity, Tick)>>) {
     let now = world.change_tick();
-    let Some(held) = world.resource::<HeldGraph>().0.as_ref().map(|doc| (doc.root, doc.asset_path.clone())) else {
+    let Some(held) = world
+        .resource::<HeldGraph>()
+        .0
+        .as_ref()
+        .map(|doc| (doc.root, doc.asset_path.clone()))
+    else {
         *last = None;
         if world.resource_mut::<ActiveGraphDoc>().0.take().is_some() {
             let mut view = world.resource_mut::<CanvasView>();
@@ -451,7 +456,10 @@ pub fn document_of_node(world: &World, id: Uuid) -> Option<String> {
     use bevy_animation_graph::builtin_nodes::{fsm_node::FsmNode, graph_node::GraphNode};
     let entity = node_entity(world, id)?;
     if let Some(node) = world.get::<FsmNode>(entity) {
-        return node.fsm.path().map(|p| p.path().to_string_lossy().into_owned());
+        return node
+            .fsm
+            .path()
+            .map(|p| p.path().to_string_lossy().into_owned());
     }
     if let Some(node) = world.get::<GraphNode>(entity) {
         return node
@@ -460,7 +468,10 @@ pub fn document_of_node(world: &World, id: Uuid) -> Option<String> {
             .map(|p| p.path().to_string_lossy().into_owned());
     }
     let state = world.get::<AnimState>(entity)?;
-    state.graph.path().map(|p| p.path().to_string_lossy().into_owned())
+    state
+        .graph
+        .path()
+        .map(|p| p.path().to_string_lossy().into_owned())
 }
 
 pub fn select_node(world: &mut World, id: Uuid) {
@@ -500,8 +511,9 @@ pub fn commit_rail_position(world: &mut World, inputs: bool, at: Vec2) {
 }
 
 fn link_from(doc: &GraphDocument, source: &SourcePin) -> Option<LinkFrom> {
-    let entity =
-        |id: &bevy_animation_graph::core::animation_graph::NodeId| Some(doc.nodes.get(&id.uuid())?.0);
+    let entity = |id: &bevy_animation_graph::core::animation_graph::NodeId| {
+        Some(doc.nodes.get(&id.uuid())?.0)
+    };
     Some(match source {
         SourcePin::NodeData(id, pin) => LinkFrom::Node(entity(id)?, pin.clone()),
         SourcePin::NodeTime(id) => LinkFrom::NodeTime(entity(id)?),
@@ -541,7 +553,9 @@ pub fn connect(world: &mut World, source: SourcePin, target: TargetPin) {
         .get::<Links>(entity)
         .cloned()
         .unwrap_or(Links(Vec::new()));
-    links.0.retain(|link| !same_input(&link.0, &to, entity == root));
+    links
+        .0
+        .retain(|link| !same_input(&link.0, &to, entity == root));
     links.0.push(Link(to, from));
     set_component(world, entity, Some(links), "Connect");
 }
@@ -557,7 +571,9 @@ pub fn cut(world: &mut World, target: TargetPin) {
         return;
     };
     let before = links.0.len();
-    links.0.retain(|link| !same_input(&link.0, &to, entity == root));
+    links
+        .0
+        .retain(|link| !same_input(&link.0, &to, entity == root));
     if links.0.len() == before {
         return;
     }
@@ -582,25 +598,29 @@ pub fn add_node(world: &mut World, type_id: TypeId, label: &str, at: Vec2) {
     let Some((root, name)) = with_doc(world, |doc| (doc.root, unique_name(doc, label))) else {
         return;
     };
-    spawn_child(world, root, name, format!("Add {label}"), move |world, entity| {
-        let registry = world.resource::<AppTypeRegistry>().clone();
-        let registry = registry.read();
-        let (Some(component), Some(default)) = (
-            registry.get_type_data::<ReflectComponent>(type_id),
-            registry.get_type_data::<ReflectDefault>(type_id),
-        ) else {
-            return;
-        };
-        let value = default.default();
-        component.insert(
-            &mut world.entity_mut(entity),
-            value.as_partial_reflect(),
-            &registry,
-        );
-        world
-            .entity_mut(entity)
-            .insert(NodePosition(at.x, at.y));
-    });
+    spawn_child(
+        world,
+        root,
+        name,
+        format!("Add {label}"),
+        move |world, entity| {
+            let registry = world.resource::<AppTypeRegistry>().clone();
+            let registry = registry.read();
+            let (Some(component), Some(default)) = (
+                registry.get_type_data::<ReflectComponent>(type_id),
+                registry.get_type_data::<ReflectDefault>(type_id),
+            ) else {
+                return;
+            };
+            let value = default.default();
+            component.insert(
+                &mut world.entity_mut(entity),
+                value.as_partial_reflect(),
+                &registry,
+            );
+            world.entity_mut(entity).insert(NodePosition(at.x, at.y));
+        },
+    );
 }
 
 /// Add a state to a state machine document.
@@ -618,7 +638,11 @@ pub fn add_state(world: &mut World, at: Vec2) {
 /// Add a direct transition between two states.
 pub fn add_transition(world: &mut World, from: Uuid, to: Uuid) {
     let Some(found) = with_doc(world, |doc| {
-        Some((doc.root, doc.nodes.get(&from)?.clone(), doc.nodes.get(&to)?.clone()))
+        Some((
+            doc.root,
+            doc.nodes.get(&from)?.clone(),
+            doc.nodes.get(&to)?.clone(),
+        ))
     })
     .flatten() else {
         return;
@@ -643,9 +667,7 @@ fn spawn_child(
     fill: impl Fn(&mut World, Entity) + Send + Sync + 'static,
 ) {
     let fill: Arc<dyn Fn(&mut World, Entity) + Send + Sync> = Arc::new(fill);
-    let entity = world
-        .spawn((Name::new(name), HeldGraphNode, Disabled))
-        .id();
+    let entity = world.spawn((Name::new(name), HeldGraphNode, Disabled)).id();
     fill(world, entity);
     run(
         world,
@@ -667,7 +689,10 @@ pub fn delete_node(world: &mut World, entity: Entity) -> bool {
     if entity == root || !held::is_held(world, entity) {
         return false;
     }
-    if world.get::<AnimFsm>(root).is_some_and(|fsm| fsm.start == entity) {
+    if world
+        .get::<AnimFsm>(root)
+        .is_some_and(|fsm| fsm.start == entity)
+    {
         warn!("the start state cannot be deleted; make another state the start first");
         return true;
     }
@@ -722,7 +747,12 @@ pub fn rename(world: &mut World, entity: Entity, name: &str) -> bool {
     if !held::is_held(world, entity) {
         return false;
     }
-    set_component(world, entity, Some(Name::new(name.to_string())), "Rename node");
+    set_component(
+        world,
+        entity,
+        Some(Name::new(name.to_string())),
+        "Rename node",
+    );
     true
 }
 

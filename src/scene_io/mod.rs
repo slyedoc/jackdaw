@@ -7,32 +7,33 @@ use std::path::PathBuf;
 use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 
-mod load;
 mod authored;
+mod load;
 mod registration;
 pub(crate) mod save;
 pub mod stamp;
 
+pub use authored::{author, freeze_authored};
 pub use load::{
     LoadOutcome, LoadRefusal, PendingSceneSpawns, RefusalCategory, SceneFile, SceneSpawn,
     apply_scene_kind, asset_path_of, load_scene_from_file, load_scene_from_file_with_outcome,
-    open_scene_kind, read_scene_file, scene_kind_of, spawn_bsn_text, spawn_default_lighting, spawn_open_dialog,
-    spawn_scene_file,
+    open_scene_kind, read_scene_file, scene_kind_of, spawn_bsn_text, spawn_default_lighting,
+    spawn_open_dialog, spawn_scene_file,
 };
 pub(crate) use load::{
     SidecarImport, clear_scene_entities, despawn_scene_entities, import_terrain_sidecars,
     is_unresolved,
 };
-pub use authored::{author, freeze_authored};
 pub use registration::{
-    SceneEntity, SceneRootOf, SceneRoots, adopt_entities, adopt_entity, despawn_tab_world,
-    ensure_scene_world, is_ui_root, place_root, scene_parent, scene_world, set_tab_open,
+    SceneEntity, SceneEnvironment, SceneRootOf, SceneRoots, adopt_entities, adopt_entity,
+    adopt_environment, despawn_tab_environment, ensure_scene_environment, is_ui_root, place_root,
+    scene_environment, scene_parent, set_tab_open,
 };
+pub(crate) use save::save_scene_inner;
 pub use save::{
     SaveOutcome, emit_bsn_scene_for_file, emit_bsn_scene_with_inline_assets, retarget_active_scene,
     save_layout_to_project, save_scene, save_scene_as, save_scene_with_outcome,
 };
-pub(crate) use save::save_scene_inner;
 
 use load::poll_scene_dialog;
 
@@ -232,9 +233,9 @@ pub fn write_settings(world: &mut World) -> bevy::bsn_asset::WriteSettings {
 
 /// The open scene's top-level entities, in the order a file lists them.
 pub fn scene_roots(world: &mut World) -> Vec<Entity> {
-    if let Some(tab_world) = scene_world(world) {
+    if let Some(tab_environment) = scene_environment(world) {
         return world
-            .get::<SceneRoots>(tab_world)
+            .get::<SceneRoots>(tab_environment)
             .map(|roots| roots.entities().to_vec())
             .unwrap_or_default();
     }
@@ -258,7 +259,13 @@ impl Plugin for SceneIoPlugin {
                 poll_scene_dialog.run_if(in_state(crate::AppState::Editor)),
             )
             .init_resource::<PendingSceneSpawns>()
-            .add_systems(Update, (load::finish_pending_scene_spawns, crate::entity_ops::poll_instance_picker))
+            .add_systems(
+                Update,
+                (
+                    load::finish_pending_scene_spawns,
+                    crate::entity_ops::poll_instance_picker,
+                ),
+            )
             .add_systems(PostUpdate, deactivate_scene_cameras);
     }
 }
@@ -270,7 +277,10 @@ impl Plugin for SceneIoPlugin {
 /// drew the scene on top of the docks. The components stay on the
 /// entity for inspection and save; only rendering is suppressed.
 fn deactivate_scene_cameras(
-    mut cameras: Query<&mut bevy::camera::Camera, (With<SceneEntity>, Without<crate::EditorEntity>)>,
+    mut cameras: Query<
+        &mut bevy::camera::Camera,
+        (With<SceneEntity>, Without<crate::EditorEntity>),
+    >,
 ) {
     for mut camera in &mut cameras {
         if camera.is_active {

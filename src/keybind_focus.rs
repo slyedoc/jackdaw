@@ -89,5 +89,4 @@ pub(crate) fn disable_keyboard_input_when_typing(
 #[cfg(test)]
 mod tests {
     use super::*;
-
 }

@@ -35,4 +35,3 @@ impl crate::commands::EditorCommand for SetCustomProperties {
         "Set custom properties"
     }
 }
-

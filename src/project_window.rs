@@ -126,7 +126,8 @@ impl KindFilter {
         match self {
             KindFilter::All => true,
             KindFilter::Scenes => {
-                entry.kind == AssetFileKind::Scene && crate::bsn_files::is_document_path(&entry.path)
+                entry.kind == AssetFileKind::Scene
+                    && crate::bsn_files::is_document_path(&entry.path)
             }
             KindFilter::Prefabs => entry.kind == AssetFileKind::Prefab,
             KindFilter::Materials => entry_kind_id(entry, kinds)
@@ -546,7 +547,9 @@ fn refresh_folder_tree(
     state.needs_tree_refresh = false;
     commands.queue(move |world: &mut World| {
         if world.get_entity(tree).is_err() {
-            world.resource_mut::<ProjectWindowState>().needs_tree_refresh = true;
+            world
+                .resource_mut::<ProjectWindowState>()
+                .needs_tree_refresh = true;
             return;
         }
         let children: Vec<Entity> = world
@@ -858,14 +861,11 @@ fn scan_current_directory(state: &mut ProjectWindowState, kinds: &AssetKinds) ->
         .collect();
 
     for entry in entries.iter_mut() {
-        let reads_a_type =
-            entry
-                .path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|extension| {
-                    extension.eq_ignore_ascii_case("bsn")
-                });
+        let reads_a_type = entry
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("bsn"));
         if !entry.is_directory && reads_a_type {
             entry.kind = state.kind_cache.check(&entry.path, kinds);
         }
@@ -1710,7 +1710,12 @@ fn on_context_action(
             .param("path", target.path.to_string_lossy().into_owned())
             .param(
                 "kind",
-                if action == NEW_ANIM_FSM_ACTION { "fsm" } else { "graph" }.to_string(),
+                if action == NEW_ANIM_FSM_ACTION {
+                    "fsm"
+                } else {
+                    "graph"
+                }
+                .to_string(),
             )
             .call();
     } else {

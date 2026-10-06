@@ -107,7 +107,11 @@ pub(crate) fn field_edit_begin(world: &mut World, type_path: &str, field_path: &
             type_path: type_path.to_string(),
             field_path: field_path.to_string(),
         };
-        if world.resource::<FieldEditSessions>().live_at_begin.contains_key(&key) {
+        if world
+            .resource::<FieldEditSessions>()
+            .live_at_begin
+            .contains_key(&key)
+        {
             continue;
         }
         if let Some(live) = live_field(world, entity, type_path, field_path) {
@@ -160,7 +164,8 @@ pub(crate) fn field_edit_commit(
     {
         return;
     }
-    if let Some(cmd) = field_edit_commit_built(world, type_path, field_path, new_json, group_label) {
+    if let Some(cmd) = field_edit_commit_built(world, type_path, field_path, new_json, group_label)
+    {
         world.resource_mut::<CommandHistory>().push_executed(cmd);
     }
 }
@@ -187,7 +192,8 @@ fn field_edit_commit_built(
 
     let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
     for &target in &targets {
-        let Some((path, new_value)) = field_edit_value(world, target, type_path, field_path, new_json)
+        let Some((path, new_value)) =
+            field_edit_value(world, target, type_path, field_path, new_json)
         else {
             continue;
         };
@@ -428,9 +434,11 @@ pub fn place_entity(
     }
     // The tab world is the top level.
     let location = HierarchyLocation {
-        parent: location
-            .parent
-            .filter(|&parent| world.get::<avian3d::world::PhysicsWorld>(parent).is_none()),
+        parent: location.parent.filter(|&parent| {
+            world
+                .get::<avian3d::environment::PhysicsEnvironment>(parent)
+                .is_none()
+        }),
         ..location
     };
     if let Some(parent) = location.parent
@@ -457,7 +465,9 @@ pub fn place_entity(
                     location.index.min(children.len() - usize::from(already))
                 })
                 .unwrap_or(0);
-            world.entity_mut(entity).remove::<crate::scene_io::SceneRootOf>();
+            world
+                .entity_mut(entity)
+                .remove::<crate::scene_io::SceneRootOf>();
             world.entity_mut(parent).insert_children(index, &[entity]);
         }
         None => crate::scene_io::place_root(world, entity, location.index),
@@ -893,11 +903,19 @@ impl EditorCommand for SetField {
 
     fn undo(&mut self, world: &mut World) {
         match &self.old_value {
-            Some(old) => write_field(world, self.entity, &self.type_path, &self.field_path, old.as_ref()),
+            Some(old) => write_field(
+                world,
+                self.entity,
+                &self.type_path,
+                &self.field_path,
+                old.as_ref(),
+            ),
             None if self.field_path.is_empty() => {
                 remove_component_from_ecs(world, self.entity, &self.type_path)
             }
-            None => reset_ecs_field_to_default(world, self.entity, &self.type_path, &self.field_path),
+            None => {
+                reset_ecs_field_to_default(world, self.entity, &self.type_path, &self.field_path)
+            }
         }
     }
 
@@ -1379,8 +1397,9 @@ fn handle_for_path(
     field: &dyn PartialReflect,
     path: &str,
 ) -> Option<FieldValue> {
-    let reflect_handle = registry
-        .get_type_data::<bevy::asset::ReflectHandle>(field.get_represented_type_info()?.type_id())?;
+    let reflect_handle = registry.get_type_data::<bevy::asset::ReflectHandle>(
+        field.get_represented_type_info()?.type_id(),
+    )?;
     let untyped = world
         .resource::<AssetServer>()
         .load_builder()
@@ -1573,4 +1592,3 @@ mod spawned_entities_tests {
         assert_eq!(SpawnedEntities::take(&mut world), vec![kept]);
     }
 }
-

@@ -7,8 +7,8 @@
 
 use bevy::{camera::visibility::RenderLayers, ecs::system::SystemParam, prelude::*};
 use bevy_aurora::{
+    environment::{InEnvironment, environment_mask},
     picking::{RayCaster, RayHit, RayHits},
-    world::{InWorld, world_mask},
 };
 
 use crate::viewport::{MainViewportCamera, ViewportCursor};
@@ -36,7 +36,7 @@ fn spawn_cursor_ray(mut commands: Commands) {
 /// cursor over no viewport traces nothing.
 fn aim_cursor_ray(
     vp: ViewportCursor,
-    layers: Query<(Option<&RenderLayers>, Option<&InWorld>), With<MainViewportCamera>>,
+    layers: Query<(Option<&RenderLayers>, Option<&InEnvironment>), With<MainViewportCamera>>,
     mut caster: Query<&mut RayCaster, With<CursorRay>>,
 ) {
     let Ok(mut caster) = caster.single_mut() else {
@@ -51,7 +51,7 @@ fn aim_cursor_ray(
             .viewport_to_world(cam_tf, (cursor - map.top_left) * map.remap)
             .ok()?;
         let (layers, world) = layers.get(vp.camera_entity()?).ok()?;
-        let mask = world_mask(layers, world);
+        let mask = environment_mask(layers, world);
         Some((ray, mask))
     })();
     match aimed {

@@ -18,12 +18,20 @@ use jackdaw_scene_types::UiSceneRoot;
 use crate::scene_io::SceneEntity;
 
 /// A UI scene root this document authored itself, rather than one an instance brought in.
-pub type AuthoredUiSceneRoot =
-    (With<UiSceneRoot>, Without<ChildOf>, Without<SceneBase>, With<SceneEntity>);
+pub type AuthoredUiSceneRoot = (
+    With<UiSceneRoot>,
+    Without<ChildOf>,
+    Without<SceneBase>,
+    With<SceneEntity>,
+);
 
 /// A UI scene root an instance brought into this document.
-pub type ImportedUiSceneRoot =
-    (With<UiSceneRoot>, Without<ChildOf>, With<SceneBase>, With<SceneEntity>);
+pub type ImportedUiSceneRoot = (
+    With<UiSceneRoot>,
+    Without<ChildOf>,
+    With<SceneBase>,
+    With<SceneEntity>,
+);
 
 /// The instance root `entity` sits inside, when it belongs to a base's contents: read-only here.
 pub fn inherited_by(world: &World, entity: Entity) -> Option<Entity> {
@@ -111,14 +119,17 @@ pub fn queue_instance(
     then: impl FnOnce(&mut World, Result<Entity, String>) + Send + Sync + 'static,
 ) {
     let handle = world.resource::<AssetServer>().load(base.to_string());
-    world.get_resource_or_init::<PendingInstances>().0.push(PendingInstance {
-        base: handle,
-        path: base.to_string(),
-        transform,
-        parent,
-        frames: 0,
-        then: Box::new(then),
-    });
+    world
+        .get_resource_or_init::<PendingInstances>()
+        .0
+        .push(PendingInstance {
+            base: handle,
+            path: base.to_string(),
+            transform,
+            parent,
+            frames: 0,
+            then: Box::new(then),
+        });
 }
 
 fn place_pending_instances(world: &mut World) {
@@ -176,7 +187,11 @@ fn hold_base(
 
 /// Write `roots` to `file` (one root as itself, several under a wrapper) and put an instance of
 /// it where the first root was. The roots' own placement stays on the instance.
-pub fn save_as_instance(world: &mut World, roots: &[Entity], file: &Path) -> Result<Entity, String> {
+pub fn save_as_instance(
+    world: &mut World,
+    roots: &[Entity],
+    file: &Path,
+) -> Result<Entity, String> {
     let &[first, ..] = roots else {
         return Err("nothing to save".into());
     };
@@ -195,7 +210,8 @@ pub fn save_as_instance(world: &mut World, roots: &[Entity], file: &Path) -> Res
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
     }
-    std::fs::write(file, crate::scene_io::stamp::with_stamp(&text)).map_err(|err| err.to_string())?;
+    std::fs::write(file, crate::scene_io::stamp::with_stamp(&text))
+        .map_err(|err| err.to_string())?;
     let base = crate::scene_io::asset_path_of(world, file);
     crate::commands::deselect_entities(world, roots);
     for &root in roots {
@@ -212,7 +228,10 @@ pub fn save_as_instance(world: &mut World, roots: &[Entity], file: &Path) -> Res
 /// Write an instance as a file of its own: the same base, with this instance's changes.
 pub fn save_as_variant(world: &mut World, instance: Entity, file: &Path) -> Result<(), String> {
     let settings = crate::scene_io::write_settings(world);
-    let placed = world.get::<Transform>(instance).copied().unwrap_or_default();
+    let placed = world
+        .get::<Transform>(instance)
+        .copied()
+        .unwrap_or_default();
     world.entity_mut(instance).insert(Transform::IDENTITY);
     let text = bevy::bsn_asset::write_scene_text(world, instance, &settings);
     world.entity_mut(instance).insert(placed);
@@ -227,7 +246,10 @@ pub fn save_as_variant(world: &mut World, instance: Entity, file: &Path) -> Resu
 pub fn revert_instance(world: &mut World, instance: Entity) -> Result<Entity, String> {
     let base = base_of(world, instance).ok_or("not an instance")?;
     let location = crate::commands::HierarchyLocation::from_world(world, instance);
-    let placed = world.get::<Transform>(instance).copied().unwrap_or_default();
+    let placed = world
+        .get::<Transform>(instance)
+        .copied()
+        .unwrap_or_default();
     let name = world.get::<Name>(instance).cloned();
     crate::commands::deselect_entities(world, &[instance]);
     crate::commands::despawn_scene_entity(world, instance);

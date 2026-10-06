@@ -1,5 +1,9 @@
-use avian3d::world::PhysicsWorld;
-use bevy::prelude::*;
+use avian3d::environment::PhysicsEnvironment;
+use bevy::{
+    ecs::reflect::AppTypeRegistry, platform::collections::HashSet, prelude::*,
+    reflect::std_traits::ReflectDefault, scene::AuthoredComponents,
+};
+use bevy_aurora::environment::Environment;
 
 use crate::scenes::Scenes;
 
@@ -8,12 +12,12 @@ use crate::scenes::Scenes;
 #[derive(Component, Default, Clone, Copy, Debug)]
 pub struct SceneEntity;
 
-/// A top-level entity of the tab whose world this points at.
+/// A top-level entity of the tab whose environment this points at.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 #[relationship(relationship_target = SceneRoots)]
 pub struct SceneRootOf(pub Entity);
 
-/// A tab world's top-level entities, in the order the outliner shows and a save writes them.
+/// A tab environment's top-level entities, in the order the outliner shows and a save writes them.
 #[derive(Component, Default, Debug)]
 #[relationship_target(relationship = SceneRootOf, linked_spawn)]
 pub struct SceneRoots(Vec<Entity>);
@@ -24,38 +28,100 @@ impl SceneRoots {
     }
 }
 
+/// A tab's environment: its sky, exposure and physics settings, and the root a save writes them
+/// on. Editor-owned (scene operations pass it by), yet the inspector edits it.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct SceneEnvironment;
+
 /// A UI root's own visibility while its tab is behind another.
 #[derive(Component, Clone, Copy, Debug)]
 struct ParkedVisibility(Visibility);
 
-/// The active tab's world, if a tab is open.
-pub fn scene_world(world: &World) -> Option<Entity> {
+/// The active tab's environment, if a tab is open.
+pub fn scene_environment(world: &World) -> Option<Entity> {
     let scenes = world.get_resource::<Scenes>()?;
-    scenes.tabs.get(scenes.active)?.world
+    scenes.tabs.get(scenes.active)?.environment
 }
 
-/// The active tab's world, spawned on first use.
-pub fn ensure_scene_world(world: &mut World) -> Option<Entity> {
+/// The active tab's environment, spawned on first use.
+pub fn ensure_scene_environment(world: &mut World) -> Option<Entity> {
     let scenes = world.get_resource::<Scenes>()?;
     let active = scenes.active;
     let tab = scenes.tabs.get(active)?;
-    if let Some(entity) = tab.world
+    if let Some(entity) = tab.environment
         && world.get_entity(entity).is_ok()
     {
         return Some(entity);
     }
-    let name = format!("tab: {}", tab.display_name);
+    // Saved as the file's root once anything on it is authored (its sky, exposure, gravity).
     let entity = world
         .spawn((
-            Name::new(name),
-            PhysicsWorld,
+            Name::new("Environment"),
+            Environment,
+            SceneEnvironment,
             Transform::IDENTITY,
+            AuthoredComponents(HashSet::default()),
             crate::EditorEntity,
             crate::EditorHidden,
         ))
         .id();
-    world.resource_mut::<Scenes>().tabs[active].world = Some(entity);
+    world.resource_mut::<Scenes>().tabs[active].environment = Some(entity);
     Some(entity)
+}
+
+/// A file's environment root onto the active tab's environment: the file's authored settings
+/// replace the ones the tab had, and settings the file leaves out go back to their defaults. The
+/// tab keeps its entity, so its render bit and everything parented to it stay put.
+pub fn adopt_environment(world: &mut World, source: Entity) {
+    let Some(target) = ensure_scene_environment(world) else {
+        return;
+    };
+    let authored = world
+        .get::<AuthoredComponents>(source)
+        .map(|a| a.0.clone())
+        .unwrap_or_default();
+    let previous = world
+        .get::<AuthoredComponents>(target)
+        .map(|a| a.0.clone())
+        .unwrap_or_default();
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+    for type_id in previous.difference(&authored) {
+        let Some(registration) = registry.get(*type_id) else {
+            continue;
+        };
+        let (Some(component), Some(default)) = (
+            registration.data::<ReflectComponent>(),
+            registration.data::<ReflectDefault>(),
+        ) else {
+            continue;
+        };
+        let value = default.default();
+        component.insert(
+            &mut world.entity_mut(target),
+            value.as_partial_reflect(),
+            &registry,
+        );
+    }
+    for type_id in &authored {
+        let Some(component) = registry
+            .get(*type_id)
+            .and_then(|r| r.data::<ReflectComponent>())
+        else {
+            continue;
+        };
+        let Some(value) = component
+            .reflect(world.entity(source))
+            .and_then(|v| v.to_dynamic().ok())
+        else {
+            continue;
+        };
+        component.insert(&mut world.entity_mut(target), &*value, &registry);
+    }
+    drop(registry);
+    world
+        .entity_mut(target)
+        .insert(AuthoredComponents(authored));
 }
 
 /// A bevy_ui root: lays out only without a parent, so it joins its tab unparented.
@@ -63,16 +129,19 @@ pub fn is_ui_root(world: &World, entity: Entity) -> bool {
     world.get::<Node>(entity).is_some()
 }
 
-/// The scene parent of `entity`: its `ChildOf` unless that is the tab world.
+/// The scene parent of `entity`: its `ChildOf` unless that is the tab environment.
 pub fn scene_parent(world: &World, entity: Entity) -> Option<Entity> {
     let parent = world.get::<ChildOf>(entity)?.parent();
-    world.get::<PhysicsWorld>(parent).is_none().then_some(parent)
+    world
+        .get::<PhysicsEnvironment>(parent)
+        .is_none()
+        .then_some(parent)
 }
 
-/// Put the root `entity` at `index` among the active tab's roots, parented to its world
+/// Put the root `entity` at `index` among the active tab's roots, parented to its environment
 /// unless it is a UI root.
 pub fn place_root(world: &mut World, entity: Entity, index: usize) {
-    let Some(tab_world) = ensure_scene_world(world) else {
+    let Some(tab_environment) = ensure_scene_environment(world) else {
         world.entity_mut(entity).remove::<ChildOf>();
         return;
     };
@@ -81,14 +150,14 @@ pub fn place_root(world: &mut World, entity: Entity, index: usize) {
     entity_mut.remove::<SceneRootOf>();
     if ui {
         entity_mut.remove::<ChildOf>();
-    } else if entity_mut.get::<ChildOf>().map(ChildOf::parent) != Some(tab_world) {
-        entity_mut.insert(ChildOf(tab_world));
+    } else if entity_mut.get::<ChildOf>().map(ChildOf::parent) != Some(tab_environment) {
+        entity_mut.insert(ChildOf(tab_environment));
     }
     let len = world
-        .get::<SceneRoots>(tab_world)
+        .get::<SceneRoots>(tab_environment)
         .map_or(0, |roots| roots.0.len());
     world
-        .entity_mut(tab_world)
+        .entity_mut(tab_environment)
         .insert_related::<SceneRootOf>(index.min(len), &[entity]);
 }
 
@@ -127,16 +196,16 @@ pub fn adopt_entities(world: &mut World, entities: &[Entity]) {
     }
 }
 
-fn tab_roots(world: &World, tab_world: Entity) -> Vec<Entity> {
+fn tab_roots(world: &World, tab_environment: Entity) -> Vec<Entity> {
     world
-        .get::<SceneRoots>(tab_world)
+        .get::<SceneRoots>(tab_environment)
         .map(|roots| roots.0.clone())
         .unwrap_or_default()
 }
 
 /// Mark or unmark a tab's whole subtree as the open scene; its UI roots show only while open.
-pub fn set_tab_open(world: &mut World, tab_world: Entity, open: bool) {
-    let roots = tab_roots(world, tab_world);
+pub fn set_tab_open(world: &mut World, tab_environment: Entity, open: bool) {
+    let roots = tab_roots(world, tab_environment);
     let mut stack = roots.clone();
     while let Some(entity) = stack.pop() {
         if world.get_entity(entity).is_err() || is_editor_owned(world, entity) {
@@ -167,14 +236,14 @@ pub fn set_tab_open(world: &mut World, tab_world: Entity, open: bool) {
     }
 }
 
-/// Despawn a tab's contents, then its world.
-pub fn despawn_tab_world(world: &mut World, tab_world: Entity) {
-    for root in tab_roots(world, tab_world) {
+/// Despawn a tab's contents, then its environment.
+pub fn despawn_tab_environment(world: &mut World, tab_environment: Entity) {
+    for root in tab_roots(world, tab_environment) {
         if let Ok(entity) = world.get_entity_mut(root) {
             entity.despawn();
         }
     }
-    if let Ok(entity) = world.get_entity_mut(tab_world) {
+    if let Ok(entity) = world.get_entity_mut(tab_environment) {
         entity.despawn();
     }
 }

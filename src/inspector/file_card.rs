@@ -288,7 +288,8 @@ fn fill_body(world: &mut World, body: Entity, path: &Path, kind: &AssetFileKind)
         return;
     }
 
-    let is_document = matches!(kind, AssetFileKind::Prefab) || crate::bsn_files::is_document_path(path);
+    let is_document =
+        matches!(kind, AssetFileKind::Prefab) || crate::bsn_files::is_document_path(path);
     spawn_row(world, body, "Path", &shown_path);
     if is_document {
         let name = root_name(path).unwrap_or_else(|| crate::bsn_files::path_stem(path));

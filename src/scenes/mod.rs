@@ -10,7 +10,7 @@ pub mod ui;
 use std::path::PathBuf;
 
 use bevy::{camera::visibility::RenderLayers, prelude::*};
-use bevy_aurora::world::RenderWorlds;
+use bevy_aurora::environment::RenderEnvironments;
 
 use crate::commands::CommandHistory;
 use crate::project::ProjectRoot;
@@ -87,13 +87,16 @@ pub struct Scenes {
 /// What an editor view of the open scene renders: the editor's world and the active tab's.
 pub fn scene_layers(world: &World) -> RenderLayers {
     tab_layers(
-        world.get_resource::<RenderWorlds>(),
-        crate::scene_io::scene_world(world),
+        world.get_resource::<RenderEnvironments>(),
+        crate::scene_io::scene_environment(world),
     )
 }
 
-fn tab_layers(worlds: Option<&RenderWorlds>, tab_world: Option<Entity>) -> RenderLayers {
-    match tab_world.and_then(|tab| worlds?.bit(tab)) {
+fn tab_layers(
+    worlds: Option<&RenderEnvironments>,
+    tab_environment: Option<Entity>,
+) -> RenderLayers {
+    match tab_environment.and_then(|tab| worlds?.bit(tab)) {
         Some(bit) if bit > 0 => RenderLayers::from_layers(&[0, bit as usize]),
         _ => RenderLayers::layer(0),
     }
@@ -101,7 +104,7 @@ fn tab_layers(worlds: Option<&RenderWorlds>, tab_world: Option<Entity>) -> Rende
 
 /// Viewport cameras see the active tab's world.
 fn follow_tab_world(
-    worlds: Option<Res<RenderWorlds>>,
+    worlds: Option<Res<RenderEnvironments>>,
     scenes: Res<Scenes>,
     cameras: Query<
         (Entity, Option<&RenderLayers>),
@@ -112,8 +115,11 @@ fn follow_tab_world(
     >,
     mut commands: Commands,
 ) {
-    let tab_world = scenes.tabs.get(scenes.active).and_then(|tab| tab.world);
-    let layers = tab_layers(worlds.as_deref(), tab_world);
+    let tab_environment = scenes
+        .tabs
+        .get(scenes.active)
+        .and_then(|tab| tab.environment);
+    let layers = tab_layers(worlds.as_deref(), tab_environment);
     for (camera, current) in &cameras {
         if current != Some(&layers) {
             commands.entity(camera).insert(layers.clone());
@@ -125,8 +131,8 @@ fn follow_tab_world(
 /// are shared with the editor's preview worlds.
 pub fn refuse_new_tab(world: &mut World) -> bool {
     let full = world
-        .get_resource::<RenderWorlds>()
-        .is_some_and(|worlds| (1..8).all(|bit| worlds.world(bit).is_some()));
+        .get_resource::<RenderEnvironments>()
+        .is_some_and(|worlds| (1..8).all(|bit| worlds.environment(bit).is_some()));
     if full {
         crate::status_bar::notify_error(world, "Too many open tabs: close one first".to_string());
     }
@@ -167,8 +173,8 @@ pub struct SceneTab {
     pub dirty: bool,
     pub kind: TabKind,
     pub content: TabContent,
-    /// The tab's physics/render world, its 3D roots' parent; spawned on first activation.
-    pub world: Option<Entity>,
+    /// The tab's environment, its 3D roots' parent; spawned on first activation.
+    pub environment: Option<Entity>,
     pub view_state: ViewState,
     pub history: CommandHistory,
     /// Decoded terrain sidecars owned by this tab while it is inactive.
@@ -221,7 +227,7 @@ impl SceneTab {
             dirty: false,
             kind: TabKind::Scene,
             content: TabContent::default(),
-            world: None,
+            environment: None,
             view_state: ViewState::with_default_camera(),
             history: CommandHistory::default(),
             terrain_data_store: TerrainDataStore::default(),

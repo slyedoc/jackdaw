@@ -259,7 +259,7 @@ pub(crate) fn handle_viewport_click(
                     &scene_entities,
                     &parents,
                     &brushes,
-                        &reference_images,
+                    &reference_images,
                 ) == Some(current_primary)
                 {
                     return;
@@ -434,7 +434,10 @@ pub fn box_select(
     mouse: Res<ButtonInput<MouseButton>>,
     vp: ViewportCursor,
     mut box_state: ResMut<BoxSelectState>,
-    scene_entities: Query<(Entity, &GlobalTransform), (With<crate::scene_io::SceneEntity>, With<Name>)>,
+    scene_entities: Query<
+        (Entity, &GlobalTransform),
+        (With<crate::scene_io::SceneEntity>, With<Name>),
+    >,
     reference_images: Query<&crate::reference_image::ReferenceImage>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,

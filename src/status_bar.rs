@@ -468,5 +468,3 @@ pub fn update_scene_stats(
         text.0 = new_text;
     }
 }
-
-

@@ -9,7 +9,7 @@
 //! when the scene is saved.
 //!
 //! The off-screen setup copies [`crate::material_preview`]: a camera with
-//! `RenderTarget::Image`, its own world (a `PhysicsWorld`: everything under it renders and
+//! `RenderTarget::Image`, its own world (a `PhysicsEnvironment`: everything under it renders and
 //! is lit only there) so nothing leaks into a viewport, and its own [`EnvironmentMapLight`]
 //! because lighting is
 //! per-view rather than global. It differs in two ways: one target image is
@@ -49,8 +49,8 @@ use path_slash::PathExt as _;
 
 use crate::asset_index::AssetIndex;
 use crate::entity_ops::GltfSource;
+use bevy_aurora::environment::Environment;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::world::PhysicsWorld;
 
 /// Edge of the square render target, in pixels. The browser draws the result
 /// at [`THUMBNAIL_DISPLAY_SIZE`]; rendering larger keeps it crisp on a
@@ -443,9 +443,9 @@ fn setup_thumbnail_stage(
 ) {
     let stage = commands
         .spawn((
-            Name::new("Thumbnail World"),
+            Name::new("Thumbnail Environment"),
             crate::EditorEntity,
-            PhysicsWorld,
+            Environment,
         ))
         .id();
     thumbnails.stage = Some(stage);
@@ -745,7 +745,8 @@ fn start_job(
                     Transform::IDENTITY,
                     Some(root),
                     move |world, placed| {
-                        let built = placed.is_ok_and(|subject| dress_prefab_subject(world, subject));
+                        let built =
+                            placed.is_ok_and(|subject| dress_prefab_subject(world, subject));
                         if let Some(mut thumbs) = world.get_resource_mut::<Thumbnails>() {
                             thumbs.subject_result = Some(built);
                         }

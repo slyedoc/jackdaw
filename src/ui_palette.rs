@@ -15,7 +15,6 @@ use jackdaw_commands::EditorCommand;
 
 use crate::{EditorEntity, commands::CommandHistory, selection::Selection};
 
-
 /// Add a registered widget to the open UI scene, as the Add menu's UI Widgets
 /// rows do.
 ///

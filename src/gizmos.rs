@@ -222,7 +222,10 @@ pub(crate) fn gizmo_world_scale(
 
 pub(crate) fn handle_gizmo_hover(
     selection: Res<Selection>,
-    transforms: Query<&GlobalTransform, With<Selected>>,
+    transforms: Query<
+        &GlobalTransform,
+        (With<Selected>, Without<crate::scene_io::SceneEnvironment>),
+    >,
     parents: Query<&ChildOf>,
     camera_query: Query<(&Camera, &GlobalTransform, &Projection), With<MainViewportCamera>>,
     cursor: crate::viewport::UiCursorPos,
@@ -448,7 +451,10 @@ fn gizmo_drag_edit_invoke_trigger(
 pub fn gizmo_drag(
     _: In<OperatorParameters>,
     selection: Res<Selection>,
-    mut transforms: Query<(&GlobalTransform, &mut Transform), With<Selected>>,
+    mut transforms: Query<
+        (&GlobalTransform, &mut Transform),
+        (With<Selected>, Without<crate::scene_io::SceneEnvironment>),
+    >,
     parents: Query<&ChildOf>,
     camera_query: Query<(&Camera, &GlobalTransform), With<MainViewportCamera>>,
     viewport_ctx: GizmoViewportCtx,
@@ -634,7 +640,10 @@ pub fn gizmo_drag(
 }
 fn cancel_gizmo_drag(
     mut drag_state: ResMut<GizmoDragState>,
-    mut transforms: Query<&mut Transform, With<Selected>>,
+    mut transforms: Query<
+        &mut Transform,
+        (With<Selected>, Without<crate::scene_io::SceneEnvironment>),
+    >,
     mut cursor_query: Query<&mut CursorOptions, With<Window>>,
 ) {
     for t in &drag_state.targets {
@@ -937,7 +946,10 @@ fn clear_gizmo_edit_drag_state(
 fn draw_gizmos(
     mut gizmos: Gizmos<TransformGizmoGroup>,
     selection: Res<Selection>,
-    transforms: Query<&GlobalTransform, With<Selected>>,
+    transforms: Query<
+        &GlobalTransform,
+        (With<Selected>, Without<crate::scene_io::SceneEnvironment>),
+    >,
     parents: Query<&ChildOf>,
     camera_query: Query<(Entity, &GlobalTransform, &Projection), With<MainViewportCamera>>,
     active: Res<crate::viewport::ActiveViewport>,
@@ -1360,7 +1372,10 @@ fn resolve_drag_viewport(
 /// Returns `None` when nothing selected contributes a position.
 fn object_gizmo_placement(
     selection: &Selection,
-    transforms: &Query<&GlobalTransform, With<Selected>>,
+    transforms: &Query<
+        &GlobalTransform,
+        (With<Selected>, Without<crate::scene_io::SceneEnvironment>),
+    >,
     parents: &Query<&ChildOf>,
     mode: &ActiveTool,
     space: &GizmoSpace,

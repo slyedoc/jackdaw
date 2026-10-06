@@ -17,7 +17,6 @@ use jackdaw_api_internal::operator::{CallOperatorSettings, ExecutionContext};
 use jackdaw_feathers::picker::{PickerItems, PickerSelect};
 use jackdaw_scene_types::PropertyValue;
 
-
 #[derive(Asset, Reflect, Clone, Default)]
 #[reflect(Default)]
 struct ItemDef {
@@ -477,4 +476,3 @@ fn the_new_asset_list_reports_what_it_offers_and_takes_a_kind_outright() {
         "and its card is open",
     );
 }
-

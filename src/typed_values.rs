@@ -94,7 +94,10 @@ pub fn text_value_for_field(
         return handle_value(reflect_handle, server, references, text);
     }
     if takes_asset_path(registry, type_id) {
-        use bevy::reflect::{enums::{DynamicEnum, DynamicVariant}, tuple::DynamicTuple};
+        use bevy::reflect::{
+            enums::{DynamicEnum, DynamicVariant},
+            tuple::DynamicTuple,
+        };
         let mut option = if text.is_empty() {
             DynamicEnum::new("None", DynamicVariant::Unit)
         } else {
@@ -138,7 +141,9 @@ fn handle_value(
         .cloned();
     let untyped = match held {
         Some(handle) => handle,
-        None => server?.load_builder().load_erased(asset_type, path.to_string()),
+        None => server?
+            .load_builder()
+            .load_erased(asset_type, path.to_string()),
     };
     Some(reflect_handle.typed(untyped).into_partial_reflect())
 }

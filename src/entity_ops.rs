@@ -949,7 +949,10 @@ fn assign_unique_entity_names(world: &mut World, roots: &[Entity]) {
         }
     }
     for entity in fresh {
-        let Some(name) = world.get::<Name>(entity).map(|name| name.as_str().to_owned()) else {
+        let Some(name) = world
+            .get::<Name>(entity)
+            .map(|name| name.as_str().to_owned())
+        else {
             continue;
         };
         if let Some(free) = claim_free_name(&mut taken, &name) {
@@ -1653,7 +1656,11 @@ struct SceneEntities<'w, 's> {
         'w,
         's,
         (Entity, &'static Visibility),
-        (With<Name>, With<crate::scene_io::SceneEntity>, Without<Node>),
+        (
+            With<Name>,
+            With<crate::scene_io::SceneEntity>,
+            Without<Node>,
+        ),
     >,
 }
 
@@ -1812,7 +1819,6 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
         // reports an unknown widget name rather than disappearing with it.
         .register_operator::<crate::ui_palette::WidgetAddOp>()
         .register_operator::<crate::add_entity_picker::EntityAddPickerOp>();
-
 
     ctx.bind_operator::<CoreExtensionInputContext, EntityDeleteOp>([PresetInput::key("Delete")]);
     ctx.bind_operator::<CoreExtensionInputContext, EntityDuplicateOp>([
@@ -2376,9 +2382,6 @@ pub(crate) fn entity_add_reflection_probe(
     OperatorResult::Finished
 }
 
-
-
-
 #[operator(id = "entity.add.terrain", label = "Terrain")]
 pub(crate) fn entity_add_terrain(
     _: In<OperatorParameters>,
@@ -2466,22 +2469,30 @@ pub(crate) fn poll_instance_picker(world: &mut World) {
 pub(crate) fn place_instance_of(world: &mut World, path: &std::path::Path) {
     let base = crate::scene_io::asset_path_of(world, path);
     let placed_base = base.clone();
-    crate::instances::queue_instance(world, &base, Transform::default(), None, move |world, placed| {
-        let entity = match placed {
-            Ok(entity) => entity,
-            Err(err) => {
-                crate::status_bar::notify_error(world, err);
-                return;
-            }
-        };
-        crate::scene_io::adopt_entity(world, entity);
-        select_entities(world, &[entity]);
-        let cmd = PlaceInstance {
-            base: placed_base,
-            spawned: Some(entity),
-        };
-        world.resource_mut::<CommandHistory>().push_executed(Box::new(cmd));
-    });
+    crate::instances::queue_instance(
+        world,
+        &base,
+        Transform::default(),
+        None,
+        move |world, placed| {
+            let entity = match placed {
+                Ok(entity) => entity,
+                Err(err) => {
+                    crate::status_bar::notify_error(world, err);
+                    return;
+                }
+            };
+            crate::scene_io::adopt_entity(world, entity);
+            select_entities(world, &[entity]);
+            let cmd = PlaceInstance {
+                base: placed_base,
+                spawned: Some(entity),
+            };
+            world
+                .resource_mut::<CommandHistory>()
+                .push_executed(Box::new(cmd));
+        },
+    );
 }
 
 /// Undo entry for placing an instance of a `.bsn` file.
@@ -2560,4 +2571,3 @@ mod asset_path_tests {
         assert_eq!(crate::project::open_project_assets_dir(), None);
     }
 }
-

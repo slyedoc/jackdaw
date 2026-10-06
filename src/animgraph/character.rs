@@ -29,7 +29,12 @@ pub(crate) struct RigPlayback {
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<RigPlayback>().add_systems(
         Update,
-        (apply_playback, fill_rig_inputs, fill_rig_states, show_rig_state),
+        (
+            apply_playback,
+            fill_rig_inputs,
+            fill_rig_states,
+            show_rig_state,
+        ),
     );
 }
 
@@ -243,7 +248,8 @@ fn fill_rig_states(
         for label in labels {
             commands.spawn((
                 button(ButtonProps::new(label.to_string())),
-                ButtonOperatorCall::new("animgraph.play_state").with_param("state", label.to_string()),
+                ButtonOperatorCall::new("animgraph.play_state")
+                    .with_param("state", label.to_string()),
                 ChildOf(host),
             ));
         }
@@ -284,7 +290,11 @@ fn fill_rig_inputs(
             // Signed: a direction input (strafe, backwards) runs both ways.
             let max = (value.abs() * 2.0).max(9.0);
             let label = commands
-                .spawn((Text::new(format!("{name}  {value:.2}")), ThemedText, ChildOf(host)))
+                .spawn((
+                    Text::new(format!("{name}  {value:.2}")),
+                    ThemedText,
+                    ChildOf(host),
+                ))
                 .id();
             let pin = name.clone();
             commands

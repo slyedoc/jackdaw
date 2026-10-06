@@ -92,8 +92,15 @@ pub(crate) fn view_toggle_xray(
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_bounding_boxes", label = "Toggle Bounding Boxes", allows_undo = false)]
-pub(crate) fn view_toggle_bounding_boxes(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_bounding_boxes",
+    label = "Toggle Bounding Boxes",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_bounding_boxes(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "bounding_boxes");
     OperatorResult::Finished
 }
@@ -114,38 +121,80 @@ pub(crate) fn view_cycle_bounding_box_mode(
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_face_grid", label = "Toggle Face Grid", allows_undo = false)]
-pub(crate) fn view_toggle_face_grid(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_face_grid",
+    label = "Toggle Face Grid",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_face_grid(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "face_grid");
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_brush_wireframe", label = "Toggle Brush Wireframe", allows_undo = false)]
-pub(crate) fn view_toggle_brush_wireframe(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_brush_wireframe",
+    label = "Toggle Brush Wireframe",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_brush_wireframe(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "brush_wireframe");
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_brush_outline", label = "Toggle Brush Outline", allows_undo = false)]
-pub(crate) fn view_toggle_brush_outline(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_brush_outline",
+    label = "Toggle Brush Outline",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_brush_outline(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "brush_outline");
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_alignment_guides", label = "Toggle Alignment Guides", allows_undo = false)]
-pub(crate) fn view_toggle_alignment_guides(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_alignment_guides",
+    label = "Toggle Alignment Guides",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_alignment_guides(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "alignment_guides");
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_collider_gizmos", label = "Toggle Collider Gizmos", allows_undo = false)]
-pub(crate) fn view_toggle_collider_gizmos(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_collider_gizmos",
+    label = "Toggle Collider Gizmos",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_collider_gizmos(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "colliders");
     OperatorResult::Finished
 }
 
-#[operator(id = "view.toggle_hierarchy_arrows", label = "Toggle Hierarchy Arrows", allows_undo = false)]
-pub(crate) fn view_toggle_hierarchy_arrows(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+#[operator(
+    id = "view.toggle_hierarchy_arrows",
+    label = "Toggle Hierarchy Arrows",
+    allows_undo = false
+)]
+pub(crate) fn view_toggle_hierarchy_arrows(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     crate::gizmo_overlays::toggle(&mut commands, "hierarchy_arrows");
     OperatorResult::Finished
 }
@@ -710,7 +759,10 @@ fn dolly_available(
 pub(crate) fn view_frame_all(
     _: In<OperatorParameters>,
     active: Res<ActiveViewport>,
-    scene_entities: Query<(Entity, &GlobalTransform), (With<Name>, With<crate::scene_io::SceneEntity>)>,
+    scene_entities: Query<
+        (Entity, &GlobalTransform),
+        (With<Name>, With<crate::scene_io::SceneEntity>),
+    >,
     children: Query<&Children>,
     bounded: Query<(&GlobalTransform, &Aabb), Without<crate::ViewDependentBounds>>,
     camera_entities: Query<Entity, With<MainViewportCamera>>,

@@ -480,7 +480,8 @@ fn draw_spot_light_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, 
+        (
+            Entity,
             &SpotLight,
             &GlobalTransform,
             &InheritedVisibility,
@@ -529,7 +530,8 @@ fn draw_rect_light_gizmo(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     settings: Res<OverlaySettings>,
     query: Query<
-        (Entity, 
+        (
+            Entity,
             &RectLight,
             &GlobalTransform,
             &InheritedVisibility,
@@ -564,7 +566,12 @@ fn draw_dir_light_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (
+            Entity,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
         (With<DirectionalLight>, With<crate::entity_ops::SceneLight>),
     >,
 ) {
@@ -599,7 +606,8 @@ fn draw_camera_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, 
+        (
+            Entity,
             &Projection,
             &GlobalTransform,
             &InheritedVisibility,
@@ -706,7 +714,12 @@ fn draw_animation_player_marker(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (
+            Entity,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
         With<crate::entity_ops::SceneAnimationPlayer>,
     >,
 ) {
@@ -747,7 +760,12 @@ fn draw_audio_source_marker(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (
+            Entity,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
         With<crate::entity_ops::SceneAudioSource>,
     >,
 ) {
@@ -793,7 +811,12 @@ fn draw_fog_volume_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (
+            Entity,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
         (With<FogVolume>, With<crate::entity_ops::SceneFogVolume>),
     >,
 ) {
@@ -828,7 +851,12 @@ fn draw_reflection_probe_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (
+            Entity,
+            &GlobalTransform,
+            &InheritedVisibility,
+            Has<Selected>,
+        ),
         With<crate::entity_ops::SceneReflectionProbe>,
     >,
 ) {

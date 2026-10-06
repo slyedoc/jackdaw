@@ -709,12 +709,10 @@ fn dispatch_operator(
     let result = result.map_err(|_| CallOperatorError::ExecuteFailed)?;
     match result {
         OperatorResult::Running if op.modal => {
-            world
-                .entity_mut(op_entity)
-                .insert(ActiveModalOperator {
-                    before_snapshot,
-                    since,
-                });
+            world.entity_mut(op_entity).insert(ActiveModalOperator {
+                before_snapshot,
+                since,
+            });
         }
         OperatorResult::Running => {}
         OperatorResult::Finished => {
@@ -974,12 +972,10 @@ fn finalize_modal(
     if !commit || !op.allows_undo {
         return;
     }
-    if let Err(err) =
-        world.run_system_cached_with(
-            save_history,
-            (op.label, snapshot.before_snapshot, snapshot.since),
-        )
-    {
+    if let Err(err) = world.run_system_cached_with(
+        save_history,
+        (op.label, snapshot.before_snapshot, snapshot.since),
+    ) {
         error!("Failed to finalize modal operator {}: {err:?}", op.label);
     }
 }

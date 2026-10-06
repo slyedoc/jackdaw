@@ -41,10 +41,13 @@ pub(crate) fn capture_active_tab(world: &mut World) {
     let active = world.resource::<Scenes>().active;
     let view_state = capture_view_state(world);
     let history = std::mem::take(&mut *world.resource_mut::<CommandHistory>());
-    if let Some(tab_world) = crate::scene_io::scene_world(world) {
-        crate::scene_io::set_tab_open(world, tab_world, false);
+    if let Some(tab_environment) = crate::scene_io::scene_environment(world) {
+        crate::scene_io::set_tab_open(world, tab_environment, false);
     }
-    world.resource_mut::<crate::selection::Selection>().entities.clear();
+    world
+        .resource_mut::<crate::selection::Selection>()
+        .entities
+        .clear();
     let _ = world.run_system_cached(crate::hierarchy::clear_all_tree_rows);
     crate::hierarchy::forget_withheld_rows(world);
 
@@ -94,12 +97,12 @@ pub fn activate_tab(world: &mut World, target: usize) {
     let mut refusal = None;
     match content {
         TabContent::Parked => {
-            if let Some(tab_world) = crate::scene_io::scene_world(world) {
-                crate::scene_io::set_tab_open(world, tab_world, true);
+            if let Some(tab_environment) = crate::scene_io::scene_environment(world) {
+                crate::scene_io::set_tab_open(world, tab_environment, true);
             }
         }
         TabContent::Unloaded | TabContent::Live => {
-            crate::scene_io::ensure_scene_world(world);
+            crate::scene_io::ensure_scene_environment(world);
             if let Some(path) = tab_path.as_ref()
                 && path.is_file()
             {

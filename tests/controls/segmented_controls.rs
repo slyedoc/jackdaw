@@ -17,7 +17,6 @@ use bevy::ui::Checked;
 use bevy::ui_widgets::{RadioButton, RadioGroup};
 use bevy::window::{PrimaryWindow, WindowRef};
 
-
 /// Click `entity` the way a user does: the `PointerClick` the radio
 /// widget is watching for.
 fn click(app: &mut App, entity: Entity) {

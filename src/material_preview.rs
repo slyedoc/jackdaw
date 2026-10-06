@@ -7,9 +7,9 @@ use bevy::{
 use wgpu_types::TextureFormat;
 
 use crate::default_style;
+use bevy_aurora::environment::Environment;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
-use bevy_aurora::world::PhysicsWorld;
 
 pub(super) struct MaterialPreviewPlugin;
 
@@ -112,9 +112,9 @@ fn setup_material_preview_scene(
     // The preview's own world: it renders and is lit only there, never in a viewport.
     let stage = commands
         .spawn((
-            Name::new("Material Preview World"),
+            Name::new("Material Preview Environment"),
             crate::EditorEntity,
-            PhysicsWorld,
+            Environment,
         ))
         .id();
     commands.spawn((

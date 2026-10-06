@@ -104,7 +104,7 @@ pub fn brush_collider(
     }
 
     if !force_trimesh && matches!(cfg.0, ColliderConstructor::ConvexHullFromMesh) {
-        return Collider::convex_hull(vertices);
+        return Collider::convex_hull(&vertices);
     }
 
     let indices = triangulate_polygons(

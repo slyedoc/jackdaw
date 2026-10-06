@@ -20,9 +20,9 @@ pub mod asset_ingest;
 pub mod authored_widgets;
 pub mod boot_ops;
 pub mod brush;
-pub mod bsn_files;
 pub mod brush_drag_ops;
 pub mod brush_element_ops;
+pub mod bsn_files;
 pub mod builtin_extensions;
 pub mod clip_ops;
 pub mod command_palette;
@@ -38,9 +38,9 @@ pub mod edit_mode_ops;
 pub mod entity_ops;
 pub mod environment_ops;
 pub mod face_grid;
-pub mod gizmo_overlays;
 pub mod frame_work;
 pub mod gizmo_ops;
+pub mod gizmo_overlays;
 pub mod gizmos;
 pub mod grid_ops;
 pub mod hierarchy;
@@ -74,6 +74,7 @@ pub mod extension_resolution;
 pub mod extensions_dialog;
 pub mod file_ops;
 pub mod fps_overlay;
+pub mod instances;
 pub mod layout;
 pub mod material_assets;
 pub mod material_browser;
@@ -92,7 +93,6 @@ pub mod operator_tooltip;
 pub mod perf_probe;
 pub mod physics_brush_bridge;
 pub mod physics_tool;
-pub mod instances;
 pub mod preview_context;
 pub(crate) mod preview_model;
 pub mod project;
@@ -103,8 +103,8 @@ pub mod project_types;
 pub mod project_window;
 pub mod reference_image;
 pub mod reflect_default;
-pub mod run_game;
 pub mod restart;
+pub mod run_game;
 pub mod scene_io;
 pub mod scene_ops;
 pub mod scenes;
@@ -170,8 +170,8 @@ use selection::Selection;
 pub mod prelude {
     pub use crate::windowing::{editor_window_plugin, primary_window_attributes};
     pub use crate::{
-        AppState, EditorCategory, EditorCorePlugin, EditorDescription,
-        EditorHidden, EditorPreview, ExtensionPlugin, JackdawEditorPlugins, SkipSerialization,
+        AppState, EditorCategory, EditorCorePlugin, EditorDescription, EditorHidden, EditorPreview,
+        ExtensionPlugin, JackdawEditorPlugins, SkipSerialization,
     };
     pub use jackdaw_api::prelude::*;
 
@@ -718,10 +718,10 @@ fn auto_hide_internal_entities(
     >,
     parent_query: Query<&ChildOf>,
     gltf_sources: Query<(), With<entity_ops::GltfSource>>,
-    tab_worlds: Query<(), With<avian3d::world::PhysicsWorld>>,
+    tab_environments: Query<(), With<avian3d::environment::PhysicsEnvironment>>,
 ) {
     for (entity, name, parent) in &new_entities {
-        if name.is_none() && parent.is_some_and(|parent| !tab_worlds.contains(parent.0)) {
+        if name.is_none() && parent.is_some_and(|parent| !tab_environments.contains(parent.0)) {
             // Skip GLTF descendants, they'll be shown in the hierarchy.
             let mut current = entity;
             let mut is_gltf_descendant = false;
@@ -2188,10 +2188,7 @@ fn populate_menu(
         .unwrap_or_default();
 
     let mut menu_items = [
-        (
-            TopLevelMenu::File,
-            file_menu_rows(recent_projects_rows()),
-        ),
+        (TopLevelMenu::File, file_menu_rows(recent_projects_rows())),
         (
             TopLevelMenu::Edit,
             vec![
@@ -4007,9 +4004,9 @@ mod file_menu_tests {
     /// back to being the one that opens the dialog.
     #[test]
     fn an_empty_recent_list_is_no_group_at_all() {
-        let rows = file_menu_rows(
-            vec![op_entry::<scene_ops::SceneOpenRecentOp>("Open Recent...")],
-        );
+        let rows = file_menu_rows(vec![op_entry::<scene_ops::SceneOpenRecentOp>(
+            "Open Recent...",
+        )]);
         assert!(
             !rows
                 .iter()
@@ -4208,5 +4205,3 @@ mod extension_menu_tests {
         assert_eq!(actions(&rows), vec!["##Terrain", "op:terrain.paint"]);
     }
 }
-
-

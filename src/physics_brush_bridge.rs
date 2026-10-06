@@ -38,7 +38,6 @@ pub(crate) fn insert_default_brush_physics(world: &mut World, entity: Entity) {
             .insert(AvianCollider::default())
             .insert(RigidBody::Static);
     }
-
 }
 
 /// Copy a recentered brush `Transform` into avian `Position` / `Rotation`.
@@ -164,12 +163,12 @@ fn collider_from_triangles(
             Collider::try_trimesh_with_config(positions, triangles, *flags).ok()
         }
         ColliderConstructor::ConvexDecompositionFromMesh => {
-            Some(Collider::convex_decomposition(positions, triangles))
+            Some(Collider::convex_decomposition(&positions, &triangles))
         }
         ColliderConstructor::ConvexDecompositionFromMeshWithConfig(params) => Some(
-            Collider::convex_decomposition_with_config(positions, triangles, params.clone()),
+            Collider::convex_decomposition_with_config(&positions, &triangles, params),
         ),
-        ColliderConstructor::ConvexHullFromMesh => Collider::convex_hull(positions),
+        ColliderConstructor::ConvexHullFromMesh => Collider::convex_hull(&positions),
         ColliderConstructor::VoxelizedTrimeshFromMesh {
             voxel_size,
             fill_mode,

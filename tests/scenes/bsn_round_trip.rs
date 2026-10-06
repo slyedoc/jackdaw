@@ -67,7 +67,10 @@ fn assert_same_tree(world: &World, a: Entity, b: Entity, at: &str, text: &str) {
             let Some(reflect) = registry.get_type_data::<ReflectComponent>(type_id) else {
                 continue;
             };
-            let path = registry.get(type_id).map(|r| r.type_info().type_path()).unwrap_or("?");
+            let path = registry
+                .get(type_id)
+                .map(|r| r.type_info().type_path())
+                .unwrap_or("?");
             if path.ends_with("GlobalTransform")
                 || path.ends_with("Children")
                 || path.ends_with("ChildOf")
@@ -81,17 +84,28 @@ fn assert_same_tree(world: &World, a: Entity, b: Entity, at: &str, text: &str) {
             let Some(vb) = vb else {
                 panic!("{at}: {path} missing after the round trip\n{text}");
             };
-            if !same(world, &registry, va.as_partial_reflect(), vb.as_partial_reflect()) {
+            if !same(
+                world,
+                &registry,
+                va.as_partial_reflect(),
+                vb.as_partial_reflect(),
+            ) {
                 panic!("{at}: {path} differs\n  before {va:?}\n  after  {vb:?}");
             }
         }
         let kids = |e: Entity| -> Vec<Entity> {
-            world.get::<Children>(e).map(|c| c.iter().collect()).unwrap_or_default()
+            world
+                .get::<Children>(e)
+                .map(|c| c.iter().collect())
+                .unwrap_or_default()
         };
         let (ka, kb) = (kids(a), kids(b));
         assert_eq!(ka.len(), kb.len(), "{at}: child count differs\n{text}");
         for (i, (ca, cb)) in ka.into_iter().zip(kb).enumerate() {
-            let name = world.get::<Name>(ca).map(|n| n.to_string()).unwrap_or_else(|| i.to_string());
+            let name = world
+                .get::<Name>(ca)
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| i.to_string());
             pairs.push((ca, cb, format!("{at}/{name}")));
         }
     }
@@ -111,7 +125,8 @@ fn same(
         && let Some(handle) = registry.get_type_data::<ReflectHandle>(info.type_id())
     {
         let untyped = |v: &dyn PartialReflect| {
-            v.try_as_reflect().and_then(|v| handle.downcast_handle_untyped(v.as_any()))
+            v.try_as_reflect()
+                .and_then(|v| handle.downcast_handle_untyped(v.as_any()))
         };
         let (Some(ha), Some(hb)) = (untyped(a), untyped(b)) else {
             return false;
@@ -123,18 +138,26 @@ fn same(
             return ha == hb;
         };
         return match (assets.get(world, ha.id()), assets.get(world, hb.id())) {
-            (Some(x), Some(y)) => same(world, registry, x.as_partial_reflect(), y.as_partial_reflect()),
+            (Some(x), Some(y)) => same(
+                world,
+                registry,
+                x.as_partial_reflect(),
+                y.as_partial_reflect(),
+            ),
             _ => false,
         };
     }
     match (a.reflect_ref(), b.reflect_ref()) {
         (ReflectRef::Struct(x), ReflectRef::Struct(y)) => {
             x.field_len() == y.field_len()
-                && x.iter_fields().all(|(name, f)| y.field(name).is_some_and(|g| same(world, registry, f, g)))
+                && x.iter_fields()
+                    .all(|(name, f)| y.field(name).is_some_and(|g| same(world, registry, f, g)))
         }
         (ReflectRef::TupleStruct(x), ReflectRef::TupleStruct(y)) => {
             x.field_len() == y.field_len()
-                && x.iter_fields().zip(y.iter_fields()).all(|(f, g)| same(world, registry, f, g))
+                && x.iter_fields()
+                    .zip(y.iter_fields())
+                    .all(|(f, g)| same(world, registry, f, g))
         }
         (ReflectRef::Enum(x), ReflectRef::Enum(y)) => {
             x.variant_name() == y.variant_name()
@@ -145,7 +168,10 @@ fn same(
                 })
         }
         (ReflectRef::List(x), ReflectRef::List(y)) => {
-            x.len() == y.len() && x.iter().zip(y.iter()).all(|(f, g)| same(world, registry, f, g))
+            x.len() == y.len()
+                && x.iter()
+                    .zip(y.iter())
+                    .all(|(f, g)| same(world, registry, f, g))
         }
         _ => a.reflect_partial_eq(b).unwrap_or(true),
     }
@@ -190,4 +216,3 @@ fn a_building_round_trips() {
 fn an_animated_prop_round_trips() {
     round_trip("sim/door/door.bsn");
 }
-

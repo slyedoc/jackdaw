@@ -42,10 +42,7 @@ impl Plugin for MaterialBrowserPlugin {
             .init_resource::<DetectedTextureSets>()
             .add_systems(
                 OnEnter(crate::AppState::Editor),
-                (
-                    restart_texture_set_scan,
-                    rebuild_material_registry,
-                )
+                (restart_texture_set_scan, rebuild_material_registry)
                     .chain()
                     .after(crate::asset_index::open_asset_index),
             )
@@ -199,11 +196,12 @@ fn take_texture_sets(world: &mut World, sets: Vec<jackdaw_material::MaterialSet>
 /// and follows no symlink out of the tree, and it reads only the extensions
 /// the filename pattern can match.
 fn detect_material_sets(assets: &Path) -> Vec<jackdaw_material::MaterialSet> {
-    let paths: Vec<String> = crate::bsn_files::walk_files_with_extensions(assets, TEXTURE_EXTENSIONS)
-        .into_iter()
-        .filter(|path| !is_non_2d_ktx2(path))
-        .map(|path| path.to_slash_lossy().into_owned())
-        .collect();
+    let paths: Vec<String> =
+        crate::bsn_files::walk_files_with_extensions(assets, TEXTURE_EXTENSIONS)
+            .into_iter()
+            .filter(|path| !is_non_2d_ktx2(path))
+            .map(|path| path.to_slash_lossy().into_owned())
+            .collect();
     jackdaw_material::group_texture_sets(&paths)
 }
 

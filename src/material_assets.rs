@@ -561,7 +561,6 @@ pub(crate) fn plugin(app: &mut App) {
         jackdaw_surface::LayeredSurfacePlugin,
         jackdaw_surface::FoliagePlugin,
         jackdaw_surface::WaterPlugin,
-        jackdaw_surface::EnvironmentPlugin,
     ))
     .init_resource::<PendingMaterialDelete>()
     .init_resource::<EditedMaterials>()

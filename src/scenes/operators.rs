@@ -442,13 +442,18 @@ pub fn scene_close_system_unprompted(world: &mut World, target: usize) {
 
     let active = world.resource::<Scenes>().active;
     if let Some(path) = world.resource::<Scenes>().tabs[target].path.clone() {
-        world.resource_mut::<crate::scene_io::PendingSceneSpawns>().forget(&path);
+        world
+            .resource_mut::<crate::scene_io::PendingSceneSpawns>()
+            .forget(&path);
     }
     if target == active {
         crate::scene_io::clear_scene_entities(world);
     }
-    if let Some(tab_world) = world.resource_mut::<Scenes>().tabs[target].world.take() {
-        crate::scene_io::despawn_tab_world(world, tab_world);
+    if let Some(tab_environment) = world.resource_mut::<Scenes>().tabs[target]
+        .environment
+        .take()
+    {
+        crate::scene_io::despawn_tab_environment(world, tab_environment);
     }
     if target == active {
         // Pick a neighbor BEFORE removing the closed tab.

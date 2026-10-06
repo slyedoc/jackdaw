@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use bevy::{prelude::*, tasks::AsyncComputeTaskPool};
+use bevy::{prelude::*, scene::AuthoredComponents, tasks::AsyncComputeTaskPool};
 
 use super::load::SceneDialogTask;
 use super::{SceneDirtyState, SceneFilePath};
@@ -333,7 +333,8 @@ pub(crate) fn export_terrain_sidecars(
         .unwrap_or_default();
 
     let mut paths: Vec<String> = Vec::new();
-    let mut query = world.query_filtered::<&jackdaw_scene_types::Terrain, With<crate::scene_io::SceneEntity>>();
+    let mut query =
+        world.query_filtered::<&jackdaw_scene_types::Terrain, With<crate::scene_io::SceneEntity>>();
     for terrain in query.iter(world) {
         if !terrain.data_path.is_empty() && !paths.contains(&terrain.data_path) {
             paths.push(terrain.data_path.clone());
@@ -462,11 +463,26 @@ fn active_tab_is_root_file(world: &World) -> bool {
 pub fn scene_text(world: &mut World) -> Result<String, String> {
     let roots = super::scene_roots(world);
     let settings = super::write_settings(world);
-    if active_tab_is_root_file(world) && roots.len() == 1 {
+    // An environment with authored settings is the file's root: an environment scene.
+    let environment = super::scene_environment(world).filter(|&environment| {
+        world
+            .get::<AuthoredComponents>(environment)
+            .is_some_and(|authored| !authored.0.is_empty())
+    });
+    // The root names itself an environment, so a load knows the file is an environment scene.
+    if let Some(environment) = environment
+        && let Some(mut authored) = world.get_mut::<AuthoredComponents>(environment)
+    {
+        authored
+            .0
+            .insert(std::any::TypeId::of::<bevy_aurora::environment::Environment>());
+    }
+    if environment.is_none() && active_tab_is_root_file(world) && roots.len() == 1 {
         return bevy::bsn_asset::write_scene_text(world, roots[0], &settings)
             .map_err(|err| err.to_string());
     }
-    bevy::bsn_asset::write_scene_roots_text(world, &roots, &settings).map_err(|err| err.to_string())
+    bevy::bsn_asset::write_scene_roots_under_text(world, environment, &roots, &settings)
+        .map_err(|err| err.to_string())
 }
 
 /// [`scene_text`], for a save.

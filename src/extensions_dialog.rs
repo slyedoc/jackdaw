@@ -1,7 +1,6 @@
 //! File > Extensions dialog. Toggles compiled-in extensions at runtime
 //! and persists the current state to `extensions.json`.
 
-
 use bevy::{
     feathers::{
         controls::FeathersCheckbox,
@@ -244,4 +243,3 @@ fn empty_regular_notice() -> impl Scene {
         Children [ @label_dim("No regular extensions installed") ]
     }
 }
-

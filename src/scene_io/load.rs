@@ -7,16 +7,22 @@ use bevy::{
     bsn_asset::DynamicScene,
     light::SunDisk,
     prelude::*,
-    scene::{ResolveSceneError, SceneInstanceState, ScenePatch, ScenePatchInstance, SpawnSceneError, WorldSceneExt},
+    scene::{
+        ResolveSceneError, SceneInstanceState, ScenePatch, ScenePatchInstance, SpawnSceneError,
+        WorldSceneExt,
+    },
     tasks::{Task, futures_lite::future},
 };
 use rfd::FileHandle;
 
 use crate::scenes::operators::SceneKind;
 
-use super::registration::{SceneEntity, SceneRootOf, adopt_entity, set_tab_open};
+use super::registration::{
+    SceneEntity, SceneRootOf, adopt_entity, adopt_environment, set_tab_open,
+};
 use super::save::save_scene_inner;
 use super::{SceneDirtyState, SceneFilePath};
+use avian3d::environment::PhysicsEnvironment;
 
 #[derive(Resource)]
 pub(super) enum SceneDialogTask {
@@ -218,7 +224,9 @@ fn try_spawn(world: &mut World, file: &SceneFile) -> Attempt {
     };
     let root = match world.spawn_scene(scene) {
         Ok(root) => root.id(),
-        Err(SpawnSceneError::ResolveSceneError(ResolveSceneError::MissingSceneDependency(path))) => {
+        Err(SpawnSceneError::ResolveSceneError(ResolveSceneError::MissingSceneDependency(
+            path,
+        ))) => {
             return Attempt::Missing(path);
         }
         Err(err) if is_unresolved(&err.to_string()) => return Attempt::Unresolved,
@@ -227,7 +235,22 @@ fn try_spawn(world: &mut World, file: &SceneFile) -> Attempt {
     world
         .entity_mut(root)
         .remove::<(ScenePatchInstance, SceneInstanceState)>();
-    let roots = if file.wrapped {
+    let roots = if world.get::<PhysicsEnvironment>(root).is_some() {
+        // An environment scene: the root is the tab's environment, the children its scene.
+        let children: Vec<Entity> = world
+            .get::<Children>(root)
+            .map(|children| children.iter().collect())
+            .unwrap_or_default();
+        for &child in &children {
+            world.entity_mut(child).remove::<ChildOf>();
+        }
+        adopt_environment(world, root);
+        world.entity_mut(root).despawn();
+        for &child in &children {
+            adopt_entity(world, child);
+        }
+        children
+    } else if file.wrapped {
         let children: Vec<Entity> = world
             .get::<Children>(root)
             .map(|children| children.iter().collect())
@@ -300,7 +323,11 @@ pub(super) fn finish_pending_scene_spawns(world: &mut World) {
     let server = world.resource::<AssetServer>().clone();
     let mut still = Vec::new();
     for mut spawn in waiting {
-        if let Some(failed) = spawn.held.iter().find(|h| server.load_state(h.id()).is_failed()) {
+        if let Some(failed) = spawn
+            .held
+            .iter()
+            .find(|h| server.load_state(h.id()).is_failed())
+        {
             let base = failed.path().map(ToString::to_string).unwrap_or_default();
             crate::status_bar::notify_error(
                 world,
@@ -312,7 +339,10 @@ pub(super) fn finish_pending_scene_spawns(world: &mut World) {
         if spawn.frames > PENDING_SPAWN_FRAMES {
             crate::status_bar::notify_error(
                 world,
-                format!("{}: the files it inherits did not load", spawn.file.path.display()),
+                format!(
+                    "{}: the files it inherits did not load",
+                    spawn.file.path.display()
+                ),
             );
             continue;
         }
@@ -327,9 +357,7 @@ pub(super) fn finish_pending_scene_spawns(world: &mut World) {
         match try_spawn(world, &spawn.file) {
             Attempt::Spawned(roots) => scene_file_arrived(world, &spawn.file.path, roots),
             Attempt::Missing(base) => {
-                spawn
-                    .held
-                    .push(server.load::<ScenePatch>(base).untyped());
+                spawn.held.push(server.load::<ScenePatch>(base).untyped());
                 still.push(spawn);
             }
             Attempt::Unresolved => still.push(spawn),
@@ -352,23 +380,23 @@ fn scene_file_arrived(world: &mut World, path: &Path, roots: Vec<Entity>) {
         .tabs
         .iter()
         .position(|tab| tab.path.as_deref() == Some(path));
-    let tab_world = tab.and_then(|tab| scenes.tabs[tab].world);
+    let tab_environment = tab.and_then(|tab| scenes.tabs[tab].environment);
     let active = scenes.active;
-    match (tab, tab_world) {
+    match (tab, tab_environment) {
         (Some(tab), _) if tab == active => {
             let kind = scene_kind_of(world, &roots);
             apply_scene_kind(world, kind);
         }
-        (Some(_), Some(tab_world)) => {
+        (Some(_), Some(tab_environment)) => {
             for &root in &roots {
                 let mut root_mut = world.entity_mut(root);
                 root_mut.remove::<SceneRootOf>();
                 if root_mut.contains::<ChildOf>() {
-                    root_mut.insert(ChildOf(tab_world));
+                    root_mut.insert(ChildOf(tab_environment));
                 }
-                root_mut.insert(SceneRootOf(tab_world));
+                root_mut.insert(SceneRootOf(tab_environment));
             }
-            set_tab_open(world, tab_world, false);
+            set_tab_open(world, tab_environment, false);
         }
         _ => {
             for root in roots {
@@ -390,7 +418,10 @@ fn finish_load_scene(world: &mut World, chosen: &Path) -> LoadOutcome {
     clear_scene_entities(world);
     match spawn_scene_file(world, file) {
         Ok(SceneSpawn::Spawned(roots)) => {
-            info!("Scene loaded from {path} ({} top-level entities)", roots.len());
+            info!(
+                "Scene loaded from {path} ({} top-level entities)",
+                roots.len()
+            );
             let kind = scene_kind_of(world, &roots);
             apply_scene_kind(world, kind);
         }
@@ -423,10 +454,15 @@ pub fn apply_scene_kind(world: &mut World, kind: SceneKind) {
 pub fn scene_kind_of(world: &World, roots: &[Entity]) -> SceneKind {
     let mut two_d = false;
     for &root in roots {
-        if world.get::<jackdaw_scene_types::UiSceneRoot>(root).is_some() {
+        if world
+            .get::<jackdaw_scene_types::UiSceneRoot>(root)
+            .is_some()
+        {
             return SceneKind::Ui;
         }
-        two_d |= world.get::<jackdaw_scene_types::Scene2dRoot>(root).is_some();
+        two_d |= world
+            .get::<jackdaw_scene_types::Scene2dRoot>(root)
+            .is_some();
     }
     if two_d {
         SceneKind::TwoD
@@ -492,7 +528,8 @@ pub(crate) fn import_terrain_sidecars(
         .unwrap_or_default();
 
     let mut wanted: Vec<(String, bool)> = Vec::new();
-    let mut query = world.query_filtered::<&jackdaw_scene_types::Terrain, With<crate::scene_io::SceneEntity>>();
+    let mut query =
+        world.query_filtered::<&jackdaw_scene_types::Terrain, With<crate::scene_io::SceneEntity>>();
     for terrain in query.iter(world) {
         if terrain.data_path.is_empty() {
             continue;

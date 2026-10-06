@@ -18,7 +18,8 @@ const MAX_ASSET_DEPTH: usize = 12;
 
 /// Whether `path` names a `.bsn` file.
 pub fn is_document_path(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("bsn"))
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("bsn"))
 }
 
 /// A `.bsn` file's text.
@@ -163,7 +164,10 @@ pub fn is_root_file(text: &str) -> bool {
         return false;
     };
     let Some(BsnNodeKind::Entity {
-        name, base, patches, ..
+        name,
+        base,
+        patches,
+        ..
     }) = document.node(root).map(|node| &node.kind)
     else {
         return false;

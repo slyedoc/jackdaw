@@ -60,7 +60,11 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
     let (clip, looped) = (node_id("clip"), node_id("loop"));
     let wire = TargetPin::NodeData(looped, "pose".into());
     edit(&mut app, |world| {
-        document::connect(world, SourcePin::NodeData(clip, "pose".into()), wire.clone());
+        document::connect(
+            world,
+            SourcePin::NodeData(clip, "pose".into()),
+            wire.clone(),
+        );
     });
     assert_eq!(
         graph(&app).edges_inverted.get(&wire),
@@ -68,11 +72,16 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
     );
 
     edit(&mut app, |world| {
-        world.resource_scope(|world, mut history: Mut<jackdaw::commands::CommandHistory>| {
-            history.undo(world);
-        });
+        world.resource_scope(
+            |world, mut history: Mut<jackdaw::commands::CommandHistory>| {
+                history.undo(world);
+            },
+        );
     });
-    assert!(graph(&app).edges_inverted.get(&wire).is_none(), "undo cuts the wire");
+    assert!(
+        graph(&app).edges_inverted.get(&wire).is_none(),
+        "undo cuts the wire"
+    );
 
     edit(&mut app, |world| {
         document::add_node(
@@ -92,7 +101,10 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
         Some(&Vec2::new(5.0, 6.0))
     );
 
-    assert!(jackdaw::animgraph::held::save(app.world_mut()), "the graph saves");
+    assert!(
+        jackdaw::animgraph::held::save(app.world_mut()),
+        "the graph saves"
+    );
     let saved = std::fs::read_to_string(&path).expect("read back");
     assert!(saved.contains("SpeedNode"), "{saved}");
     assert!(saved.contains("NodePosition(5.0, 6.0)"), "{saved}");
@@ -104,8 +116,14 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
     let registry = app.world().resource::<AppTypeRegistry>().clone();
     let server = app.world().resource::<AssetServer>().clone();
     let mut handles = |type_id, path| server.load_builder().load_erased(type_id, path);
-    let (world, root) = spawn_document(&saved, "walk.animgraph.bsn", &registry.0, &server, &mut handles)
-        .expect("the saved document spawns");
+    let (world, root) = spawn_document(
+        &saved,
+        "walk.animgraph.bsn",
+        &registry.0,
+        &server,
+        &mut handles,
+    )
+    .expect("the saved document spawns");
     let reloaded = graph_from_world(&world, root, &registry.read()).expect("and builds");
     assert_eq!(reloaded.nodes.len(), 3);
 }
@@ -146,7 +164,9 @@ fn a_state_machine_document_wires_transitions_and_adds_states() {
     edit(&mut app, |world| {
         document::add_transition(world, state_id("idle").uuid(), state_id("run").uuid());
     });
-    edit(&mut app, |world| document::add_state(world, Vec2::new(0.0, 200.0)));
+    edit(&mut app, |world| {
+        document::add_state(world, Vec2::new(0.0, 200.0))
+    });
     let built = fsm(&app);
     assert_eq!(built.states.len(), 3);
     let transition = built.transitions.values().next().expect("one transition");
@@ -214,7 +234,10 @@ fn a_new_graph_and_a_new_state_machine_start_from_the_project_window() {
             assert!(graph(&app).nodes.is_empty(), "a new graph starts empty");
         } else {
             assert!(tmp.path().join("state_machine_1.fsm.bsn").exists());
-            assert!(document::active_fsm(app.world()).is_some(), "it opened and built");
+            assert!(
+                document::active_fsm(app.world()).is_some(),
+                "it opened and built"
+            );
         }
     }
 }
@@ -228,9 +251,10 @@ fn the_project_windows_menu_row_makes_a_graph() {
 
     let mut app = util::editor_test_app();
     let tmp = tempfile::tempdir().expect("tempdir");
-    app.world_mut().insert_resource(jackdaw::project_window::MenuTarget {
-        path: tmp.path().to_path_buf(),
-    });
+    app.world_mut()
+        .insert_resource(jackdaw::project_window::MenuTarget {
+            path: tmp.path().to_path_buf(),
+        });
     let mut queue = CommandQueue::default();
     let mut commands = Commands::new(&mut queue, app.world());
     jackdaw_feathers::context_menu::spawn_context_menu(
@@ -263,10 +287,11 @@ fn the_add_menu_makes_a_graph_in_the_shown_folder() {
     let project = tempfile::tempdir().expect("tempdir");
     let shown = project.path().join("assets/anim");
     std::fs::create_dir_all(&shown).unwrap();
-    app.world_mut().insert_resource(jackdaw::project::ProjectRoot {
-        root: project.path().to_path_buf(),
-        config: default(),
-    });
+    app.world_mut()
+        .insert_resource(jackdaw::project::ProjectRoot {
+            root: project.path().to_path_buf(),
+            config: default(),
+        });
     app.update();
     app.world_mut()
         .resource_mut::<jackdaw::project_window::ProjectWindowState>()
@@ -280,7 +305,10 @@ fn the_add_menu_makes_a_graph_in_the_shown_folder() {
         app.update();
     }
     assert!(shown.join("graph_1.animgraph.bsn").exists());
-    assert!(document::active_graph(app.world()).is_some(), "and it opened");
+    assert!(
+        document::active_graph(app.world()).is_some(),
+        "and it opened"
+    );
 }
 
 /// Ctrl+A and the Add menu offer node types while a graph is open, and picking one adds it.
@@ -291,7 +319,8 @@ fn the_add_picker_offers_nodes_in_a_graph_and_states_in_a_state_machine() {
     let path = tmp.path().join("walk.animgraph.bsn");
     std::fs::write(&path, GRAPH).expect("write graph");
     open(&mut app, &path);
-    app.world_mut().spawn(jackdaw::animgraph::graph_window_content());
+    app.world_mut()
+        .spawn(jackdaw::animgraph::graph_window_content());
     app.update();
     let over_the_graph_window = |app: &mut App| {
         for mut rel in app
@@ -310,12 +339,15 @@ fn the_add_picker_offers_nodes_in_a_graph_and_states_in_a_state_machine() {
         .find(|item| item.label == "Clip")
         .expect("the clip node is offered");
     assert!(
-        items.iter().all(|item| item.action.starts_with("op:animgraph.")),
+        items
+            .iter()
+            .all(|item| item.action.starts_with("op:animgraph.")),
         "a graph offers nodes, not entities"
     );
-    app.world_mut().trigger(jackdaw_widgets::menu_bar::MenuAction {
-        action: clip.action.clone(),
-    });
+    app.world_mut()
+        .trigger(jackdaw_widgets::menu_bar::MenuAction {
+            action: clip.action.clone(),
+        });
     for _ in 0..3 {
         app.update();
     }
@@ -327,12 +359,13 @@ fn the_add_picker_offers_nodes_in_a_graph_and_states_in_a_state_machine() {
     over_the_graph_window(&mut app);
     let items = jackdaw::add_entity_picker::collect_add_menu_items(app.world_mut());
     assert_eq!(
-        items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>(),
+        items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
         ["State"]
     );
 }
-
-
 
 /// A clip node names the clip a double-click opens on the timeline.
 #[test]
@@ -363,7 +396,10 @@ fn a_machine_node_and_a_state_name_what_they_open() {
     let path = tmp.path().join("top.animgraph.bsn");
     std::fs::write(
         &path,
-        GRAPH.replace("ClipNode { }", r#"FsmNode { fsm: "priest/priest.fsm.bsn" }"#),
+        GRAPH.replace(
+            "ClipNode { }",
+            r#"FsmNode { fsm: "priest/priest.fsm.bsn" }"#,
+        ),
     )
     .expect("write graph");
     open(&mut app, &path);
@@ -374,10 +410,13 @@ fn a_machine_node_and_a_state_name_what_they_open() {
     assert!(document::document_of_node(app.world(), node_id("loop").uuid()).is_none());
 
     let fsm = tmp.path().join("moves.fsm.bsn");
-    std::fs::write(&fsm, MACHINE.replace(
-        "#run\n    AnimState { }",
-        "#run\n    AnimState { graph: \"priest/run.animgraph.bsn\" }",
-    ))
+    std::fs::write(
+        &fsm,
+        MACHINE.replace(
+            "#run\n    AnimState { }",
+            "#run\n    AnimState { graph: \"priest/run.animgraph.bsn\" }",
+        ),
+    )
     .expect("write machine");
     open(&mut app, &fsm);
     assert_eq!(
@@ -408,10 +447,11 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     std::fs::write(assets.join("ual/Mannequin.skn.ron"), "()").unwrap();
     std::fs::write(assets.join("anim/ual/Crouch_Idle_Loop.anim.ron"), "()").unwrap();
     std::fs::write(assets.join("anim/ual/Idle_Loop.anim.ron"), "()").unwrap();
-    app.world_mut().insert_resource(jackdaw::project::ProjectRoot {
-        root: project.path().to_path_buf(),
-        config: default(),
-    });
+    app.world_mut()
+        .insert_resource(jackdaw::project::ProjectRoot {
+            root: project.path().to_path_buf(),
+            config: default(),
+        });
     app.update();
 
     let _ = app
@@ -424,9 +464,18 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     }
 
     let character = std::fs::read_to_string(assets.join("character_1.bsn")).expect("written");
-    assert!(character.contains(r#"skeleton: "ual/Mannequin.skn.ron""#), "{character}");
-    assert!(character.contains(r#"graph: "character_1.animgraph.bsn""#), "{character}");
-    assert!(character.contains(r#"IsA { source: "ual/Mannequin.bsn""#), "{character}");
+    assert!(
+        character.contains(r#"skeleton: "ual/Mannequin.skn.ron""#),
+        "{character}"
+    );
+    assert!(
+        character.contains(r#"graph: "character_1.animgraph.bsn""#),
+        "{character}"
+    );
+    assert!(
+        character.contains(r#"IsA { source: "ual/Mannequin.bsn""#),
+        "{character}"
+    );
     let graph = std::fs::read_to_string(assets.join("character_1.animgraph.bsn")).expect("written");
     assert!(graph.contains("anim/ual/Idle_Loop.anim.ron"), "{graph}");
 
@@ -460,8 +509,15 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
         .iter(app.world())
         .find_map(|(e, n)| (n.as_str() == "Armature").then_some(e))
         .expect("the rig's bones spawned, named");
-    let instance = app.world().get::<ChildOf>(armature).expect("under the instance").parent();
-    assert!(app.world().get::<Transform>(instance).is_some(), "the instance is placed");
+    let instance = app
+        .world()
+        .get::<ChildOf>(armature)
+        .expect("under the instance")
+        .parent();
+    assert!(
+        app.world().get::<Transform>(instance).is_some(),
+        "the instance is placed"
+    );
 
     // A material written inline in the rig is a real material, not an empty handle.
     let material = app
@@ -508,7 +564,11 @@ fn a_held_graph_leaves_the_open_scene_alone() {
             TargetPin::NodeData(looped, "pose".into()),
         );
     });
-    assert_eq!(graph(&app).edges_inverted.len(), 2, "the held graph took the edit");
+    assert_eq!(
+        graph(&app).edges_inverted.len(),
+        2,
+        "the held graph took the edit"
+    );
 
     let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
     let names: Vec<String> = ast
@@ -519,9 +579,15 @@ fn a_held_graph_leaves_the_open_scene_alone() {
         .collect();
     assert_eq!(names, ["Crate"], "the scene's document is the scene alone");
 
-    assert!(jackdaw::scene_io::save_scene(app.world_mut()), "the scene saves");
+    assert!(
+        jackdaw::scene_io::save_scene(app.world_mut()),
+        "the scene saves"
+    );
     let saved = std::fs::read_to_string(&scene).expect("read back");
-    assert!(!saved.contains("ClipNode") && !saved.contains("Links"), "{saved}");
+    assert!(
+        !saved.contains("ClipNode") && !saved.contains("Links"),
+        "{saved}"
+    );
 }
 
 /// An inspector edit on a held node lands in the held graph, and saves with it.
@@ -540,7 +606,10 @@ fn an_inspector_edit_on_a_held_node_lands_in_the_graph() {
         .world_mut()
         .operator("field.set")
         .param("entity", looped)
-        .param("type_path", "bevy_animation_graph::builtin_nodes::LoopNode".to_string())
+        .param(
+            "type_path",
+            "bevy_animation_graph::builtin_nodes::LoopNode".to_string(),
+        )
         .param("field", "interpolation_period".to_string())
         .param("value", "0.5".to_string())
         .call()
@@ -552,4 +621,3 @@ fn an_inspector_edit_on_a_held_node_lands_in_the_graph() {
     let saved = std::fs::read_to_string(&path).expect("read back");
     assert!(saved.contains("interpolation_period: 0.5"), "{saved}");
 }
-

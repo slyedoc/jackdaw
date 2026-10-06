@@ -2327,7 +2327,10 @@ fn parse_viewport_2d_mode(mode: &str) -> Option<Viewport2dMode> {
 pub(crate) fn selection_select(
     params: In<OperatorParameters>,
     named: Query<(Entity, &Name), With<crate::scene_io::SceneEntity>>,
-    instances: Query<(Entity, &bevy::scene::SceneBase), (Without<Name>, With<crate::scene_io::SceneEntity>)>,
+    instances: Query<
+        (Entity, &bevy::scene::SceneBase),
+        (Without<Name>, With<crate::scene_io::SceneEntity>),
+    >,
     authored: Query<(), Without<crate::EditorEntity>>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
@@ -2381,7 +2384,10 @@ pub(crate) fn selection_select(
 pub(crate) fn selection_extend(
     params: In<OperatorParameters>,
     named: Query<(Entity, &Name), With<crate::scene_io::SceneEntity>>,
-    instances: Query<(Entity, &bevy::scene::SceneBase), (Without<Name>, With<crate::scene_io::SceneEntity>)>,
+    instances: Query<
+        (Entity, &bevy::scene::SceneBase),
+        (Without<Name>, With<crate::scene_io::SceneEntity>),
+    >,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
 ) -> OperatorResult {

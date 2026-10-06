@@ -202,7 +202,6 @@ fn builtin(taxonomy: &mut CreationTaxonomy) {
             op_action::<EntityAddReflectionProbeOp>(),
         ),
     ]);
-
 }
 
 /// The registered UI widgets, as one child group of [`UI_GROUP`] per category.
@@ -335,7 +334,9 @@ fn graph_nodes(taxonomy: &mut CreationTaxonomy, world: &mut World) -> bool {
     match active_kind(world) {
         None => false,
         Some(DocKind::Fsm) => {
-            taxonomy.groups.push(group(GENERAL_GROUP, GENERAL_SECTION, 0));
+            taxonomy
+                .groups
+                .push(group(GENERAL_GROUP, GENERAL_SECTION, 0));
             taxonomy.entries.push(CreationEntry {
                 group: GENERAL_GROUP.into(),
                 label: "State".into(),

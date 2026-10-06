@@ -29,6 +29,7 @@ use jackdaw_widgets::tree_view::{
     TreeRowVisibilityToggle, TreeRowVisibilityToggled,
 };
 
+use crate::scene_io::{SceneEntity, SceneRootOf};
 use crate::{
     EditorEntity, EditorHidden, OP_PREFIX,
     commands::{CommandHistory, EditorCommand, ReparentEntity, SetField},
@@ -36,11 +37,10 @@ use crate::{
     layout::HierarchyFilter,
     selection::{Selected, Selection},
 };
+use avian3d::environment::PhysicsEnvironment;
+use bevy::scene::SceneBase;
 use jackdaw_feathers::dialog::{DialogActionEvent, DialogChildrenSlot};
 use jackdaw_scene_types::{Brush, UiSceneRoot};
-use bevy::scene::SceneBase;
-use crate::scene_io::{SceneEntity, SceneRootOf};
-use avian3d::world::PhysicsWorld;
 
 /// Stores the default name for the prefab save dialog.
 #[derive(Resource, Default)]
@@ -240,10 +240,10 @@ pub(crate) fn prefab_stem_label(world: &World, entity: Entity) -> Option<String>
 
 /// Whether `entity` is a top-level row: one of the active tab's roots.
 fn is_outliner_root(world: &World, entity: Entity) -> bool {
-    match crate::scene_io::scene_world(world) {
-        Some(tab_world) => world
+    match crate::scene_io::scene_environment(world) {
+        Some(tab_environment) => world
             .get::<SceneRootOf>(entity)
-            .is_some_and(|of| of.0 == tab_world),
+            .is_some_and(|of| of.0 == tab_environment),
         None => world.get::<ChildOf>(entity).is_none(),
     }
 }
@@ -702,7 +702,7 @@ fn reveal_path(world: &World, target: Entity) -> Vec<Entity> {
     seen.insert(cursor);
     while let Some(child_of) = world.get::<ChildOf>(cursor) {
         let parent = child_of.0;
-        if world.get::<PhysicsWorld>(parent).is_some() {
+        if world.get::<PhysicsEnvironment>(parent).is_some() {
             break;
         }
         // A streamed projection can momentarily form a parent cycle while
@@ -1140,7 +1140,7 @@ fn on_entity_reparented(
     children_query: Query<&Children>,
     tree_row_children: Query<Entity, With<TreeRowChildren>>,
     populated_query: Query<&TreeChildrenPopulated>,
-    tab_worlds: Query<(), With<PhysicsWorld>>,
+    tab_environments: Query<(), With<PhysicsEnvironment>>,
 ) {
     let entity = trigger.event_target();
 
@@ -1153,7 +1153,7 @@ fn on_entity_reparented(
         return;
     };
     // Under the tab world is top level: `on_scene_root_added` places the row.
-    if tab_worlds.contains(new_parent) {
+    if tab_environments.contains(new_parent) {
         return;
     }
 
@@ -1282,7 +1282,13 @@ fn on_scene_root_added(
     for (container, tree_entity) in tree_index.rows_for_source(entity) {
         commands.entity(tree_entity).try_insert(ChildOf(container));
     }
-    queue_root_row_spawn(entity, &mut commands, &tree_index, &editor_check, &child_of_check);
+    queue_root_row_spawn(
+        entity,
+        &mut commands,
+        &tree_index,
+        &editor_check,
+        &child_of_check,
+    );
     commands.queue(|world: &mut World| sync_outliner_row_order(world, None));
 }
 
@@ -2004,13 +2010,13 @@ fn on_tree_row_dropped_on_root(
     event: On<TreeRowDroppedOnRoot>,
     mut commands: Commands,
     parent_query: Query<&ChildOf, Without<EditorEntity>>,
-    tab_worlds: Query<(), With<PhysicsWorld>>,
+    tab_environments: Query<(), With<PhysicsEnvironment>>,
     tree_index: Res<TreeIndex>,
 ) {
     let dragged = event.dragged_source;
 
     let old_parent = match parent_query.get(dragged) {
-        Ok(child_of) if !tab_worlds.contains(child_of.0) => Some(child_of.0),
+        Ok(child_of) if !tab_environments.contains(child_of.0) => Some(child_of.0),
         _ => return,
     };
 
@@ -3309,4 +3315,3 @@ fn set_display(node: &mut Mut<Node>, display: Display) {
         node.display = display;
     }
 }
-

@@ -237,7 +237,10 @@ fn write_starter(
                         interpolation_period: 0.2,
                     },
                     Links(vec![
-                        Link(LinkTo::Data("pose".into()), LinkFrom::Node(idle, "pose".into())),
+                        Link(
+                            LinkTo::Data("pose".into()),
+                            LinkFrom::Node(idle, "pose".into()),
+                        ),
                         Link(LinkTo::Time("time".into()), LinkFrom::NodeTime(idle)),
                     ]),
                     NodePosition(330.0, 40.0),
@@ -247,7 +250,10 @@ fn write_starter(
             world.entity_mut(root).insert((
                 graph,
                 Links(vec![
-                    Link(LinkTo::Data("pose".into()), LinkFrom::Node(looped, "pose".into())),
+                    Link(
+                        LinkTo::Data("pose".into()),
+                        LinkFrom::Node(looped, "pose".into()),
+                    ),
                     Link(LinkTo::Time(String::new()), LinkFrom::NodeTime(looped)),
                 ]),
             ));
@@ -342,7 +348,10 @@ fn state_machine_open(world: &World) -> bool {
     is_available = graph_open,
     params(node(String, doc = "The node type's type path."))
 )]
-pub fn animgraph_add_node(params: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+pub fn animgraph_add_node(
+    params: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     let Some(type_path) = params.as_str("node").map(str::to_string) else {
         warn!("animgraph.add_node: no node type given");
         return OperatorResult::Cancelled;
@@ -350,12 +359,10 @@ pub fn animgraph_add_node(params: In<OperatorParameters>, mut commands: Commands
     commands.queue(move |world: &mut World| {
         let registration = {
             let registry = world.resource::<AppTypeRegistry>().read();
-            registry
-                .get_with_type_path(&type_path)
-                .map(|r| {
-                    let short = r.type_info().type_path_table().short_path();
-                    (r.type_id(), short.trim_end_matches("Node").to_string())
-                })
+            registry.get_with_type_path(&type_path).map(|r| {
+                let short = r.type_info().type_path_table().short_path();
+                (r.type_id(), short.trim_end_matches("Node").to_string())
+            })
         };
         let Some((type_id, label)) = registration else {
             warn!("animgraph.add_node: `{type_path}` is not a registered type");
@@ -390,9 +397,16 @@ pub fn animgraph_add_state(_: In<OperatorParameters>, mut commands: Commands) ->
     label = "New Character",
     description = "Make a character: the project's rig playing a starter animation graph, opened in a tab.",
     allows_undo = false,
-    params(path(String, default = "", doc = "The folder to make it in; the shown folder if empty."))
+    params(path(
+        String,
+        default = "",
+        doc = "The folder to make it in; the shown folder if empty."
+    ))
 )]
-pub fn animgraph_new_character(params: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+pub fn animgraph_new_character(
+    params: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     let folder = params
         .as_str("path")
         .filter(|path| !path.is_empty())
@@ -417,7 +431,10 @@ pub fn animgraph_new_character(params: In<OperatorParameters>, mut commands: Com
     description = "Place a character in the scene, making one if the project has none.",
     allows_undo = false
 )]
-pub fn animgraph_place_character(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+pub fn animgraph_place_character(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
     commands.queue(place_character);
     OperatorResult::Finished
 }
@@ -458,7 +475,10 @@ fn find_characters(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
             find_characters(&path, out);
             continue;
         }
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
         if name.starts_with("character_")
             && name.ends_with(".bsn")
             && name.matches('.').count() == 1
@@ -494,7 +514,10 @@ fn create_character(world: &mut World, folder: &std::path::Path) -> Option<std::
         None => Starter::Empty,
     };
     if let Err(err) = write_starter(world, &graph_file, &name, starter) {
-        warn!("animgraph: {} cannot be written: {err}", graph_file.display());
+        warn!(
+            "animgraph: {} cannot be written: {err}",
+            graph_file.display()
+        );
         return None;
     }
     let character_file = folder.join(format!("{name}.bsn"));
@@ -511,7 +534,10 @@ bevy_ecs::hierarchy::Children [
         graph = relative(&graph_file),
     );
     if let Err(err) = std::fs::write(&character_file, character) {
-        warn!("animgraph: {} cannot be written: {err}", character_file.display());
+        warn!(
+            "animgraph: {} cannot be written: {err}",
+            character_file.display()
+        );
         return None;
     }
     if let Some(mut state) = world.get_resource_mut::<crate::project_window::ProjectWindowState>() {
@@ -522,19 +548,26 @@ bevy_ecs::hierarchy::Children [
 
 /// The project's rig: a `.skn.ron` with its `.bsn` beside it (a Mannequin first), as asset paths.
 fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
-    let mut rigs: Vec<(String, String)> = crate::bsn_files::walk_files_with_extensions(assets, &["skn.ron"])
-        .into_iter()
-        .filter_map(|skeleton| {
-            let stem = skeleton.to_string_lossy().strip_suffix(".skn.ron")?.to_string();
-            let rig = std::path::PathBuf::from(format!("{stem}.bsn"));
-            rig.exists().then(|| {
-                let asset = |p: &std::path::Path| {
-                    p.strip_prefix(assets).unwrap_or(p).to_string_lossy().replace('\\', "/")
-                };
-                (asset(&rig), asset(&skeleton))
+    let mut rigs: Vec<(String, String)> =
+        crate::bsn_files::walk_files_with_extensions(assets, &["skn.ron"])
+            .into_iter()
+            .filter_map(|skeleton| {
+                let stem = skeleton
+                    .to_string_lossy()
+                    .strip_suffix(".skn.ron")?
+                    .to_string();
+                let rig = std::path::PathBuf::from(format!("{stem}.bsn"));
+                rig.exists().then(|| {
+                    let asset = |p: &std::path::Path| {
+                        p.strip_prefix(assets)
+                            .unwrap_or(p)
+                            .to_string_lossy()
+                            .replace('\\', "/")
+                    };
+                    (asset(&rig), asset(&skeleton))
+                })
             })
-        })
-        .collect();
+            .collect();
     rigs.sort_by_key(|(rig, _)| !rig.contains("Mannequin"));
     rigs.into_iter().next()
 }
@@ -544,7 +577,12 @@ fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
     let clips = crate::bsn_files::walk_files_with_extensions(assets, &["anim.ron"]);
     let stem = |p: &std::path::PathBuf| {
         p.file_name()
-            .map(|n| n.to_string_lossy().to_lowercase().trim_end_matches(".anim.ron").to_string())
+            .map(|n| {
+                n.to_string_lossy()
+                    .to_lowercase()
+                    .trim_end_matches(".anim.ron")
+                    .to_string()
+            })
             .unwrap_or_default()
     };
     // A plain idle first: "Crouch_Idle_Loop" also contains "idle_loop".
@@ -556,8 +594,11 @@ fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
         .or_else(|| starts("idle"))
         .or_else(|| contains("idle"))
         .map(|p| {
-        p.strip_prefix(assets).unwrap_or(p).to_string_lossy().replace('\\', "/")
-    })
+            p.strip_prefix(assets)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
 }
 
 /// Save the graph held open in the Animation Graph window.

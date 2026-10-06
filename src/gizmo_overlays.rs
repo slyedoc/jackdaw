@@ -35,17 +35,72 @@ pub struct Overlay {
 
 /// Every overlay, in the order the panel lists them.
 pub const OVERLAYS: &[Overlay] = &[
-    Overlay { key: "grid", label: "Grid", section: "Editor", default: true },
-    Overlay { key: "axis_indicator", label: "Axis indicator", section: "Editor", default: true },
-    Overlay { key: "alignment_guides", label: "Alignment guides", section: "Editor", default: true },
-    Overlay { key: "icons", label: "Light and camera icons", section: "Scene", default: true },
-    Overlay { key: "brush_outline", label: "Brush outlines", section: "Scene", default: true },
-    Overlay { key: "brush_wireframe", label: "Brush wireframes", section: "Scene", default: false },
-    Overlay { key: "face_grid", label: "Face grids", section: "Scene", default: false },
-    Overlay { key: "bounding_boxes", label: "Bounding boxes", section: "Scene", default: false },
-    Overlay { key: "mirror_planes", label: "Mirror planes", section: "Scene", default: true },
-    Overlay { key: "colliders", label: "Colliders", section: "Physics", default: false },
-    Overlay { key: "hierarchy_arrows", label: "Hierarchy arrows", section: "Physics", default: false },
+    Overlay {
+        key: "grid",
+        label: "Grid",
+        section: "Editor",
+        default: true,
+    },
+    Overlay {
+        key: "axis_indicator",
+        label: "Axis indicator",
+        section: "Editor",
+        default: true,
+    },
+    Overlay {
+        key: "alignment_guides",
+        label: "Alignment guides",
+        section: "Editor",
+        default: true,
+    },
+    Overlay {
+        key: "icons",
+        label: "Light and camera icons",
+        section: "Scene",
+        default: true,
+    },
+    Overlay {
+        key: "brush_outline",
+        label: "Brush outlines",
+        section: "Scene",
+        default: true,
+    },
+    Overlay {
+        key: "brush_wireframe",
+        label: "Brush wireframes",
+        section: "Scene",
+        default: false,
+    },
+    Overlay {
+        key: "face_grid",
+        label: "Face grids",
+        section: "Scene",
+        default: false,
+    },
+    Overlay {
+        key: "bounding_boxes",
+        label: "Bounding boxes",
+        section: "Scene",
+        default: false,
+    },
+    Overlay {
+        key: "mirror_planes",
+        label: "Mirror planes",
+        section: "Scene",
+        default: true,
+    },
+    Overlay {
+        key: "colliders",
+        label: "Colliders",
+        section: "Physics",
+        default: false,
+    },
+    Overlay {
+        key: "hierarchy_arrows",
+        label: "Hierarchy arrows",
+        section: "Physics",
+        default: false,
+    },
 ];
 
 /// Which overlays are on, and the master switch.
@@ -97,7 +152,12 @@ pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<GizmoOverlays>()
         .add_systems(
             Update,
-            (load_project_overlays, apply_overlays, sync_overlay_checkboxes).chain(),
+            (
+                load_project_overlays,
+                apply_overlays,
+                sync_overlay_checkboxes,
+            )
+                .chain(),
         )
         .add_observer(on_overlay_checkbox);
 }
@@ -176,7 +236,10 @@ fn load_project_overlays(
     description = "Show or hide one kind of viewport gizmo.",
     allows_undo = false,
     params(
-        name(String, doc = "Which overlay: `all`, or one of the overlays panel's keys (`grid`, `icons`, `brush_outline`, `colliders`, ...)."),
+        name(
+            String,
+            doc = "Which overlay: `all`, or one of the overlays panel's keys (`grid`, `icons`, `brush_outline`, `colliders`, ...)."
+        ),
         on(bool, doc = "On or off. Omit to flip whichever way it currently is.")
     )
 )]

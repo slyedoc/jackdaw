@@ -459,4 +459,3 @@ fn a_terrain_gets_its_glyph_when_the_kind_lands_after_the_row() {
         "the row caught up with the kind that landed after it",
     );
 }
-

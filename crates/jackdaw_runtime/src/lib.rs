@@ -4,11 +4,16 @@
 //! [`JackdawPlugin`] registers the authored types and draws what they describe: brushes,
 //! surfaces, terrain, material overrides, colliders, a baked navmesh.
 //!
+//! A level loads onto the environment it plays in, usually the main one: an environment scene's
+//! root (its sky, exposure, gravity) lands on that entity and its contents become its children;
+//! any other scene just adds its entities there.
+//!
 //! ```ignore
 //! App::new()
 //!     .add_plugins((DefaultPlugins, jackdaw_runtime::JackdawPlugin))
-//!     .add_systems(Startup, |mut commands: Commands, assets: Res<AssetServer>| {
-//!         commands.spawn(ScenePatchInstance(assets.load("scene.bsn")));
+//!     .add_systems(Startup, |mut commands: Commands, assets: Res<AssetServer>,
+//!                            main: Res<MainPhysicsEnvironmentEntity>| {
+//!         commands.entity(main.0).insert(ScenePatchInstance(assets.load("scene.bsn")));
 //!     })
 //!     .run();
 //! ```
@@ -65,9 +70,10 @@ pub mod prelude {
         DetailPresser, EditorCategory, EditorDescription, EditorHidden, EditorPreview,
         JackdawCatalog, JackdawPlugin, SkipSerialization,
     };
-    pub use bevy::scene::ScenePatchInstance;
     #[cfg(feature = "terrain")]
     pub use crate::{DetailPressers, DetailSettings, DetailViewer, TerrainViewer};
+    pub use bevy::scene::ScenePatchInstance;
+    pub use bevy_aurora::environment::{Environment, MainPhysicsEnvironmentEntity};
 }
 
 pub struct JackdawPlugin;
@@ -100,7 +106,6 @@ impl Plugin for JackdawPlugin {
             jackdaw_surface::LayeredSurfacePlugin,
             jackdaw_surface::FoliagePlugin,
             jackdaw_surface::WaterPlugin,
-            jackdaw_surface::EnvironmentPlugin,
             MaterialOverridesPlugin,
         ))
         .add_systems(Update, attach_inserted_gltf_sources);
@@ -140,7 +145,9 @@ pub struct JackdawCatalog {
 
 impl JackdawCatalog {
     pub fn get(&self, reference: &str) -> Option<&UntypedHandle> {
-        self.files.get(reference).or_else(|| self.stems.get(reference))
+        self.files
+            .get(reference)
+            .or_else(|| self.stems.get(reference))
     }
 
     /// The handle the catalog holds for `path`, when it holds one of `type_id`'s asset type.
@@ -278,7 +285,9 @@ pub fn load_asset_document(
 
 /// What a `.bsn` build resolves a path to: the catalog's handle for that file when it holds one,
 /// else a load through the asset server.
-pub fn handle_provider(world: &World) -> impl FnMut(core::any::TypeId, AssetPath<'static>) -> UntypedHandle + use<> {
+pub fn handle_provider(
+    world: &World,
+) -> impl FnMut(core::any::TypeId, AssetPath<'static>) -> UntypedHandle + use<> {
     let server = world.resource::<AssetServer>().clone();
     let held: HashMap<String, UntypedHandle> = world
         .get_resource::<JackdawCatalog>()
@@ -344,7 +353,11 @@ pub fn scene_dir_of(world: &World, entity: Entity) -> PathBuf {
             .get::<ScenePatchInstance>(current)
             .and_then(|instance| instance.0.path())
         {
-            return path.path().parent().map(Path::to_path_buf).unwrap_or_default();
+            return path
+                .path()
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
         }
         at = world.get::<ChildOf>(current).map(ChildOf::parent);
     }
@@ -430,7 +443,6 @@ fn attach_inserted_gltf_sources(
         commands.entity(entity).insert(root);
     }
 }
-
 
 /// The `Unorm` twin of a 16-bit `Uint` texture format: same bytes per texel,
 /// same channel order, but float-filterable where the `Uint` side is not.
@@ -547,7 +559,6 @@ fn promote_material_texture_formats(
 
 /// The file the project's remaining named assets are read from, under the
 /// asset root.
-
 
 /// The one definition of the `Uint` retag, exercised through the plugin both
 /// the editor and a built game add.

@@ -20,11 +20,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 use std::time::SystemTime;
 
+use crate::bsn_files::{self, StemIndex};
 use bevy::asset::{ReflectAsset, UntypedAssetId, UntypedHandle};
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task, futures_lite::future};
 use jackdaw_api::prelude::{AssetKind, AssetKinds};
-use crate::bsn_files::{self, StemIndex};
 use path_slash::PathExt as _;
 
 use crate::asset_files::{AssetFileKind, AssetKindCache, walk_document_files};
@@ -293,10 +293,7 @@ pub fn indexed_path(world: &World, path: &Path) -> Option<PathBuf> {
 /// Whether an indexed path is the project's catalog file, which holds what has
 /// no file of its own and is no asset in its own right.
 pub fn is_catalog_file(path: &Path) -> bool {
-    matches!(
-        path.to_str(),
-        Some("catalog.bsn")
-    )
+    matches!(path.to_str(), Some("catalog.bsn"))
 }
 
 /// The file a keyed document sits in: the text file, or the binary twin where

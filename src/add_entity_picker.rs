@@ -123,13 +123,12 @@ pub fn open_add_entity_picker(
 
     // An animation graph document offers nodes rather than entities.
     let adding_nodes = crate::animgraph::adding_nodes(world);
-    let (title, placeholder) = match crate::animgraph::document::active_kind(world)
-        .filter(|_| adding_nodes)
-    {
-        Some(crate::animgraph::document::DocKind::Graph) => ("Add Node", "Search Nodes.."),
-        Some(crate::animgraph::document::DocKind::Fsm) => ("Add State", "Search.."),
-        None => ("Add Entity", "Search Entities.."),
-    };
+    let (title, placeholder) =
+        match crate::animgraph::document::active_kind(world).filter(|_| adding_nodes) {
+            Some(crate::animgraph::document::DocKind::Graph) => ("Add Node", "Search Nodes.."),
+            Some(crate::animgraph::document::DocKind::Fsm) => ("Add State", "Search.."),
+            None => ("Add Entity", "Search Entities.."),
+        };
     let picker = PickerProps::new(spawn_item, on_select)
         .items(items)
         .title(title)

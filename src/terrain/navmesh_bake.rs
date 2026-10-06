@@ -280,7 +280,10 @@ pub(crate) fn terrain_navmesh_bake(
     _: In<OperatorParameters>,
     mut commands: Commands,
     selection: Res<Selection>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
+    terrains: Query<
+        (&jackdaw_scene_types::Terrain, &GlobalTransform),
+        With<crate::scene_io::SceneEntity>,
+    >,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
     scatter_assets: Option<Res<jackdaw_terrain::render::ScatterAssets>>,
@@ -1211,7 +1214,10 @@ fn poll_running_bake(
     mut commands: Commands,
     mut running: ResMut<RunningBake>,
     mut state: ResMut<TerrainNavmeshState>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
+    terrains: Query<
+        (&jackdaw_scene_types::Terrain, &GlobalTransform),
+        With<crate::scene_io::SceneEntity>,
+    >,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
 ) {
@@ -1272,7 +1278,10 @@ fn poll_running_bake(
 /// is asked again `STALENESS_INTERVAL` later.
 fn staleness_against_world(
     artifact: &NavmeshArtifact,
-    terrains: &Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
+    terrains: &Query<
+        (&jackdaw_scene_types::Terrain, &GlobalTransform),
+        With<crate::scene_io::SceneEntity>,
+    >,
     store: &TerrainDataStore,
     geometry: &SceneGeometry,
 ) -> Staleness {
@@ -1315,7 +1324,10 @@ const STALENESS_INTERVAL: f32 = 0.25;
 fn refresh_staleness(
     time: Res<Time>,
     mut since: Local<f32>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
+    terrains: Query<
+        (&jackdaw_scene_types::Terrain, &GlobalTransform),
+        With<crate::scene_io::SceneEntity>,
+    >,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
     mut state: ResMut<TerrainNavmeshState>,
@@ -1661,7 +1673,10 @@ pub(crate) fn import_beside_scene(world: &mut World, scene_path: &str) {
 /// from an exclusive context.
 fn staleness_of_loaded_world(
     artifact: In<NavmeshArtifact>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
+    terrains: Query<
+        (&jackdaw_scene_types::Terrain, &GlobalTransform),
+        With<crate::scene_io::SceneEntity>,
+    >,
     store: Res<TerrainDataStore>,
     geometry: SceneGeometry,
 ) -> Staleness {

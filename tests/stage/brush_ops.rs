@@ -165,4 +165,3 @@ fn mesh_children(app: &mut App, entity: Entity) -> usize {
         .filter(|&&child| app.world().get::<AuroraMesh3d>(child).is_some())
         .count()
 }
-
