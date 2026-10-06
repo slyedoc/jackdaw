@@ -18,7 +18,16 @@
 
 use std::borrow::Cow;
 
-use jackdaw_project_build::{BEVY_VERSION, VERSION};
+/// This editor's version, as a save stamps it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The Bevy minor this editor targets: the workspace version tracks Bevy's
+/// (`0.19.x` editors build against Bevy `0.19`).
+pub const BEVY_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION_MAJOR"),
+    ".",
+    env!("CARGO_PKG_VERSION_MINOR")
+);
 
 const MARKER: &str = "// jackdaw ";
 const SEPARATOR: &str = " | bevy ";

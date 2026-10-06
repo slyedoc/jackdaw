@@ -16,7 +16,6 @@ use bevy::asset::{AssetServer, ReflectHandle, UntypedHandle};
 use bevy::color::palettes::css;
 use bevy::prelude::*;
 use bevy::reflect::{PartialReflect, TypeInfo, TypeRegistry, enums::VariantInfo};
-use jackdaw_bsn::{BsnApplyAssets, BsnValue, bsn_value_to_reflect};
 use path_slash::PathExt as _;
 
 /// Whether a field of this type names its value by asset path.
@@ -91,22 +90,57 @@ pub fn text_value_for_field(
     type_id: TypeId,
     text: &str,
 ) -> Option<Box<dyn PartialReflect>> {
+    if let Some(reflect_handle) = registry.get_type_data::<ReflectHandle>(type_id) {
+        return handle_value(reflect_handle, server, references, text);
+    }
     if takes_asset_path(registry, type_id) {
-        let assets = server.map(|server| BsnApplyAssets {
-            server,
-            local: references,
-        });
-        return bsn_value_to_reflect(
-            &BsnValue::String(text.to_string()),
-            type_id,
-            registry,
-            assets.as_ref(),
-        );
+        use bevy::reflect::{enums::{DynamicEnum, DynamicVariant}, tuple::DynamicTuple};
+        let mut option = if text.is_empty() {
+            DynamicEnum::new("None", DynamicVariant::Unit)
+        } else {
+            let TypeInfo::Enum(info) = registry.get(type_id)?.type_info() else {
+                return None;
+            };
+            let Some(VariantInfo::Tuple(some)) = info.variant("Some") else {
+                return None;
+            };
+            let inner = some.field_at(0)?.type_id();
+            let handle = handle_value(
+                registry.get_type_data::<ReflectHandle>(inner)?,
+                server,
+                references,
+                text,
+            )?;
+            let mut tuple = DynamicTuple::default();
+            tuple.insert_boxed(handle);
+            DynamicEnum::new("Some", DynamicVariant::Tuple(tuple))
+        };
+        option.set_represented_type(registry.get(type_id).map(|r| r.type_info()));
+        return Some(Box::new(option));
     }
     if type_id == TypeId::of::<Color>() {
         return parse_color(text).map(|color| Box::new(color) as Box<dyn PartialReflect>);
     }
     None
+}
+
+/// A handle naming `path`: the one the project already holds for it, else a load.
+fn handle_value(
+    reflect_handle: &ReflectHandle,
+    server: Option<&AssetServer>,
+    references: Option<&References>,
+    path: &str,
+) -> Option<Box<dyn PartialReflect>> {
+    let asset_type = reflect_handle.asset_type_id();
+    let held = references
+        .and_then(|references| references.get(path))
+        .filter(|handle| handle.type_id() == asset_type)
+        .cloned();
+    let untyped = match held {
+        Some(handle) => handle,
+        None => server?.load_builder().load_erased(asset_type, path.to_string()),
+    };
+    Some(reflect_handle.typed(untyped).into_partial_reflect())
 }
 
 /// The path a `Handle<T>` or `Option<Handle<T>>` field points at, as the JSON

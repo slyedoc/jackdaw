@@ -261,8 +261,6 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::file_ops::add_to_extension(ctx);
         crate::material_assets::add_to_extension(ctx);
         crate::definition_assets::add_to_extension(ctx);
-        crate::asset_migration::add_to_extension(ctx);
-        crate::prefab::placement_migration::add_to_extension(ctx);
         crate::viewport_select::add_to_extension(ctx);
         crate::clip_ops::add_to_extension(ctx);
         crate::brush_element_ops::add_to_extension(ctx);
@@ -305,8 +303,7 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::brush::knife_mode::add_to_extension(ctx);
         crate::gizmos::add_to_extension(ctx);
         crate::terrain::sculpt::add_to_extension(ctx);
-        crate::pie::add_to_extension(ctx);
-        crate::play_settings::add_to_extension(ctx);
+        ctx.register_operator::<crate::run_game::ProjectRunOp>();
         crate::terrain::ops::add_to_extension(ctx);
         crate::terrain::ground::add_to_extension(ctx);
         crate::terrain::import::add_to_extension(ctx);
@@ -334,7 +331,6 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::command_palette::add_to_extension(ctx);
         crate::document_ops::add_to_extension(ctx);
         crate::dock_ops::add_to_extension(ctx);
-        crate::remote_ops::add_to_extension(ctx);
     }
 }
 

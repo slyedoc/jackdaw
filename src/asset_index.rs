@@ -24,7 +24,7 @@ use bevy::asset::{ReflectAsset, UntypedAssetId, UntypedHandle};
 use bevy::prelude::*;
 use bevy::tasks::{IoTaskPool, Task, futures_lite::future};
 use jackdaw_api::prelude::{AssetKind, AssetKinds};
-use jackdaw_bsn::{BsnStructData, StemIndex};
+use crate::bsn_files::{self, StemIndex};
 use path_slash::PathExt as _;
 
 use crate::asset_files::{AssetFileKind, AssetKindCache, walk_document_files};
@@ -37,9 +37,6 @@ use bevy_aurora::material::AuroraMaterial;
 pub enum AssetValue {
     /// A value in its type's asset store.
     Handle(UntypedHandle),
-    /// A value of a type the editor knows only as the project's schema, held
-    /// as the patch its file spells.
-    Schema(Box<BsnStructData>),
     /// A file whose kind is loaded by the subsystem that owns it.
     Unloaded,
 }
@@ -48,13 +45,6 @@ impl AssetValue {
     pub fn handle(&self) -> Option<&UntypedHandle> {
         match self {
             Self::Handle(handle) => Some(handle),
-            _ => None,
-        }
-    }
-
-    pub fn schema(&self) -> Option<&BsnStructData> {
-        match self {
-            Self::Schema(data) => Some(data),
             _ => None,
         }
     }
@@ -76,7 +66,7 @@ impl AssetEntry {
     /// The bare name the file's stem gives it: everything before the first dot
     /// of its file name, so `torch.item.bsn` is `torch`.
     pub fn name(&self) -> String {
-        jackdaw_bsn::path_stem(&self.path)
+        bsn_files::path_stem(&self.path)
     }
 }
 
@@ -159,14 +149,7 @@ impl AssetIndex {
         if let Some(found) = self.referrers.get(path) {
             return found;
         }
-        if !jackdaw_bsn::is_document_path(path) {
-            return &[];
-        }
-        let twin = match jackdaw_bsn::is_binary_path(path) {
-            true => jackdaw_bsn::text_twin(path),
-            false => jackdaw_bsn::binary_twin(path),
-        };
-        self.referrers.get(&twin).map_or(&[], Vec::as_slice)
+        &[]
     }
 
     /// The documents outside `dir` whose patches reference a file it holds.
@@ -275,7 +258,7 @@ pub fn absolute_path(world: &World, path: &Path) -> PathBuf {
         (true, _) | (false, None) => path.to_path_buf(),
         (false, Some(assets)) => assets.join(path),
     };
-    jackdaw_bsn::existing_form(&path).unwrap_or(path)
+    path
 }
 
 /// Whether the project holds the file a reference names, as a path, as one of
@@ -312,15 +295,14 @@ pub fn indexed_path(world: &World, path: &Path) -> Option<PathBuf> {
 pub fn is_catalog_file(path: &Path) -> bool {
     matches!(
         path.to_str(),
-        Some("catalog.bsn") | Some("catalog.bsb") | Some("catalog.jsn")
+        Some("catalog.bsn")
     )
 }
 
 /// The file a keyed document sits in: the text file, or the binary twin where
 /// that is the only form on disk.
 fn document_file(assets: &Path, relative: &Path) -> PathBuf {
-    let path = assets.join(relative);
-    jackdaw_bsn::existing_form(&path).unwrap_or(path)
+    assets.join(relative)
 }
 
 /// What one walk of a project's assets found: every document it saw, the type
@@ -346,10 +328,7 @@ fn walk_assets(assets: &Path, cache: &mut AssetKindCache) -> AssetWalk {
             if is_catalog_file(&relative) {
                 return None;
             }
-            Some(match jackdaw_bsn::is_binary_path(&relative) {
-                true => jackdaw_bsn::text_twin(&relative),
-                false => relative,
-            })
+            Some(relative)
         })
         .collect();
     let named = documents
@@ -423,7 +402,7 @@ pub fn load_asset_value(world: &mut World, kind: &AssetKind, path: &Path) -> Opt
 /// The handle a material's name already answers to, when no file of its own
 /// has claimed it: one created and saved in this session.
 fn material_handle_in_use(world: &World, path: &Path) -> Option<UntypedHandle> {
-    let name = jackdaw_bsn::path_stem(path);
+    let name = bsn_files::path_stem(path);
     let listed = world
         .get_resource::<crate::material_assets::MaterialRegistry>()
         .and_then(|registry| registry.get_by_name(&name))
@@ -650,20 +629,10 @@ fn referenced_path(index: &AssetIndex, assets: &Path, reference: &str) -> Option
         return index.stems().unique(name).map(Path::to_path_buf);
     }
     let spelled = PathBuf::from(reference);
-    if !jackdaw_bsn::is_document_path(&spelled) {
-        if index.get(&spelled).is_some() {
-            return Some(spelled);
-        }
-        return assets.join(&spelled).is_file().then_some(spelled);
+    if index.get(&spelled).is_some() {
+        return Some(spelled);
     }
-    let forms = [
-        jackdaw_bsn::text_twin(&spelled),
-        jackdaw_bsn::binary_twin(&spelled),
-    ];
-    forms
-        .iter()
-        .find(|form| index.get(form).is_some() || assets.join(form).is_file())
-        .cloned()
+    assets.join(&spelled).is_file().then_some(spelled)
 }
 
 /// Keep the bare name a material file's stem gives it resolving, for the brush
@@ -675,7 +644,7 @@ fn publish_name(world: &mut World, path: &Path, kind: &AssetKind, value: &AssetV
     let Some(handle) = value.handle() else {
         return;
     };
-    let name = jackdaw_bsn::path_stem(path);
+    let name = bsn_files::path_stem(path);
     world
         .resource_mut::<crate::asset_catalog::AssetCatalog>()
         .insert(format!("@{name}"), handle.clone());
@@ -690,37 +659,14 @@ fn publish_name(world: &mut World, path: &Path, kind: &AssetKind, value: &AssetV
 /// wins the spellings they share. Only its `#` entries are the document's own,
 /// so a name published for a file that has since gone is not carried over.
 pub fn publish_reference_map(world: &mut World) {
-    let mut references: bevy::platform::collections::HashMap<String, UntypedHandle> =
-        bevy::platform::collections::HashMap::default();
-    let mut paths: bevy::platform::collections::HashMap<UntypedAssetId, String> =
-        bevy::platform::collections::HashMap::default();
+    let mut catalog = jackdaw_runtime::JackdawCatalog::default();
     let index = world.resource::<AssetIndex>();
     for entry in index.iter() {
-        let Some(handle) = entry.value.handle() else {
-            continue;
-        };
-        let path = entry.path.to_slash_lossy().into_owned();
-        paths.insert(handle.id(), path.clone());
-        references.insert(path, handle.clone());
-        let name = entry.name();
-        if index.stems().unique(&name).is_some() {
-            references.insert(format!("@{name}"), handle.clone());
-            references.entry(name).or_insert_with(|| handle.clone());
+        if let Some(handle) = entry.value.handle() {
+            catalog.insert(entry.path.to_slash_lossy().into_owned(), handle.clone());
         }
     }
-    let mut scene = references.clone();
-    if let Some(embedded) = world.get_resource::<jackdaw_bsn::BsnSceneAssets>() {
-        for (reference, handle) in &embedded.0 {
-            let Some(name) = reference.strip_prefix('#') else {
-                continue;
-            };
-            scene.insert(reference.clone(), handle.clone());
-            scene.insert(format!("@{name}"), handle.clone());
-        }
-    }
-    world.insert_resource(jackdaw_bsn::BsnProjectAssets(references));
-    world.insert_resource(jackdaw_bsn::BsnSceneAssets(scene));
-    world.insert_resource(jackdaw_bsn::BsnAssetPaths(paths));
+    world.insert_resource(catalog);
 }
 
 /// Record a file the editor itself wrote, holding the value it wrote, and

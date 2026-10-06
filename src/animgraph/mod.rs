@@ -57,6 +57,7 @@ impl JackdawExtension for AnimationGraphExtension {
     fn register(&self, ctx: &mut ExtensionContext) {
         ctx.register_operator::<AnimgraphSaveOp>()
             .register_operator::<character::AnimgraphTogglePlaybackOp>()
+            .register_operator::<character::AnimgraphPlayStateOp>()
             .register_operator::<character::AnimgraphEditGraphOp>();
         // The Animation tab: a character's rig and its Playback card.
         ctx.register_inspector_category(jackdaw_api::inspector::InspectorCategory {
@@ -78,8 +79,9 @@ impl JackdawExtension for AnimationGraphExtension {
         ctx.register_operator::<AnimgraphNewOp>()
             .register_operator::<AnimgraphNewGraphOp>()
             .register_operator::<AnimgraphNewFsmOp>()
-            .register_operator::<AnimgraphNewCharacterOp>();
-        ctx.register_menu_entry::<AnimgraphNewCharacterOp>(TopLevelMenu::Add)
+            .register_operator::<AnimgraphNewCharacterOp>()
+            .register_operator::<AnimgraphPlaceCharacterOp>();
+        ctx.register_menu_entry::<AnimgraphPlaceCharacterOp>(TopLevelMenu::Add)
             .register_menu_entry::<AnimgraphNewGraphOp>(TopLevelMenu::Add)
             .register_menu_entry::<AnimgraphNewFsmOp>(TopLevelMenu::Add);
         ctx.register_window(
@@ -94,25 +96,6 @@ impl JackdawExtension for AnimationGraphExtension {
         );
     }
 }
-
-/// What a new graph starts as: the graph's pose and time outputs, and nothing feeding them.
-const NEW_GRAPH: &str = "#{name}
-AnimGraph {
-    outputs: [Time, Data(\"pose\", Pose)],
-    input_position: Vec2 { x: -240.0, y: 40.0 },
-    output_position: Vec2 { x: 620.0, y: 40.0 },
-}
-";
-
-/// What a new state machine starts as: one state, which a machine needs to start in.
-const NEW_FSM: &str = "#{name}
-AnimFsm { start: \"idle\", outputs: [Time, Data(\"pose\", Pose)] }
-Children [
-    #idle
-    AnimState { }
-    NodePosition(0.0, 0.0)
-]
-";
 
 /// Make a starter animation graph or state machine in a folder, and open it.
 #[operator(
@@ -178,6 +161,103 @@ fn shown_folder(world: &World) -> Option<std::path::PathBuf> {
 }
 
 /// Write a starter file into `path` (a folder, or a file whose folder is meant) and open it.
+/// What a new graph file starts as.
+enum Starter<'a> {
+    /// A graph with its pose and time outputs and no nodes.
+    Empty,
+    /// A state machine with the one state a machine needs to start in.
+    StateMachine,
+    /// A graph looping a clip, travel extracted, so a character idles in place.
+    LoopClip(&'a str),
+}
+
+/// Write a starter graph: built as the entities it is, written by the scene writer, gone again.
+fn write_starter(
+    world: &mut World,
+    file: &std::path::Path,
+    name: &str,
+    starter: Starter,
+) -> Result<(), String> {
+    use bevy::bsn_asset::{WriteSettings, write_scene_text};
+    use bevy_animation_graph::{
+        builtin_nodes::{clip_node::ClipNode, loop_node::LoopNode},
+        core::{
+            animation_graph::bsn::{
+                AnimGraph, GraphOutput, Link, LinkFrom, LinkTo, Links, NodePosition,
+            },
+            edge_data::DataSpec,
+            pose::RootMotionMode,
+            state_machine::high_level::bsn::{AnimFsm, AnimState},
+        },
+    };
+    let outputs = vec![
+        GraphOutput::Time,
+        GraphOutput::Data("pose".into(), DataSpec::Pose),
+    ];
+    let graph = AnimGraph {
+        inputs: Vec::new(),
+        outputs: outputs.clone(),
+        input_position: Vec2::new(-240.0, 40.0),
+        output_position: Vec2::new(620.0, 40.0),
+    };
+    let root = world.spawn(Name::new(name.to_string())).id();
+    match starter {
+        Starter::Empty => {
+            world.entity_mut(root).insert(graph);
+        }
+        Starter::StateMachine => {
+            let idle = world
+                .spawn((
+                    Name::new("idle"),
+                    AnimState::default(),
+                    NodePosition(0.0, 0.0),
+                    ChildOf(root),
+                ))
+                .id();
+            world.entity_mut(root).insert(AnimFsm {
+                start: idle,
+                inputs: Vec::new(),
+                outputs,
+            });
+        }
+        Starter::LoopClip(clip) => {
+            let clip = world.resource::<AssetServer>().load(clip.to_string());
+            let idle = world
+                .spawn((
+                    Name::new("idle"),
+                    ClipNode::new(clip, None, None).with_root_motion(RootMotionMode::GroundPlane),
+                    NodePosition(40.0, 40.0),
+                    ChildOf(root),
+                ))
+                .id();
+            let looped = world
+                .spawn((
+                    Name::new("loop"),
+                    LoopNode {
+                        interpolation_period: 0.2,
+                    },
+                    Links(vec![
+                        Link(LinkTo::Data("pose".into()), LinkFrom::Node(idle, "pose".into())),
+                        Link(LinkTo::Time("time".into()), LinkFrom::NodeTime(idle)),
+                    ]),
+                    NodePosition(330.0, 40.0),
+                    ChildOf(root),
+                ))
+                .id();
+            world.entity_mut(root).insert((
+                graph,
+                Links(vec![
+                    Link(LinkTo::Data("pose".into()), LinkFrom::Node(looped, "pose".into())),
+                    Link(LinkTo::Time(String::new()), LinkFrom::NodeTime(looped)),
+                ]),
+            ));
+        }
+    }
+    let text = write_scene_text(world, root, &WriteSettings::default()).map_err(|e| e.to_string());
+    world.entity_mut(root).despawn();
+    std::fs::write(file, text?).map_err(|e| e.to_string())
+}
+
 fn create_and_open(world: &mut World, path: &std::path::Path, fsm: bool) {
     let folder = crate::definition_assets::resolve_project_path(world, path);
     let folder = if folder.is_dir() {
@@ -188,10 +268,10 @@ fn create_and_open(world: &mut World, path: &std::path::Path, fsm: bool) {
             None => return,
         }
     };
-    let (stem, extension, template) = if fsm {
-        ("state_machine", "fsm.bsn", NEW_FSM)
+    let (stem, extension, starter) = if fsm {
+        ("state_machine", "fsm.bsn", Starter::StateMachine)
     } else {
-        ("graph", "animgraph.bsn", NEW_GRAPH)
+        ("graph", "animgraph.bsn", Starter::Empty)
     };
     let Some((name, file)) = (1..1000).find_map(|n| {
         let name = format!("{stem}_{n}");
@@ -200,7 +280,7 @@ fn create_and_open(world: &mut World, path: &std::path::Path, fsm: bool) {
     }) else {
         return;
     };
-    if let Err(err) = std::fs::write(&file, template.replace("{name}", &name)) {
+    if let Err(err) = write_starter(world, &file, &name, starter) {
         warn!("animgraph: {} cannot be written: {err}", file.display());
         return;
     }
@@ -303,36 +383,104 @@ pub fn animgraph_add_state(_: In<OperatorParameters>, mut commands: Commands) ->
     OperatorResult::Finished
 }
 
-/// Add > Character: a character prefab (`character_N.bsn`) holding the project's rig and an
-/// `AnimationRig`, with a starter graph beside it, in the folder the Project window shows; then
-/// open it. Place it in a scene like any prefab; open the file to change the character.
+/// New Character: a character file (`character_N.bsn`) holding the project's rig and an
+/// `AnimationRig`, with a starter graph beside it, opened in its own tab.
 #[operator(
     id = "animgraph.new_character",
-    label = "Character",
-    description = "Make a character: a prefab of the project's rig playing a starter animation graph.",
-    allows_undo = false
+    label = "New Character",
+    description = "Make a character: the project's rig playing a starter animation graph, opened in a tab.",
+    allows_undo = false,
+    params(path(String, default = "", doc = "The folder to make it in; the shown folder if empty."))
 )]
-pub fn animgraph_new_character(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
-    commands.queue(create_character);
+pub fn animgraph_new_character(params: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    let folder = params
+        .as_str("path")
+        .filter(|path| !path.is_empty())
+        .map(std::path::PathBuf::from);
+    commands.queue(move |world: &mut World| {
+        let Some(folder) = folder.or_else(|| shown_folder(world)) else {
+            warn!("animgraph: no project to make a character in");
+            return;
+        };
+        if let Some(character) = create_character(world, &folder) {
+            crate::scenes::operators::scene_open_system(world, &character);
+        }
+    });
     OperatorResult::Finished
 }
 
-fn create_character(world: &mut World) {
-    let (Some(assets), Some(folder)) = (world.resource::<AnimGraphRoot>().0.clone(), shown_folder(world))
-    else {
-        warn!("animgraph: no project to make a character in");
+/// Add > Character: place one of the project's characters in the scene. A project with none
+/// gets one made; with several, the picker opens on them.
+#[operator(
+    id = "animgraph.place_character",
+    label = "Character",
+    description = "Place a character in the scene, making one if the project has none.",
+    allows_undo = false
+)]
+pub fn animgraph_place_character(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
+    commands.queue(place_character);
+    OperatorResult::Finished
+}
+
+fn place_character(world: &mut World) {
+    let Some(assets) = world.resource::<AnimGraphRoot>().0.clone() else {
+        warn!("animgraph: no project to place a character from");
         return;
+    };
+    let mut characters = Vec::new();
+    find_characters(&assets, &mut characters);
+    characters.sort();
+    match characters.as_slice() {
+        [] => {
+            let Some(folder) = shown_folder(world) else {
+                return;
+            };
+            if let Some(character) = create_character(world, &folder) {
+                crate::entity_ops::place_instance_of(world, &character);
+            }
+        }
+        [character] => crate::entity_ops::place_instance_of(world, &character.clone()),
+        [first, ..] => {
+            let folder = first.parent().map(std::path::Path::to_path_buf);
+            crate::entity_ops::open_instance_picker_in(world, folder);
+        }
+    }
+}
+
+/// `character_*.bsn` files under `dir`.
+fn find_characters(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            find_characters(&path, out);
+            continue;
+        }
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        if name.starts_with("character_")
+            && name.ends_with(".bsn")
+            && name.matches('.').count() == 1
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// Write a character and its starter graph into `folder`; the character file.
+fn create_character(world: &mut World, folder: &std::path::Path) -> Option<std::path::PathBuf> {
+    let Some(assets) = world.resource::<AnimGraphRoot>().0.clone() else {
+        warn!("animgraph: no project to make a character in");
+        return None;
     };
     let Some((rig, skeleton)) = find_rig(&assets) else {
         warn!("animgraph: the project has no rig (a `.skn.ron` beside its `.bsn`)");
-        return;
+        return None;
     };
-    let Some(name) = (1..1000)
+    let name = (1..1000)
         .map(|n| format!("character_{n}"))
-        .find(|name| !folder.join(format!("{name}.bsn")).exists())
-    else {
-        return;
-    };
+        .find(|name| !folder.join(format!("{name}.bsn")).exists())?;
     let relative = |path: &std::path::Path| {
         path.strip_prefix(&assets)
             .unwrap_or(path)
@@ -341,19 +489,22 @@ fn create_character(world: &mut World) {
     };
     let graph_file = folder.join(format!("{name}.animgraph.bsn"));
     let idle = find_idle_clip(&assets);
-    if let Err(err) = std::fs::write(&graph_file, starter_graph(&name, idle.as_deref())) {
+    let starter = match idle.as_deref() {
+        Some(clip) => Starter::LoopClip(clip),
+        None => Starter::Empty,
+    };
+    if let Err(err) = write_starter(world, &graph_file, &name, starter) {
         warn!("animgraph: {} cannot be written: {err}", graph_file.display());
-        return;
+        return None;
     }
     let character_file = folder.join(format!("{name}.bsn"));
     let character = format!(
         "#{name}
-jackdaw::prefab::components::Prefab
 bevy_transform::components::transform::Transform
+bevy_camera::visibility::Visibility::Inherited
 jackdaw_animation_runtime::AnimationRig {{ graph: \"{graph}\", skeleton: \"{skeleton}\" }}
 bevy_ecs::hierarchy::Children [
-    jackdaw::prefab::components::IsA {{ source: \"{rig}\", deleted: [] }}
-    jackdaw::prefab::components::PrefabEntityId(0)
+    :\"{rig}\"
     bevy_transform::components::transform::Transform
 ]
 ",
@@ -361,17 +512,17 @@ bevy_ecs::hierarchy::Children [
     );
     if let Err(err) = std::fs::write(&character_file, character) {
         warn!("animgraph: {} cannot be written: {err}", character_file.display());
-        return;
+        return None;
     }
     if let Some(mut state) = world.get_resource_mut::<crate::project_window::ProjectWindowState>() {
         state.rebuild();
     }
-    crate::scenes::operators::scene_open_system(world, &character_file);
+    Some(character_file)
 }
 
 /// The project's rig: a `.skn.ron` with its `.bsn` beside it (a Mannequin first), as asset paths.
 fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
-    let mut rigs: Vec<(String, String)> = jackdaw_bsn::walk_files_with_extensions(assets, &["skn.ron"])
+    let mut rigs: Vec<(String, String)> = crate::bsn_files::walk_files_with_extensions(assets, &["skn.ron"])
         .into_iter()
         .filter_map(|skeleton| {
             let stem = skeleton.to_string_lossy().strip_suffix(".skn.ron")?.to_string();
@@ -390,7 +541,7 @@ fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
 
 /// An idle clip to start a character on, as an asset path.
 fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
-    let clips = jackdaw_bsn::walk_files_with_extensions(assets, &["anim.ron"]);
+    let clips = crate::bsn_files::walk_files_with_extensions(assets, &["anim.ron"]);
     let stem = |p: &std::path::PathBuf| {
         p.file_name()
             .map(|n| n.to_string_lossy().to_lowercase().trim_end_matches(".anim.ron").to_string())
@@ -407,39 +558,6 @@ fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
         .map(|p| {
         p.strip_prefix(assets).unwrap_or(p).to_string_lossy().replace('\\', "/")
     })
-}
-
-/// A graph that loops `clip` (travel extracted, so the character idles in place); empty without one.
-fn starter_graph(name: &str, clip: Option<&str>) -> String {
-    let Some(clip) = clip else {
-        return NEW_GRAPH.replace("{name}", name);
-    };
-    format!(
-        "#{name}
-AnimGraph {{
-    outputs: [Time, Data(\"pose\", Pose)],
-    input_position: Vec2 {{ x: -240.0, y: 40.0 }},
-    output_position: Vec2 {{ x: 620.0, y: 40.0 }},
-}}
-Links([
-    Link(Data(\"pose\"), Node(\"loop\", \"pose\")),
-    Link(Time(\"\"), NodeTime(\"loop\")),
-])
-Children [
-    #idle
-    ClipNode {{ clip: \"{clip}\", root_motion_mode: GroundPlane }}
-    NodePosition(40.0, 40.0)
-    --
-    #loop
-    LoopNode {{ interpolation_period: 0.2 }}
-    Links([
-        Link(Data(\"pose\"), Node(\"idle\", \"pose\")),
-        Link(Time(\"time\"), NodeTime(\"idle\")),
-    ])
-    NodePosition(330.0, 40.0)
-]
-"
-    )
 }
 
 /// Save the graph held open in the Animation Graph window.

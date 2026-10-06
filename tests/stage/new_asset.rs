@@ -17,7 +17,6 @@ use jackdaw_api_internal::operator::{CallOperatorSettings, ExecutionContext};
 use jackdaw_feathers::picker::{PickerItems, PickerSelect};
 use jackdaw_scene_types::PropertyValue;
 
-const OUTFIT_TYPE: &str = "my_game::content::OutfitDef";
 
 #[derive(Asset, Reflect, Clone, Default)]
 #[reflect(Default)]
@@ -42,7 +41,6 @@ fn editor_with_kinds() -> (App, tempfile::TempDir) {
     {
         let mut kinds = app.world_mut().resource_mut::<AssetKinds>();
         kinds.register(AssetKind::extension("item", "Item", ItemDef::type_path()));
-        kinds.register(AssetKind::from_schema(OUTFIT_TYPE));
     }
     app.world_mut()
         .resource_mut::<NextState<jackdaw::AppState>>()
@@ -189,12 +187,6 @@ fn the_new_asset_list_offers_every_kind_and_no_scene() {
         "the type the editor holds is offered under its own type: {lines:?}"
     );
     assert!(
-        lines
-            .iter()
-            .any(|line| *line == format!("Outfit  {OUTFIT_TYPE}")),
-        "the kind the schema reports is offered under its type: {lines:?}"
-    );
-    assert!(
         lines.iter().any(|line| line.starts_with("Material  ")),
         "a material is an asset file like any other: {lines:?}"
     );
@@ -250,7 +242,7 @@ fn the_add_menu_offers_every_kind_and_creates_where_the_browser_is() {
         .filter(|item| item.category.name.as_deref() == Some("Assets"))
         .map(|item| (item.action.clone(), item.label.clone()))
         .collect();
-    for expected in [("asset:item", "Item"), ("asset:outfit", "Outfit")] {
+    for expected in [("asset:item", "Item")] {
         assert!(
             assets
                 .iter()
@@ -463,7 +455,7 @@ fn the_new_asset_list_reports_what_it_offers_and_takes_a_kind_outright() {
         .clone();
     assert!(
         told.iter()
-            .any(|line| line.contains("Item") && line.contains(OUTFIT_TYPE)),
+            .any(|line| line.contains("Item") && line.contains(ItemDef::type_path())),
         "a caller with no screen is told what the list offers, got {told:?}",
     );
 
@@ -472,12 +464,12 @@ fn the_new_asset_list_reports_what_it_offers_and_takes_a_kind_outright() {
         "asset.new_picker",
         &[
             ("path", dir.to_string_lossy().into_owned().into()),
-            ("kind", OUTFIT_TYPE.into()),
+            ("kind", ItemDef::type_path().into()),
         ],
     );
 
     assert!(
-        indexed(&app, "content/outfit_1.bsn"),
+        indexed(&app, "content/item_1.bsn"),
         "naming a kind creates it rather than putting the list up",
     );
     assert!(
@@ -486,33 +478,3 @@ fn the_new_asset_list_reports_what_it_offers_and_takes_a_kind_outright() {
     );
 }
 
-#[test]
-fn the_status_names_the_list_of_kinds_while_it_is_up() {
-    let (mut app, tmp) = editor_with_kinds();
-    let dir = folder(&tmp, "content");
-    call(
-        &mut app,
-        "asset.new_picker",
-        &[("path", dir.to_string_lossy().into_owned().into())],
-    );
-
-    let status = app
-        .world_mut()
-        .run_system_cached_with(jackdaw::remote::server::status_handler, None)
-        .expect("the handler ran")
-        .expect("the status answers");
-
-    assert_eq!(
-        status["picker"]["list"],
-        serde_json::json!("new asset"),
-        "a caller with no screen is told which list is up: {status}",
-    );
-    assert!(
-        status["picker"]["items"]
-            .as_array()
-            .is_some_and(|items| items
-                .iter()
-                .any(|item| item.as_str().is_some_and(|line| line.contains("Item")))),
-        "and what it offers: {status}",
-    );
-}

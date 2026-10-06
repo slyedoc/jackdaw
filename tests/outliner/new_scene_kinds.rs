@@ -290,7 +290,7 @@ fn a_saved_scenes_kind_survives_a_reopen() {
         // The mode a reopen lands in has to come from the document too: the
         // operator parameter that made this scene is long gone.
         set_intent(&mut app, ViewportMode::ThreeD);
-        jackdaw::migrate_dialog::request_open_with_conversion(app.world_mut(), &path);
+        jackdaw::scenes::operators::scene_open_system(app.world_mut(), &path);
         app.update();
 
         assert_eq!(

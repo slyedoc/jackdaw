@@ -15,7 +15,11 @@ use std::time::SystemTime;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::AssetKinds;
-use jackdaw_prefab::components::PREFAB_TYPE;
+use crate::bsn_files;
+
+/// What a file whose root is one entity of its own (not a wrapper, not an asset value) is listed
+/// as: something placed as an instance.
+pub const PREFAB_TYPE: &str = "jackdaw::Prefab";
 
 /// What a file holds.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,7 +42,7 @@ impl AssetFileKind {
 /// The text an asset file is written as: the version stamp, the header naming
 /// its type, and the document.
 pub fn asset_file_text(type_path: &str, body: &str) -> String {
-    crate::scene_io::stamp::with_stamp(&jackdaw_bsn::with_asset_header(type_path, body))
+    crate::scene_io::stamp::with_stamp(&bsn_files::with_asset_header(type_path, body))
 }
 
 /// What the file at `path` holds, read from its first root and from its header
@@ -51,14 +55,17 @@ pub fn read_asset_kind(path: &Path, kinds: &AssetKinds) -> AssetFileKind {
 /// naming the marker its roots carry, and its header for a document that names
 /// nothing. `None` when neither names a type.
 pub fn read_file_type(path: &Path) -> Option<String> {
-    if path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("jsn"))
-    {
-        return jsn_type(path);
+    let text = bsn_files::read_document_text(path).ok()?;
+    text_type(&text, path)
+}
+
+fn text_type(text: &str, path: &Path) -> Option<String> {
+    let name = path.file_name()?.to_str()?;
+    if name.ends_with(".animgraph.bsn") || name.ends_with(".fsm.bsn") {
+        return None;
     }
-    jackdaw_bsn::asset_file_type(path)
+    bsn_files::asset_text_type(text, path)
+        .or_else(|| bsn_files::is_root_file(text).then(|| PREFAB_TYPE.to_string()))
 }
 
 /// What a type path means to the editor: the marker a prefab carries, a kind
@@ -76,19 +83,6 @@ pub(crate) fn kind_of_type(type_path: Option<&str>, kinds: &AssetKinds) -> Asset
         };
     }
     AssetFileKind::Scene
-}
-
-/// A legacy `.jsn` document is a prefab when its first scene entity carries
-/// the `Prefab` component. Parsed as plain JSON.
-fn jsn_type(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
-    value
-        .get("scene")
-        .and_then(|scene| scene.get(0))
-        .and_then(|entity| entity.get("components"))
-        .and_then(|components| components.get(PREFAB_TYPE))
-        .map(|_| PREFAB_TYPE.to_string())
 }
 
 /// Whether a file is a prefab, which is the one question the browser's grid
@@ -169,19 +163,16 @@ fn spelled_references(text: &str) -> Vec<String> {
 /// header naming any other type is taken at its word, since parsing the
 /// document would only confirm a type nothing acts on.
 fn read_file_facts(path: &Path, opened: Option<&HashSet<String>>) -> FileFacts {
-    if !jackdaw_bsn::is_document_path(path) {
-        return FileFacts {
-            type_path: read_file_type(path),
-            references: Vec::new(),
-        };
+    if !bsn_files::is_document_path(path) {
+        return FileFacts::default();
     }
-    let Ok(text) = jackdaw_bsn::read_document_text(path) else {
+    let Ok(text) = bsn_files::read_document_text(path) else {
         return FileFacts::default();
     };
-    let header = jackdaw_bsn::read_asset_header(&text);
+    let header = bsn_files::read_asset_header(&text);
     let trusted = header.filter(|header| opened.is_some_and(|opened| !opened.contains(header)));
     FileFacts {
-        type_path: trusted.or_else(|| jackdaw_bsn::asset_text_type(&text, path)),
+        type_path: trusted.or_else(|| text_type(&text, path)),
         references: spelled_references(&text),
     }
 }
@@ -248,7 +239,7 @@ impl AssetKindCache {
     }
 }
 
-pub use jackdaw_bsn::walk_document_files;
+pub use bsn_files::walk_document_files;
 
 #[cfg(test)]
 mod tests {

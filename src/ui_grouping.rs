@@ -18,7 +18,7 @@ use crate::{
     EditorEntity,
     commands::{
         CommandHistory, EditorCommand, HierarchyLocation, despawn_scene_entity,
-        filtered_scene_builder, set_hierarchy_location, snapshot_rebuild, sync_component_to_ast,
+        filtered_scene_builder, set_hierarchy_location, snapshot_rebuild,
     },
     selection::Selection,
     ui_stage::{global_node_rect, parent_offset_box},
@@ -47,10 +47,7 @@ fn group_members(world: &mut World) -> Option<(Option<Entity>, Vec<Entity>)> {
         .filter(|&entity| {
             world.get::<Node>(entity).is_some()
                 && world.get::<EditorEntity>(entity).is_none()
-                && world
-                    .resource::<jackdaw_bsn::SceneBsnAst>()
-                    .ast_for(entity)
-                    .is_some()
+                && world.get::<crate::scene_io::SceneEntity>(entity).is_some()
         })
         .collect();
     if members.is_empty() {
@@ -101,12 +98,10 @@ fn is_flowed(world: &World, entity: Entity) -> bool {
 
 /// How many entries the list `parent` names holds. `None` is the scene's own
 /// root list.
-fn list_len(world: &World, parent: Option<Entity>) -> usize {
+fn list_len(world: &mut World, parent: Option<Entity>) -> usize {
     match parent {
         Some(parent) => world.get::<Children>(parent).map_or(0, Children::len),
-        None => world
-            .get_resource::<jackdaw_bsn::SceneBsnAst>()
-            .map_or(0, |ast| ast.roots.len()),
+        None => crate::scene_io::scene_roots(world).len(),
     }
 }
 
@@ -124,12 +119,6 @@ fn write_node(world: &mut World, entity: Entity, node: &Node) {
     if let Some(mut live) = world.get_mut::<Node>(entity) {
         *live = node.clone();
     }
-    sync_component_to_ast::<Node>(
-        world,
-        entity,
-        crate::inspector::node_card::node_type_path(),
-        node,
-    );
 }
 
 /// `entity`'s current rect expressed as authored `left`/`top` against an
@@ -206,7 +195,7 @@ impl EditorCommand for GroupIntoContainer {
             container.insert(ChildOf(parent));
         }
         let container = container.id();
-        crate::scene_io::register_entity_in_ast(world, container);
+        crate::scene_io::adopt_entity(world, container);
         set_hierarchy_location(
             world,
             container,
@@ -460,10 +449,7 @@ pub fn ungroup_selection(world: &mut World) {
     };
     if world.get::<Node>(container).is_none()
         || world.get::<EditorEntity>(container).is_some()
-        || world
-            .resource::<jackdaw_bsn::SceneBsnAst>()
-            .ast_for(container)
-            .is_none()
+        || world.get::<crate::scene_io::SceneEntity>(container).is_none()
     {
         return;
     }
@@ -545,7 +531,7 @@ fn can_group(
     keybind_focus: crate::keybind_focus::KeybindFocus,
     active: ActiveModalQuery,
     selection: Res<Selection>,
-    ui_scenes: Query<(), crate::prefab::AuthoredUiSceneRoot>,
+    ui_scenes: Query<(), crate::instances::AuthoredUiSceneRoot>,
     nodes: Query<(), (With<Node>, Without<EditorEntity>)>,
     roots: Query<(), SceneRoots>,
 ) -> bool {
@@ -567,7 +553,7 @@ fn can_ungroup(
     keybind_focus: crate::keybind_focus::KeybindFocus,
     active: ActiveModalQuery,
     selection: Res<Selection>,
-    ui_scenes: Query<(), crate::prefab::AuthoredUiSceneRoot>,
+    ui_scenes: Query<(), crate::instances::AuthoredUiSceneRoot>,
     containers: Query<&Children, (With<Node>, Without<EditorEntity>)>,
     roots: Query<(), SceneRoots>,
 ) -> bool {

@@ -43,7 +43,6 @@ impl Plugin for MaterialBrowserPlugin {
             .add_systems(
                 OnEnter(crate::AppState::Editor),
                 (
-                    |world: &mut World| crate::asset_catalog::load_catalog(world),
                     restart_texture_set_scan,
                     rebuild_material_registry,
                 )
@@ -200,7 +199,7 @@ fn take_texture_sets(world: &mut World, sets: Vec<jackdaw_material::MaterialSet>
 /// and follows no symlink out of the tree, and it reads only the extensions
 /// the filename pattern can match.
 fn detect_material_sets(assets: &Path) -> Vec<jackdaw_material::MaterialSet> {
-    let paths: Vec<String> = jackdaw_bsn::walk_files_with_extensions(assets, TEXTURE_EXTENSIONS)
+    let paths: Vec<String> = crate::bsn_files::walk_files_with_extensions(assets, TEXTURE_EXTENSIONS)
         .into_iter()
         .filter(|path| !is_non_2d_ktx2(path))
         .map(|path| path.to_slash_lossy().into_owned())
@@ -291,26 +290,6 @@ fn rebuild_material_registry(world: &mut World) {
                 .then(|| (entry.name(), handle.clone().typed::<AuroraMaterial>()))
         })
         .collect();
-    let inline = world
-        .resource::<crate::asset_catalog::AssetCatalog>()
-        .inline_materials
-        .clone();
-    saved.extend(
-        world
-            .resource::<crate::asset_catalog::AssetCatalog>()
-            .handles
-            .iter()
-            .filter(|(name, handle)| {
-                handle.type_id() == std::any::TypeId::of::<AuroraMaterial>()
-                    && inline.contains(name.trim_start_matches(['@', '#']))
-            })
-            .map(|(name, handle)| {
-                (
-                    name.trim_start_matches(['@', '#']).to_string(),
-                    handle.clone().typed::<AuroraMaterial>(),
-                )
-            }),
-    );
     saved.sort_by(|a, b| a.0.cmp(&b.0));
     saved.dedup_by(|a, b| a.0 == b.0);
     for (name, handle) in saved {
@@ -459,10 +438,6 @@ fn handle_apply_material(
                 label: "Apply material".into(),
             };
             history.push_executed(Box::new(cmd));
-            // Deferred AST sync (SetBrush was pushed without execute)
-            commands.queue(move |world: &mut World| {
-                crate::brush::sync_brush_to_ast(world, entity, &new_brush);
-            });
         }
     } else {
         let selected = selection.entities.to_vec();
@@ -495,10 +470,6 @@ fn handle_apply_material(
                     label: "Apply material".into(),
                 };
                 group_commands.push(Box::new(cmd));
-                // Deferred AST sync (SetBrush was pushed without execute)
-                commands.queue(move |world: &mut World| {
-                    crate::brush::sync_brush_to_ast(world, entity, &new_brush);
-                });
             }
         }
         if !group_commands.is_empty() {
@@ -544,9 +515,7 @@ fn wear_on_meshes(world: &mut World, selected: &[Entity], chosen: WornMaterial) 
         if world.get::<Brush>(entity).is_some() {
             continue;
         }
-        let authored = world
-            .get_resource::<jackdaw_bsn::SceneBsnAst>()
-            .is_some_and(|doc| doc.ast_for(entity).is_some());
+        let authored = world.get::<crate::scene_io::SceneEntity>(entity).is_some();
         let model = crate::material_overrides::model_root(world, entity)
             .filter(|root| *root == entity || !authored);
         match model {

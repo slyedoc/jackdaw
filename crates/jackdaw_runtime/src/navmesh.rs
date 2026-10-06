@@ -15,9 +15,8 @@
 //! or broken leaves the root bare rather than answering moves from ground the
 //! world no longer has.
 
-use std::path::Path;
-
 use bevy::prelude::*;
+use bevy::scene::ScenePatchInstance;
 use jackdaw_terrain::navmesh::{self, NavmeshArtifact};
 
 /// The navmesh baked for a scene, on that scene's root entity.
@@ -32,42 +31,33 @@ use jackdaw_terrain::navmesh::{self, NavmeshArtifact};
 #[derive(Component, Debug, Deref)]
 pub struct JackdawNavmesh(pub NavmeshArtifact);
 
-/// Read the navmesh beside the scene that just spawned, if it has one.
-///
-/// A reload spawns onto the same root, so any existing component is dropped
-/// first: every path that ends without an artifact is a scene with no
-/// navmesh, and keeping the previous one would answer moves from ground that
-/// is gone.
-pub(crate) fn attach_navmesh(
-    world: &mut World,
-    root_entity: Entity,
-    parent_path: &Path,
-    stem: Option<&str>,
+/// Read the navmesh baked beside each scene instance as it spawns.
+pub(crate) fn attach_navmeshes(
+    mut commands: Commands,
+    added: Query<(Entity, &ScenePatchInstance), Changed<ScenePatchInstance>>,
+    folder: Res<crate::AssetFolder>,
 ) {
-    world.entity_mut(root_entity).remove::<JackdawNavmesh>();
-
-    // A scene built from text in memory has no file name to look beside.
-    let Some(stem) = stem.filter(|stem| !stem.is_empty()) else {
-        return;
-    };
-    let Some(assets) = crate::assets_root(world) else {
-        return;
-    };
-    let path = assets
-        .join(parent_path)
-        .join(format!("{stem}.{}", navmesh::EXTENSION));
-    let Ok(bytes) = std::fs::read(&path) else {
-        return;
-    };
-    match navmesh::decode(&bytes) {
-        Ok(artifact) => {
-            world
-                .entity_mut(root_entity)
-                .insert(JackdawNavmesh(artifact));
+    for (entity, instance) in &added {
+        commands.entity(entity).remove::<JackdawNavmesh>();
+        let (Some(path), Some(assets)) = (instance.0.path(), folder.0.as_ref()) else {
+            continue;
+        };
+        let scene = assets.join(path.path());
+        let Some(stem) = scene.file_name().and_then(|n| n.to_str()).map(crate::bsn_files::asset_stem) else {
+            continue;
+        };
+        let path = scene.with_file_name(format!("{stem}.{}", navmesh::EXTENSION));
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        match navmesh::decode(&bytes) {
+            Ok(artifact) => {
+                commands.entity(entity).insert(JackdawNavmesh(artifact));
+            }
+            Err(err) => error!(
+                "navmesh {} is unreadable ({err}); this scene loads without one",
+                path.display()
+            ),
         }
-        Err(err) => error!(
-            "navmesh {} is unreadable ({err}); this scene loads without one",
-            path.display()
-        ),
     }
 }

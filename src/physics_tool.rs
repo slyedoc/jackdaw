@@ -8,7 +8,6 @@
 
 use avian3d::prelude::*;
 use bevy::{
-    ecs::reflect::AppTypeRegistry,
     picking::cursor::{EntityCursor, OverrideCursor},
     prelude::*,
     window::SystemCursorIcon,
@@ -18,7 +17,7 @@ use jackdaw_api::prelude::*;
 use jackdaw_api_internal::keymap::PresetInput;
 
 use crate::brush::{BrushSelection, EditMode};
-use crate::commands::{CommandGroup, CommandHistory, EditorCommand, SetBsnField};
+use crate::commands::{CommandGroup, CommandHistory, EditorCommand, SetField};
 use crate::core_extension::CoreExtensionInputContext;
 use crate::draw_brush::DrawBrushState;
 use crate::selection::Selection;
@@ -446,7 +445,7 @@ fn physics_tool_drag(
 }
 
 /// Diff snapshots vs current transforms, push one undoable `CommandGroup`
-/// of `SetBsnField` commands.
+/// of `SetField` commands.
 fn commit_physics_transforms(world: &mut World) {
     let snapshots = world.resource::<PhysicsToolState>().snapshots.clone();
 
@@ -454,7 +453,6 @@ fn commit_physics_transforms(world: &mut World) {
         return;
     }
 
-    let registry_res = world.resource::<AppTypeRegistry>().clone();
     let type_path = "bevy_transform::components::transform::Transform";
 
     let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
@@ -474,18 +472,15 @@ fn commit_physics_transforms(world: &mut World) {
             continue;
         }
 
-        let registry = registry_res.read();
-        let old_value = jackdaw_bsn::BsnValue::from_reflect(old_tf, &registry);
-        let new_value = jackdaw_bsn::BsnValue::from_reflect(&new_tf, &registry);
-        drop(registry);
+        let old_value: crate::commands::FieldValue = Box::new(*old_tf);
+        let new_value: crate::commands::FieldValue = Box::new(new_tf);
 
-        sub_commands.push(Box::new(SetBsnField {
+        sub_commands.push(Box::new(SetField {
             entity: *entity,
             type_path: type_path.to_string(),
             field_path: String::new(),
             old_value: Some(old_value),
             new_value,
-            was_derived: false,
         }));
     }
 

@@ -123,86 +123,6 @@ impl JackdawExtension for CoreWindowsExtension {
                     ));
                 }),
         );
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.remote.entities")
-                .with_name("Remote Entities")
-                .with_default_area(DefaultArea::Left)
-                .with_priority(20)
-                .with_build(|window| {
-                    window.spawn(crate::remote::entity_browser::remote_debug_workspace_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.diagnostics")
-                .with_name("Remote Diagnostics")
-                .with_default_area(DefaultArea::Left)
-                .with_priority(21)
-                .with_build(|window| {
-                    crate::remote::debug::diagnostics::build_diagnostics_window(window);
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.queries")
-                .with_name("Remote Queries")
-                .with_default_area(DefaultArea::Center)
-                .with_priority(22)
-                .with_build(|window| {
-                    window.spawn(crate::remote::debug::queries::queries_panel_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.archetypes")
-                .with_name("Remote Archetypes")
-                .with_default_area(DefaultArea::Center)
-                .with_priority(23)
-                .with_build(|window| {
-                    window.spawn(crate::remote::debug::archetypes::archetypes_panel_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.schedules")
-                .with_name("Remote Schedules")
-                .with_default_area(DefaultArea::Center)
-                .with_priority(24)
-                .with_build(|window| {
-                    window.spawn(crate::remote::debug::schedules::schedules_panel_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.graph")
-                .with_name("Remote System Graph")
-                .with_default_area(DefaultArea::Center)
-                .with_priority(25)
-                .with_build(|window| {
-                    window.spawn(crate::remote::debug::depgraph::depgraph_panel_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.debug.relationships")
-                .with_name("Remote Relationships")
-                .with_default_area(DefaultArea::Center)
-                .with_priority(26)
-                .with_build(|window| {
-                    window
-                        .spawn(crate::remote::debug::relationships::relationships_panel_content());
-                }),
-        );
-
-        ctx.register_window(
-            WindowDescriptor::new("jackdaw.remote.inspector")
-                .with_name("Remote Inspector")
-                .with_default_area(DefaultArea::RightSidebar)
-                .with_priority(20)
-                .with_build(|window| {
-                    window.spawn(crate::remote::remote_inspector::remote_inspector());
-                }),
-        );
     }
 }
 
@@ -278,38 +198,6 @@ impl JackdawExtension for ProjectWindowExtension {
                         .resource_mut::<crate::project_window::ProjectWindowState>();
                     state.needs_refresh = true;
                     state.needs_tree_refresh = true;
-                }),
-        );
-    }
-}
-
-/// Game monitor in the bottom dock: shows the focused instance's streamed
-/// frame with a Play/Select mode bar.
-#[derive(Default)]
-pub struct GamePanelExtension;
-
-impl JackdawExtension for GamePanelExtension {
-    fn id(&self) -> String {
-        "jackdaw.game_panel".to_string()
-    }
-
-    fn label(&self) -> String {
-        "Game Panel".to_string()
-    }
-
-    fn kind(&self) -> ExtensionKind {
-        ExtensionKind::Builtin
-    }
-
-    fn register(&self, ctx: &mut ExtensionContext) {
-        ctx.register_window(
-            WindowDescriptor::new(crate::game_panel::GAME_WINDOW_ID)
-                .with_name("Game")
-                .with_icon(Icon::Play.unicode())
-                .with_default_area(DefaultArea::BottomDock)
-                .with_priority(2)
-                .with_build(|window| {
-                    window.spawn(crate::game_panel::game_panel_content());
                 }),
         );
     }
@@ -582,7 +470,7 @@ fn scene_kind_icons() -> Vec<(String, Icon)> {
             Icon::Clapperboard,
         ),
         (
-            jackdaw_prefab::components::IsA::type_path().to_string(),
+            bevy::scene::SceneBase::type_path().to_string(),
             Icon::Component,
         ),
     ]

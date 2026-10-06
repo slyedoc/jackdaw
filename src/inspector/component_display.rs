@@ -15,7 +15,6 @@ use bevy::{
     feathers::containers::{pane, pane_body, pane_header},
     feathers::controls::{ButtonVariant, FeathersDisclosureToggle, FeathersToolButton},
     prelude::*,
-    reflect::serde::TypedReflectSerializer,
     ui::Checked,
     ui_widgets::ToggleChecked,
 };
@@ -42,20 +41,15 @@ use super::{
     category_strip::ActiveInspectorCategory, component_tooltip::ReflectedTypeTooltip,
     custom_props_display, material_display, modifier_display, node_card, reflect_fields,
 };
-use crate::inspector::prefab_field_dots::{PrefabInstanceCtx, inspector_type_paths_for};
-use crate::prefab::PrefabAstCache;
 use crate::type_metadata::{TypeChrome, TypeMetadata};
 use bevy::picking::hover::Hovered;
 use bevy_aurora::material::AuroraMaterial;
 
-/// What the inspector reads to place its target: the entity's parents, the
-/// prefab it instances, and whether it edits a definition asset rather than a
-/// scene entity. Bundled into one param so the systems that read it stay under
+/// What the inspector reads to place its target: whether it edits a definition asset or a file
+/// rather than a scene entity. Bundled into one param so the systems that read it stay under
 /// the system param-count limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct InspectorLineage<'w, 's> {
-    pub(crate) child_of: Query<'w, 's, &'static bevy::ecs::hierarchy::ChildOf>,
-    pub(crate) is_a: Query<'w, 's, &'static crate::prefab::IsA>,
     pub(crate) definitions: Query<'w, 's, (), With<crate::definition_assets::DefinitionAssetEdit>>,
     pub(crate) files: Query<'w, 's, (), With<super::file_card::SelectedFile>>,
 }
@@ -64,7 +58,6 @@ pub(crate) struct InspectorLineage<'w, 's> {
 /// that read it stay under the system param-count limit.
 #[derive(bevy::ecs::system::SystemParam)]
 pub(crate) struct SceneAsts<'w> {
-    pub(crate) bsn: Res<'w, jackdaw_bsn::SceneBsnAst>,
     pub(crate) project_types: Res<'w, crate::project_types::ProjectTypes>,
     pub(crate) type_metadata: Res<'w, crate::type_metadata::TypeMetadata>,
 }
@@ -86,7 +79,6 @@ pub(crate) fn sync_inspector_to_selection(
     editor_font: Res<EditorFont>,
     materials: Res<Assets<AuroraMaterial>>,
     asts: SceneAsts,
-    prefab_cache: Res<PrefabAstCache>,
     lineage: InspectorLineage,
     collapse_state: Res<super::InspectorCollapseState>,
 ) {
@@ -158,14 +150,7 @@ pub(crate) fn sync_inspector_to_selection(
         };
 
         let source_entity = entity_ref.entity();
-        let authored_type_paths = inspector_type_paths_for(
-            &asts.bsn,
-            &prefab_cache,
-            source_entity,
-            entity_ref,
-            &lineage.child_of,
-            &lineage.is_a,
-        );
+        let authored_type_paths = authored_type_paths(components, &type_registry, archetype);
 
         build_inspector_displays(
             &mut commands,
@@ -182,8 +167,6 @@ pub(crate) fn sync_inspector_to_selection(
             false,
             &materials,
             &authored_type_paths,
-            Some(&asts.bsn),
-            Some(&prefab_cache),
             &collapse_state,
             &asts.project_types,
             &asts.type_metadata,
@@ -197,30 +180,21 @@ pub(crate) fn sync_inspector_to_selection(
     }
 }
 
-/// Whether the editor has a registration for the type the document names, or
-/// for the type an authored enum variant belongs to.
-fn known_to_the_editor(registry: &bevy::reflect::TypeRegistry, type_path: &str) -> bool {
-    // A hand-written document may spell a type by its short path, as bevy's loader allows.
-    if registry.get_with_type_path(type_path).is_some()
-        || (!type_path.contains("::") && registry.get_with_short_type_path(type_path).is_some())
-    {
-        return true;
-    }
-    enclosing_type(type_path).is_some_and(|base| registry.get_with_type_path(base).is_some())
+/// The components on an archetype a scene save writes: everything reflected the writer does not
+/// skip.
+fn authored_type_paths(
+    components: &Components,
+    type_registry: &AppTypeRegistry,
+    archetype: &Archetype,
+) -> HashSet<String> {
+    let registry = type_registry.read();
+    archetype
+        .iter_components()
+        .filter_map(|id| registry.get(components.get_info(id)?.type_id()?))
+        .map(|registration| registration.type_info().type_path().to_string())
+        .filter(|path| !crate::scene_io::should_skip_component(path))
+        .collect()
 }
-
-/// The type an authored enum variant belongs to, whose schema is the one that
-/// describes it.
-fn enclosing_type(type_path: &str) -> Option<&str> {
-    type_path.rsplit_once("::").map(|(base, _)| base)
-}
-
-/// The last segment of a type path, for a card naming a type nothing
-/// describes.
-fn short_type_name(type_path: &str) -> &str {
-    type_path.rsplit("::").next().unwrap_or(type_path)
-}
-
 /// Scene-document components that live under `jackdaw_scene_types` and
 /// carry the inspector's dedicated tool surfaces: `Brush` mounts the
 /// mesh card (`brush_display`, and with it the whole Mesh tab), `Terrain`
@@ -293,30 +267,6 @@ struct ListedComponent {
     type_path: String,
     chrome: TypeChrome,
 }
-
-/// A file as the project names it: under the assets folder when it is there,
-/// and as it stands when it is not.
-fn named_in_assets(path: &std::path::Path) -> String {
-    crate::project::open_project_assets_dir()
-        .and_then(|assets| {
-            path.strip_prefix(assets)
-                .ok()
-                .map(std::path::Path::to_path_buf)
-        })
-        .unwrap_or_else(|| path.to_path_buf())
-        .display()
-        .to_string()
-}
-
-/// What the card says about a prefab source nothing was inherited from.
-fn source_note(path: &std::path::Path) -> String {
-    format!(
-        "Source {}: {}",
-        crate::prefab::save_load::missing_source_reason(path),
-        named_in_assets(path)
-    )
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "inspector rebuild needs the full system param set; bundling into a struct would just push the problem one frame down"
@@ -336,8 +286,6 @@ pub(crate) fn build_inspector_displays(
     _read_only: bool,
     materials: &Assets<AuroraMaterial>,
     authored_type_paths: &HashSet<String>,
-    scene_ast: Option<&jackdaw_bsn::SceneBsnAst>,
-    prefab_cache: Option<&PrefabAstCache>,
     collapse_state: &super::InspectorCollapseState,
     project_types: &crate::project_types::ProjectTypes,
     type_metadata: &TypeMetadata,
@@ -368,54 +316,6 @@ pub(crate) fn build_inspector_displays(
     }
 
     let registry = type_registry.read();
-
-    // Check for prefab baseline (override tracking)
-    let baseline = entity_ref
-        .get::<jackdaw_scene_types::PrefabBaseline>()
-        .cloned();
-
-    // Prefab-instance context: if this entity sits inside an IsA
-    // subtree, override info comes from the prefab AST + cache and the
-    // revert / right-click actions route to the new prefab operators.
-    let prefab_ctx: Option<PrefabInstanceCtx> = scene_ast.and_then(|ast| {
-        let cache = prefab_cache?;
-        let node = ast.ast_for(source_entity)?;
-        if !crate::prefab::overrides_bsn::is_inside_prefab_instance(ast, node) {
-            return None;
-        }
-        let (path, prefab_entity_id) =
-            crate::prefab::overrides_bsn::resolve_inheritance(ast, node)?;
-        let instance_entity = ast
-            .ancestor_with_component(node, "jackdaw::prefab::components::IsA")
-            .and_then(|n| ast.ecs_for_ast(n))?;
-        Some(PrefabInstanceCtx {
-            instance_entity,
-            has_cached_prefab: cache.get(&path).is_some(),
-            prefab_path: path,
-            prefab_entity_id,
-        })
-    });
-
-    if let Some(ctx) = prefab_ctx.as_ref().filter(|ctx| !ctx.has_cached_prefab) {
-        commands.spawn((
-            ComponentDisplay,
-            Node {
-                padding: UiRect::axes(Val::Px(tokens::SPACING_MD), Val::Px(tokens::SPACING_SM)),
-                width: Val::Percent(100.0),
-                ..Default::default()
-            },
-            ChildOf(inspector_entity),
-            children![(
-                Text::new(source_note(&ctx.prefab_path)),
-                TextFont {
-                    font: editor_font.0.clone().into(),
-                    font_size: tokens::TEXT_SIZE_SM,
-                    ..Default::default()
-                },
-                TextColor(tokens::TEXT_ERROR),
-            )],
-        ));
-    }
 
     let mut comp_list: Vec<ListedComponent> = archetype
         .iter_components()
@@ -454,10 +354,7 @@ pub(crate) fn build_inspector_displays(
                 if !is_user_type
                     && !crate::worn_material::material_component_paths().contains(&full_path)
                     && !authored_type_paths.is_empty()
-                    && !jackdaw_bsn::type_paths_include(
-                        authored_type_paths.iter().map(String::as_str),
-                        full_path,
-                    )
+                    && !authored_type_paths.contains(full_path)
                 {
                     return None;
                 }
@@ -490,10 +387,7 @@ pub(crate) fn build_inspector_displays(
     // then by group name, authored before derived, then alphabetical.
     let is_derived_path = |type_path: &str| -> bool {
         !authored_type_paths.is_empty()
-            && !jackdaw_bsn::type_paths_include(
-                authored_type_paths.iter().map(String::as_str),
-                type_path,
-            )
+            && !authored_type_paths.contains(type_path)
     };
     comp_list.sort_by(|a, b| {
         crate::type_metadata::group_order(&b.type_path, &b.chrome.category)
@@ -516,62 +410,9 @@ pub(crate) fn build_inspector_displays(
     {
         let component_id = *component_id;
 
-        // Detect override: compare current component value vs baseline
-        let is_overridden_baseline = baseline.as_ref().is_some_and(|bl| {
-            let type_id = components
-                .get_info(component_id)
-                .and_then(ComponentInfo::type_id);
-            if let Some(type_id) = type_id
-                && let Some(registration) = registry.get(type_id)
-                && let Some(reflect_component) = registration.data::<ReflectComponent>()
-                && let Some(component_ref) = reflect_component.reflect(entity_ref)
-            {
-                let type_path = registration.type_info().type_path_table().path();
-                if let Some(baseline_val) = bl.components.get(type_path) {
-                    let serializer = TypedReflectSerializer::new(component_ref, &registry);
-                    if let Ok(current_val) = serde_json::to_value(&serializer) {
-                        return current_val != *baseline_val;
-                    }
-                }
-            }
-            false
-        });
-
-        let is_overridden_prefab = prefab_ctx.as_ref().is_some_and(|ctx| {
-            if !ctx.has_cached_prefab {
-                return false;
-            }
-            let (Some(ast), Some(cache)) = (scene_ast, prefab_cache) else {
-                return false;
-            };
-            let Some(node) = ast.ast_for(source_entity) else {
-                return false;
-            };
-            let get_prefab = |p: &std::path::Path| cache.get(p);
-            crate::prefab::overrides_bsn::field_is_overridden(
-                ast,
-                &get_prefab,
-                node,
-                type_path,
-                None,
-            )
-        });
-
-        let is_overridden = is_overridden_baseline || is_overridden_prefab;
-        let is_derived = !authored_type_paths.is_empty()
-            && !jackdaw_bsn::type_paths_include(
-                authored_type_paths.iter().map(String::as_str),
-                type_path.as_str(),
-            );
-
-        // Forward the prefab context whenever the entity sits inside a
-        // prefab instance so the right-click menu can offer Revert /
-        // Apply on every component. The revert ICON's routing still
-        // checks `is_overridden_prefab` below so the legacy
-        // `PrefabBaseline` path keeps using its existing operator
-        // when both systems coexist.
-        let spec_prefab_ctx = prefab_ctx.clone();
-        let revert_through_prefab = is_overridden_prefab;
+        let is_overridden = false;
+        let is_derived =
+            !authored_type_paths.is_empty() && !authored_type_paths.contains(type_path.as_str());
 
         // ModifierStack gets its own top-level cards (one per modifier entry)
         // rather than a single generic wrapper. Detect it here, before creating
@@ -627,8 +468,6 @@ pub(crate) fn build_inspector_displays(
                 is_overridden,
                 is_derived,
                 removable: true,
-                prefab_ctx: spec_prefab_ctx,
-                revert_through_prefab,
                 icon_font: &icon_font.0,
                 editor_font: &editor_font.0,
                 collapse_state,
@@ -771,82 +610,6 @@ pub(crate) fn build_inspector_displays(
         ));
     }
 
-    // Project (schema-reported) components are not real ECS components in the
-    // editor, so the archetype pass above never sees them. Render each one the
-    // document authored on this entity from its extracted schema; values come
-    // from the document and edits round-trip back through the same field
-    // widgets (see `project_component_display`).
-    if let Some(ast) = scene_ast
-        && let Some(node) = ast.ast_for(source_entity)
-    {
-        for type_path in ast.component_type_paths(node) {
-            let schema = project_types.component(&type_path);
-            if schema.is_none()
-                && (known_to_the_editor(&registry, &type_path)
-                    || project_types.type_schema(&type_path).is_some())
-            {
-                continue;
-            }
-            let enclosing = enclosing_type(&type_path)
-                .and_then(|base| project_types.type_schema(base))
-                .filter(|_| schema.is_none());
-            let chrome = type_metadata.resolve(&type_path, &registry, project_types);
-            let name = match (schema, enclosing) {
-                (Some(schema), _) => schema.short_name.clone(),
-                (None, Some(enclosing)) => {
-                    format!("{}::{}", enclosing.short_name, short_type_name(&type_path))
-                }
-                (None, None) => short_type_name(&type_path).to_string(),
-            };
-            let card = spawn_component_display(
-                commands,
-                ComponentDisplaySpec {
-                    name: &name,
-                    type_path: &type_path,
-                    entity: source_entity,
-                    is_overridden: false,
-                    is_derived: false,
-                    removable: true,
-                    prefab_ctx: None,
-                    revert_through_prefab: false,
-                    icon_font: &icon_font.0,
-                    editor_font: &editor_font.0,
-                    collapse_state,
-                },
-            );
-            super::type_metadata_pane::spawn_type_metadata_ui(
-                commands,
-                &card,
-                &type_path,
-                &chrome,
-                type_metadata,
-            );
-            jackdaw_feathers::utils::attach_or_despawn(commands, inspector_entity, card.section);
-            match schema {
-                Some(schema) => super::project_component_display::spawn_project_component_fields(
-                    commands,
-                    card.body,
-                    schema,
-                    ast,
-                    node,
-                    source_entity,
-                    type_registry,
-                    &editor_font.0,
-                    &icon_font.0,
-                    names,
-                ),
-                None => super::project_component_display::spawn_document_component_fields(
-                    commands,
-                    card.body,
-                    ast,
-                    node,
-                    &type_path,
-                    enclosing.is_some(),
-                ),
-            }
-        }
-    }
-
     // Add Component button is in the static layout header (layout.rs entity_inspector)
     // so we don't spawn a dynamic one here.
 
@@ -914,7 +677,6 @@ pub(crate) fn on_inspector_dirty(
     editor_font: Res<EditorFont>,
     materials: Res<Assets<AuroraMaterial>>,
     asts: SceneAsts,
-    prefab_cache: Res<PrefabAstCache>,
     lineage: InspectorLineage,
     collapse_state: Res<super::InspectorCollapseState>,
 ) {
@@ -973,14 +735,7 @@ pub(crate) fn on_inspector_dirty(
         }
         let sel_count = selection.entities.len();
 
-        let authored_type_paths = inspector_type_paths_for(
-            &asts.bsn,
-            &prefab_cache,
-            source_entity,
-            entity_ref,
-            &lineage.child_of,
-            &lineage.is_a,
-        );
+        let authored_type_paths = authored_type_paths(components, &type_registry, archetype);
 
         build_inspector_displays(
             &mut commands,
@@ -997,8 +752,6 @@ pub(crate) fn on_inspector_dirty(
             false,
             &materials,
             &authored_type_paths,
-            Some(&asts.bsn),
-            Some(&prefab_cache),
             &collapse_state,
             &asts.project_types,
             &asts.type_metadata,
@@ -1034,15 +787,6 @@ pub(crate) struct ComponentDisplaySpec<'a> {
     pub is_derived: bool,
     /// Show the header X that dispatches `component.remove`.
     pub removable: bool,
-    /// When `Some`, the entity sits inside a prefab instance. Drives
-    /// the right-click menu for every component on the entity.
-    pub prefab_ctx: Option<PrefabInstanceCtx>,
-    /// When true, the revert icon (if shown) routes through the new
-    /// prefab operators (`prefab::operators::revert_component`) rather
-    /// than the legacy `ComponentRevertBaselineOp` path. False forces
-    /// the legacy path even if `prefab_ctx` is present, which preserves
-    /// pre-existing baseline overrides.
-    pub revert_through_prefab: bool,
     pub icon_font: &'a Handle<Font>,
     pub editor_font: &'a Handle<Font>,
     /// Per-session collapsed-state map; used to restore the card's
@@ -1071,8 +815,6 @@ pub(crate) fn spawn_component_display(
         is_overridden,
         is_derived,
         removable,
-        prefab_ctx,
-        revert_through_prefab,
         icon_font,
         editor_font,
         collapse_state,
@@ -1237,74 +979,6 @@ pub(crate) fn spawn_component_display(
             });
         });
 
-    if is_overridden {
-        let revert_type_path = type_path.to_string();
-        let entity_param = entity;
-
-        // Revert button (only shown for overridden prefab components).
-        // Two code paths share the visual: the legacy
-        // `PrefabBaseline` system dispatches through
-        // `ComponentRevertBaselineOp` (and uses `ButtonOperatorCall`
-        // for the rich tooltip popover); the new prefab system calls
-        // `prefab::operators::revert_component` directly with the
-        // entity's AST key, so it skips the tooltip wiring.
-        let revert_through_new_prefab = revert_through_prefab && prefab_ctx.is_some();
-        if revert_through_new_prefab {
-            let prefab_type_path = revert_type_path.clone();
-            commands.spawn((
-                Text::new(String::from(Icon::RotateCcw.unicode())),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: tokens::TEXT_SIZE_SM,
-                    ..Default::default()
-                },
-                TextColor(default_style::INSPECTOR_OVERRIDE),
-                Hovered::default(),
-                ChildOf(header),
-                bevy::ui_widgets::observe(move |_: On<PointerClick>, mut commands: Commands| {
-                    let revert_path = prefab_type_path.clone();
-                    commands
-                        .operator("prefab.revert_component")
-                        .settings(CallOperatorSettings {
-                            creates_history_entry: true,
-                            ..default()
-                        })
-                        .param("entity", entity_param)
-                        .param("type_path", revert_path)
-                        .call();
-                    commands.queue(move |world: &mut World| {
-                        if let Ok(mut ec) = world.get_entity_mut(entity_param) {
-                            ec.insert(InspectorDirty);
-                        }
-                    });
-                }),
-            ));
-        } else {
-            let bo_call = ButtonOperatorCall::new(super::ops::ComponentRevertBaselineOp::ID)
-                .with_param("entity", entity_param)
-                .with_param("type_path", revert_type_path.clone());
-            commands.spawn((
-                Text::new(String::from(Icon::RotateCcw.unicode())),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: tokens::TEXT_SIZE_SM,
-                    ..Default::default()
-                },
-                TextColor(default_style::INSPECTOR_OVERRIDE),
-                Hovered::default(),
-                bo_call,
-                ChildOf(header),
-                bevy::ui_widgets::observe(move |_: On<PointerClick>, mut commands: Commands| {
-                    commands
-                        .operator(super::ops::ComponentRevertBaselineOp::ID)
-                        .param("entity", entity_param)
-                        .param("type_path", revert_type_path.clone())
-                        .call();
-                }),
-            ));
-        }
-    }
-
     // Remove component button (X icon). See revert button for the
     // tooltip-data + manual-dispatch pattern.
     if removable && !is_derived {
@@ -1321,60 +995,6 @@ pub(crate) fn spawn_component_display(
                 }
             })
             .insert((Hovered::default(), remove_call, ChildOf(header)));
-    }
-
-    // Right-click context menu on prefab-instance component headers.
-    // Wires the "Revert Component" / "Apply Component to Prefab Source"
-    // actions; both route through `prefab_menu::on_prefab_menu_action`,
-    // which reads the captured target context from
-    // `prefab_menu::PrefabMenuTarget`.
-    if let Some(menu_ctx) = prefab_ctx.clone() {
-        let menu_type_path = type_path.to_string();
-        commands.entity(header).observe(
-            move |click: On<PointerClick>,
-                  mut commands: Commands,
-                  windows: Query<&Window>,
-                  mut state: ResMut<jackdaw_widgets::context_menu::ContextMenuState>,
-                  mut target: ResMut<super::prefab_menu::PrefabMenuTarget>| {
-                if click.event().button != PointerButton::Secondary {
-                    return;
-                }
-                let cursor_pos = windows
-                    .single()
-                    .ok()
-                    .and_then(bevy::prelude::Window::cursor_position)
-                    .unwrap_or_default();
-                if let Some(existing) = state.menu_entity.take()
-                    && let Ok(mut ec) = commands.get_entity(existing)
-                {
-                    ec.despawn();
-                }
-                target.entity = Some(entity);
-                target.instance_entity = Some(menu_ctx.instance_entity);
-                target.prefab_entity_id = Some(menu_ctx.prefab_entity_id);
-                target.prefab_path = Some(menu_ctx.prefab_path.clone());
-                target.type_path = Some(menu_type_path.clone());
-                target.field_path = None;
-                let items: [(&str, &str); 3] = [
-                    (super::prefab_menu::REVERT_COMPONENT, "Revert Component"),
-                    (
-                        super::prefab_menu::APPLY_TO_SOURCE,
-                        "Apply Component to Prefab Source",
-                    ),
-                    (
-                        super::prefab_menu::BULK_APPLY,
-                        "Apply to All Instances in Scene",
-                    ),
-                ];
-                let menu = jackdaw_feathers::context_menu::spawn_context_menu(
-                    &mut commands,
-                    cursor_pos,
-                    None,
-                    &items,
-                );
-                state.menu_entity = Some(menu);
-            },
-        );
     }
 
     ComponentDisplayCard {
@@ -1510,8 +1130,6 @@ mod tests {
                         is_overridden: false,
                         is_derived: false,
                         removable: true,
-                        prefab_ctx: None,
-                        revert_through_prefab: false,
                         icon_font: &font,
                         editor_font: &font,
                         collapse_state: &collapse_state,
@@ -1559,8 +1177,6 @@ mod tests {
                         is_overridden: false,
                         is_derived: false,
                         removable: true,
-                        prefab_ctx: None,
-                        revert_through_prefab: false,
                         icon_font: &font,
                         editor_font: &font,
                         collapse_state: &collapse_state,

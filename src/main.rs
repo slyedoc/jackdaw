@@ -9,8 +9,8 @@ fn main() -> AppExit {
         {
             println!(
                 "jackdaw {} (targets bevy {})",
-                jackdaw_project_build::VERSION,
-                jackdaw_project_build::BEVY_VERSION
+                jackdaw::scene_io::stamp::VERSION,
+                jackdaw::scene_io::stamp::BEVY_VERSION
             );
         }
         return AppExit::Success;
@@ -161,13 +161,6 @@ fn main() -> AppExit {
 /// they do not share a type graph with those libraries.
 fn editor_plugins(app: &mut App) {
     app.add_plugins(JackdawEditorPlugins::default());
-    // The remote-control server belongs to the editor *process*, not to
-    // the plugin group: a headless test app builds the same group, and
-    // two of them would fight over the port. It refuses to start when the
-    // project turns `remote.enabled` off.
-    app.add_plugins(jackdaw::remote::server::JackdawEditorRemotePlugin::default());
-    #[cfg(feature = "dylib")]
-    app.add_plugins(DylibLoaderPlugin);
 }
 
 #[track_caller]

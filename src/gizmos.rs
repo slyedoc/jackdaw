@@ -461,7 +461,7 @@ pub fn gizmo_drag(
     mut drag_state: ResMut<GizmoDragState>,
     snap_settings: Res<SnapSettings>,
     modal: Option<Single<Entity, With<ActiveModalOperator>>>,
-    mut commands: Commands,
+    _commands: Commands,
 ) -> OperatorResult {
     let modal_running = modal.is_some();
     if modal_running
@@ -471,7 +471,6 @@ pub fn gizmo_drag(
         // (and a later save) see the dragged Transforms. Undo remains the
         // SnapshotDiff; this only brings the document up to date. Leaving the
         // OS window commits the same way LMB release does.
-        queue_sync_gizmo_transforms_to_ast(&drag_state, &transforms, &mut commands);
         clear_gizmo_drag_state(&mut drag_state, &mut cursor_query);
         return OperatorResult::Finished;
     }
@@ -633,42 +632,6 @@ pub fn gizmo_drag(
     }
     OperatorResult::Running
 }
-
-/// Mirror each gizmo target's live ECS [`Transform`] into the scene document.
-///
-/// Object gizmo mutates ECS every frame and relies on `SnapshotDiff` for undo.
-/// Save / after-snapshot emit the document, so without this the dragged pose
-/// never reaches the `.bsn`.
-fn queue_sync_gizmo_transforms_to_ast(
-    drag_state: &GizmoDragState,
-    transforms: &Query<(&GlobalTransform, &mut Transform), With<Selected>>,
-    commands: &mut Commands,
-) {
-    let to_sync: Vec<(Entity, Transform)> = drag_state
-        .targets
-        .iter()
-        .filter_map(|target| {
-            transforms
-                .get(target.entity)
-                .ok()
-                .map(|(_, transform)| (target.entity, *transform))
-        })
-        .collect();
-    if to_sync.is_empty() {
-        return;
-    }
-    commands.queue(move |world: &mut World| {
-        for (entity, transform) in to_sync {
-            crate::commands::sync_component_to_ast(
-                world,
-                entity,
-                "bevy_transform::components::transform::Transform",
-                &transform,
-            );
-        }
-    });
-}
-
 fn cancel_gizmo_drag(
     mut drag_state: ResMut<GizmoDragState>,
     mut transforms: Query<&mut Transform, With<Selected>>,

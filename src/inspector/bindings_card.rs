@@ -482,7 +482,6 @@ impl SchemaCtx {
 
         ctx.gather_project(world);
         ctx.gather_native(world, source, &registry);
-        ctx.gather_authored_project(world, source);
 
         let by_name = |a: &TypeOption, b: &TypeOption| {
             b.pickable
@@ -690,46 +689,6 @@ impl SchemaCtx {
             marker: true,
             on_widget: false,
         });
-    }
-
-    /// The project components the document authored on this entity. A project
-    /// component is never a real ECS component in the editor, so the archetype
-    /// walk cannot see it and it has to be collected off the node.
-    fn gather_authored_project(&mut self, world: &World, source: Entity) {
-        let (Some(ast), Some(project)) = (
-            world.get_resource::<jackdaw_bsn::SceneBsnAst>(),
-            world.get_resource::<crate::project_types::ProjectTypes>(),
-        ) else {
-            return;
-        };
-        let Some(node) = ast.ast_for(source) else {
-            return;
-        };
-        for type_path in ast.component_type_paths(node) {
-            let Some(schema) = project.component(&type_path) else {
-                continue;
-            };
-            if self
-                .write_targets
-                .iter()
-                .any(|option| option.type_path == type_path)
-            {
-                continue;
-            }
-            self.write_targets.push(TypeOption {
-                type_path: schema.type_path.clone(),
-                short_name: schema.short_name.clone(),
-                fields: schema.fields.iter().map(|f| f.name.clone()).collect(),
-                pickable: true,
-                on_widget: true,
-                // `fills_gaps` is the schema's word for what the native side
-                // asks of `ReflectDefault`: without it the game cannot build
-                // the component either.
-                marker: schema.fields.is_empty()
-                    && schema.kind == jackdaw_schema::TypeKind::Struct
-                    && schema.fills_gaps,
-            });
-        }
     }
 
     /// The list a path in `slot` is named from.
@@ -1821,15 +1780,7 @@ fn apply(world: &mut World, source: Entity, mutate: impl FnOnce(&mut Vec<Binding
         }
     };
 
-    if !super::reflect_fields::try_route_pie_live_field_edit(
-        world,
-        source,
-        bindings_type_path(),
-        "",
-        json.clone(),
-    ) {
-        crate::commands::field_edit_commit(world, bindings_type_path(), "", &json, GROUP_LABEL);
-    }
+    crate::commands::field_edit_commit(world, bindings_type_path(), "", &json, GROUP_LABEL);
     // Remember the tick this write landed on, so the change-detection pass does
     // not rebuild the card for the edit it just made.
     let echo = world.get_entity(source).ok().and_then(|entity| {
@@ -2266,24 +2217,16 @@ fn apply_to(
     });
 }
 
-/// The read-only entities every write path on the card has to check for.
-type RemoteProxies<'w, 's> =
-    Query<'w, 's, (), With<crate::remote::entity_browser::RemoteEntityProxy>>;
-
 pub(crate) fn on_binding_combobox_change(
     event: On<ComboBoxChangeEvent>,
     controls: Query<&BindingControl>,
     options: Query<&BindingOptions>,
     variants: Query<&VariantComboBox>,
     menus: Query<&AddBindingMenu>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     // The footer menu adds; nothing else on the card does.
     if let Ok(menu) = menus.get(event.entity) {
-        if remote_proxies.contains(menu.source) {
-            return;
-        }
         let Some(kind) = BindKind::ALL.get(event.selected).copied() else {
             return;
         };
@@ -2305,9 +2248,6 @@ pub(crate) fn on_binding_combobox_change(
     let Ok(control) = controls.get(owner) else {
         return;
     };
-    if remote_proxies.contains(control.source) {
-        return;
-    }
     let (source, index, event_field) =
         (control.source, control.binding, control.event_field.clone());
     // The widget's own value wins; the recorded option list is the fallback for
@@ -2460,15 +2400,11 @@ pub(crate) fn on_binding_combobox_change(
 pub(crate) fn on_binding_button_click(
     event: On<ButtonClickEvent>,
     controls: Query<&BindingControl>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let Ok(control) = controls.get(event.entity) else {
         return;
     };
-    if remote_proxies.contains(control.source) {
-        return;
-    }
     let (source, index) = (control.source, control.binding);
     match control.control {
         BindControl::Remove => {
@@ -2526,16 +2462,12 @@ pub(crate) fn on_binding_button_click(
 pub(crate) fn on_binding_checkbox_change(
     event: On<ValueChange<bool>>,
     controls: Query<&BindingControl>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let target = event.source;
     let Ok(control) = controls.get(target) else {
         return;
     };
-    if remote_proxies.contains(control.source) {
-        return;
-    }
     let value = event.value;
     // The checkbox does not self-manage `Checked`.
     jackdaw_feathers::utils::set_marker_if_alive::<Checked>(&mut commands, target, value);
@@ -2556,7 +2488,6 @@ pub(crate) fn on_binding_text_commit(
     event: On<TextEditCommitEvent>,
     controls: Query<&BindingControl>,
     child_of: Query<&ChildOf>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     // The commit fires on the inner text entry, so walk up to the row the card
@@ -2576,9 +2507,6 @@ pub(crate) fn on_binding_text_commit(
     let Some(control) = found else {
         return;
     };
-    if remote_proxies.contains(control.source) {
-        return;
-    }
     let text = event.text.clone();
     let control_kind = control.control;
     let event_field = control.event_field.clone();

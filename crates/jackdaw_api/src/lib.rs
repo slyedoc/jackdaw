@@ -4,37 +4,8 @@
 //! functions intended for third-party extension and game authors are
 //! re-exported here. Editor-host plumbing (the loader plugin, the
 //! catalog, enable/disable helpers, and internal component markers)
-//! stays behind `jackdaw_api_internal` and is used by the editor
-//! binary and by `jackdaw_loader`.
+//! stays behind `jackdaw_api_internal` and is used by the editor.
 //!
-//! # Static consumer
-//!
-//! ```toml
-//! jackdaw_api = "0.4"
-//! ```
-//!
-//! # Dylib extension
-//!
-//! ```toml
-//! jackdaw_api = { version = "0.4", features = ["dynamic_linking"] }
-//! bevy = "0.18"
-//! ```
-//!
-//! The host binary must also enable jackdaw's `dylib` feature so the
-//! editor and loaded dylibs share one compilation of the shared types.
-
-// Force the Jackdaw proxy dylib into every dynamic host and extension.
-// This mirrors Bevy's own `bevy/dynamic_linking` facade: public API remains
-// available through this crate while process-wide state lives in one shared
-// runtime library.
-#[cfg(feature = "dynamic_linking")]
-#[expect(
-    unused_imports,
-    clippy::single_component_path_imports,
-    reason = "this forces the shared Jackdaw runtime to be linked"
-)]
-use jackdaw_dylib;
-
 // --- Extension authoring surface ---
 
 pub use jackdaw_api_internal::{

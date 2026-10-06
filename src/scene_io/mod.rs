@@ -1,37 +1,36 @@
-//! Scene persistence: saving, loading, document registration, and the
-//! legacy JSN read machinery.
+//! Scene persistence: a scene file spawns with bevy's `.bsn` loader, and saves with the scene
+//! writer (`bevy::bsn_asset::write_scene_roots`) over the entities the scene holds.
 
 use std::any::TypeId;
-use std::collections::HashSet;
 use std::path::PathBuf;
 
-use bevy::ecs::component::ComponentId;
 use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 
-pub(crate) mod asset_fields;
-mod legacy;
 mod load;
 mod registration;
 pub(crate) mod save;
 pub mod stamp;
 
-pub use legacy::{load_inline_assets, load_scene_from_jsn};
 pub use load::{
-    LoadOutcome, LoadRefusal, RefusalCategory, declared_scene_kind, declares_ui_scene_root,
-    is_ui_scene_root_type_path, load_scene_from_file, load_scene_from_file_with_outcome,
-    spawn_default_lighting, spawn_open_dialog,
+    LoadOutcome, LoadRefusal, PendingSceneSpawns, RefusalCategory, SceneFile, SceneSpawn,
+    apply_scene_kind, asset_path_of, load_scene_from_file, load_scene_from_file_with_outcome,
+    open_scene_kind, read_scene_file, scene_kind_of, spawn_bsn_text, spawn_default_lighting, spawn_open_dialog,
+    spawn_scene_file,
 };
 pub(crate) use load::{
-    SidecarImport, clear_scene_entities, despawn_scene_entities, forget_prefab_cache_bump,
-    import_terrain_sidecars, prefab_cache_epoch,
+    SidecarImport, clear_scene_entities, despawn_scene_entities, import_terrain_sidecars,
+    is_unresolved,
 };
-pub use registration::{register_entities_in_ast, register_entity_in_ast};
+pub use registration::{
+    SceneEntity, SceneRootOf, SceneRoots, adopt_entities, adopt_entity, despawn_tab_world,
+    ensure_scene_world, is_ui_root, place_root, scene_parent, scene_world, set_tab_open,
+};
 pub use save::{
     SaveOutcome, emit_bsn_scene_for_file, emit_bsn_scene_with_inline_assets, retarget_active_scene,
     save_layout_to_project, save_scene, save_scene_as, save_scene_with_outcome,
 };
-pub(crate) use save::{emit_bsn_entities_with_inline_assets, save_scene_inner};
+pub(crate) use save::save_scene_inner;
 
 use load::poll_scene_dialog;
 
@@ -59,6 +58,35 @@ const SKIP_COMPONENT_PREFIXES: &[&str] = &[
     "bevy_feathers::",
     // Accessibility nodes are built by the widget implementation.
     "bevy_a11y::",
+    // Avian's computed state (AABBs, collider links, mass caches, `Position`/`Rotation`) is
+    // rebuilt from `RigidBody` + `AvianCollider`; what a user authors is in
+    // `AUTHORED_PHYSICS` below.
+    "avian3d::",
+    "bevy_heavy::",
+];
+
+/// The avian components a user sets, by type name: everything else under `avian3d::` is derived.
+const AUTHORED_PHYSICS: &[&str] = &[
+    "RigidBody",
+    "Friction",
+    "Restitution",
+    "Mass",
+    "AngularInertia",
+    "CenterOfMass",
+    "ColliderDensity",
+    "GravityScale",
+    "LinearDamping",
+    "AngularDamping",
+    "LockedAxes",
+    "CollisionLayers",
+    "Sensor",
+    "LinearVelocity",
+    "AngularVelocity",
+    "Dominance",
+    "SweptCcd",
+    "CollisionEventsEnabled",
+    "RigidBodyDisabled",
+    "ColliderDisabled",
 ];
 
 /// Specific component type paths that should never be saved.
@@ -75,12 +103,6 @@ const SKIP_COMPONENT_PATHS: &[&str] = &[
     "bevy_animation_graph_core::animation_graph_player::AnimationGraphPlayer",
     "bevy_animation::AnimationTargetId",
     "bevy_animation::AnimatedBy",
-    // Render-state handles are always derived in the editor (brush chunks,
-    // terrain chunks, GLTF instances, reference-image quads) and rebuilt
-    // from the authored components on load; serializing them would inline
-    // runtime mesh/material assets into the scene.
-    "bevy_aurora::mesh::AuroraMesh3d",
-    "bevy_aurora::material::AuroraMaterial3d",
     // The GLTF instance handle, derived from the authored `GltfSource` by
     // `derive_world_asset_root`. Writing it into the document would put a
     // raw asset handle in a file that other machines and the runtime read.
@@ -121,18 +143,6 @@ pub fn computed_ui_component_paths() -> [&'static str; 10] {
 /// they match a skip prefix.
 const ALWAYS_SAVE_PATHS: &[&str] = &[
     "bevy_camera::visibility::Visibility",
-    // The stable node id must persist so a running game can map a live
-    // entity back to its authored node, and so the editor can restore
-    // selection across undo and tab swaps. It is written as the
-    // structural `JsnEntity::id` field rather than a component entry,
-    // but this keeps any other save path from stripping it.
-    jackdaw_scene_types::SCENE_NODE_ID_TYPE_PATH,
-    // Prefab marker components must round-trip through save and AST
-    // registration; stripping them breaks instance inheritance and
-    // causes `revert_component` to lose track of the prefab source.
-    "jackdaw::prefab::components::Prefab",
-    "jackdaw::prefab::components::IsA",
-    "jackdaw::prefab::components::PrefabEntityId",
     // Reference image boards persist with the scene; the quad mesh and
     // material are derived from this component at runtime.
     "jackdaw::reference_image::ReferenceImage",
@@ -156,6 +166,14 @@ pub fn should_skip_component(type_path: &str) -> bool {
     if ALWAYS_SAVE_PATHS.contains(&type_path) {
         return false;
     }
+    if type_path.starts_with("avian3d::")
+        && type_path
+            .rsplit("::")
+            .next()
+            .is_some_and(|name| AUTHORED_PHYSICS.contains(&name))
+    {
+        return false;
+    }
     if type_path.starts_with("jackdaw::") {
         return true;
     }
@@ -171,119 +189,59 @@ pub fn should_skip_component(type_path: &str) -> bool {
         || type_path == crate::worn_material::water_material_component()
 }
 
-/// The editor's component skip policy as a [`jackdaw_bsn::BsnWriterConfig`]
-/// for the world-to-text BSN writer. Mirrors [`should_skip_component`]
-/// (prefixes, exact paths, the `jackdaw::` internals prefix, and the
-/// always-save overrides) plus the structural components the engine rebuilds
-/// on spawn.
-pub fn editor_writer_config() -> jackdaw_bsn::BsnWriterConfig {
-    use bevy::reflect::TypePath;
-
-    let mut config = jackdaw_bsn::BsnWriterConfig::include_all();
-    config.skip_prefixes.push("jackdaw::".to_string());
-    for prefix in SKIP_COMPONENT_PREFIXES {
-        config.skip_prefixes.push((*prefix).to_string());
-    }
-    for path in SKIP_COMPONENT_PATHS {
-        config.skip_paths.push((*path).to_string());
-    }
-    for path in computed_ui_component_paths() {
-        config.skip_paths.push(path.to_string());
-    }
-    config
-        .skip_paths
-        .push(crate::worn_material::layered_material_component().to_string());
-    config
-        .skip_paths
-        .push(crate::worn_material::foliage_material_component().to_string());
-    config
-        .skip_paths
-        .push(crate::worn_material::water_material_component().to_string());
-    for path in ALWAYS_SAVE_PATHS {
-        config.always_save_paths.push((*path).to_string());
-    }
-    config
-        .skip_path(GlobalTransform::type_path())
-        .skip_path(InheritedVisibility::type_path())
-        .skip_path(ViewVisibility::type_path())
-}
-
-/// Component types that never persist as document component patches:
-/// engine-derived pose/hierarchy the engine rebuilds, `Name` (a `#name`
-/// reference patch), and the document's own bookkeeping.
-pub(crate) fn doc_skip_type_ids() -> HashSet<TypeId> {
-    HashSet::from([
-        TypeId::of::<GlobalTransform>(),
-        TypeId::of::<InheritedVisibility>(),
-        TypeId::of::<ViewVisibility>(),
-        TypeId::of::<ChildOf>(),
-        TypeId::of::<Children>(),
-        TypeId::of::<Name>(),
-        TypeId::of::<jackdaw_bsn::AstNodeRef>(),
-        TypeId::of::<jackdaw_bsn::AstDirty>(),
-    ])
-}
-
-/// Components [`resync_entity_from_ast`] must leave on the entity: document
-/// bookkeeping, identity, selection, and prefab override baselines. Everything
-/// else is torn down and rebuilt from the AST, including unreflected `#[require]`
-/// companions.
-fn resync_keep_type_ids() -> HashSet<TypeId> {
-    let mut ids = doc_skip_type_ids();
-    ids.insert(TypeId::of::<jackdaw_scene_types::SceneNodeId>());
-    ids.insert(TypeId::of::<jackdaw_scene_types::PrefabBaseline>());
-    ids.insert(TypeId::of::<crate::selection::Selected>());
-    ids
-}
-
-/// Rebuild an entity's scene-derived ECS components from its document node.
-///
-/// Tears down every component that is not keep-listed or skip-listed, then
-/// applies the live AST onto the same entity so `#[require]` companions follow
-/// the document rather than lingering. Hierarchy, computed transform/visibility,
-/// skip-listed editor/runtime components, and document identity stay, so
-/// selection and children survive.
-pub(crate) fn resync_entity_from_ast(world: &mut World, entity: Entity) {
-    if world.get::<jackdaw_bsn::AstNodeRef>(entity).is_none() {
-        return;
-    }
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let skip_ids = resync_keep_type_ids();
-    let component_ids: Vec<ComponentId> = {
-        let Ok(entity_ref) = world.get_entity(entity) else {
-            return;
-        };
-        entity_ref.archetype().iter_components().collect()
-    };
-    let to_remove: Vec<ComponentId> = {
-        let reg = registry.read();
-        component_ids
-            .into_iter()
-            .filter(|&component_id| {
-                let Some(info) = world.components().get_info(component_id) else {
-                    return false;
-                };
-                let Some(type_id) = info.type_id() else {
-                    return false;
-                };
-                if skip_ids.contains(&type_id) {
-                    return false;
-                }
-                let fallback_name = info.name();
-                let type_path = match reg.get(type_id) {
-                    Some(registration) => registration.type_info().type_path_table().path(),
-                    None => &*fallback_name,
-                };
-                !should_skip_component(type_path)
+/// What a save leaves out: component types the editor derives or owns, the entities it
+/// generates (brush faces, terrain chunks), editor infrastructure, and mesh handles with no path
+/// (meshes the editor builds; an authored mesh names its file).
+pub fn write_settings(world: &mut World) -> bevy::bsn_asset::WriteSettings {
+    let skip_components: bevy::platform::collections::HashSet<TypeId> = {
+        let registry = world.resource::<AppTypeRegistry>().read();
+        registry
+            .iter()
+            .filter(|registration| {
+                should_skip_component(registration.type_info().type_path_table().path())
             })
+            .map(|registration| registration.type_id())
             .collect()
     };
-    if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
-        for component_id in to_remove {
-            entity_mut.remove_by_id(component_id);
-        }
+    let skip_entities: bevy::platform::collections::HashSet<Entity> = world
+        .query_filtered::<Entity, Or<(
+            With<crate::NonSerializable>,
+            With<crate::EditorEntity>,
+            With<crate::animgraph::held::HeldGraphNode>,
+        )>>()
+        .iter(world)
+        .collect();
+    let mesh = TypeId::of::<bevy_aurora::mesh::AuroraMesh3d>();
+    bevy::bsn_asset::WriteSettings {
+        skip_components,
+        skip_entities,
+        skip_value: Some(std::sync::Arc::new(move |type_id, value| {
+            type_id == mesh
+                && value
+                    .try_downcast_ref::<bevy_aurora::mesh::AuroraMesh3d>()
+                    .is_some_and(|mesh| mesh.0.path().is_none())
+        })),
+        asset_paths: world
+            .get_resource::<jackdaw_runtime::JackdawCatalog>()
+            .map(|catalog| catalog.asset_paths().into_iter().collect())
+            .unwrap_or_default(),
     }
-    jackdaw_bsn::apply_ast_to_ecs(world, entity);
+}
+
+/// The open scene's top-level entities, in the order a file lists them.
+pub fn scene_roots(world: &mut World) -> Vec<Entity> {
+    if let Some(tab_world) = scene_world(world) {
+        return world
+            .get::<SceneRoots>(tab_world)
+            .map(|roots| roots.entities().to_vec())
+            .unwrap_or_default();
+    }
+    let mut roots: Vec<Entity> = world
+        .query_filtered::<Entity, (With<SceneEntity>, Without<ChildOf>)>()
+        .iter(world)
+        .collect();
+    roots.sort_by_key(|entity| entity.index());
+    roots
 }
 
 pub struct SceneIoPlugin;
@@ -296,7 +254,9 @@ impl Plugin for SceneIoPlugin {
                 Update,
                 poll_scene_dialog.run_if(in_state(crate::AppState::Editor)),
             )
-            .add_systems(PostUpdate, deactivate_document_cameras);
+            .init_resource::<PendingSceneSpawns>()
+            .add_systems(Update, (load::finish_pending_scene_spawns, crate::entity_ops::poll_instance_picker))
+            .add_systems(PostUpdate, deactivate_scene_cameras);
     }
 }
 
@@ -306,11 +266,8 @@ impl Plugin for SceneIoPlugin {
 /// the editor UI camera composites into, so an authored game camera
 /// drew the scene on top of the docks. The components stay on the
 /// entity for inspection and save; only rendering is suppressed.
-fn deactivate_document_cameras(
-    mut cameras: Query<
-        &mut bevy::camera::Camera,
-        (With<jackdaw_bsn::AstNodeRef>, Without<crate::EditorEntity>),
-    >,
+fn deactivate_scene_cameras(
+    mut cameras: Query<&mut bevy::camera::Camera, (With<SceneEntity>, Without<crate::EditorEntity>)>,
 ) {
     for mut camera in &mut cameras {
         if camera.is_active {
@@ -341,10 +298,7 @@ pub struct SceneFilePath {
     pub last_directory: Option<PathBuf>,
 }
 
-/// Human-readable metadata for the active scene, tracked live on
-/// [`SceneFilePath`]. Mirrors the fields the legacy JSN scene metadata
-/// carried, decoupled from `jackdaw_jsn` so only the import boundary
-/// (the `From` conversion below) touches that crate.
+/// Human-readable metadata for the active scene, tracked live on [`SceneFilePath`].
 #[derive(Clone, Debug, Default)]
 pub struct SceneMetadata {
     pub name: String,
@@ -354,18 +308,6 @@ pub struct SceneMetadata {
     pub modified: String,
 }
 
-impl From<jackdaw_jsn::format::JsnMetadata> for SceneMetadata {
-    fn from(metadata: jackdaw_jsn::format::JsnMetadata) -> Self {
-        Self {
-            name: metadata.name,
-            description: metadata.description,
-            author: metadata.author,
-            created: metadata.created,
-            modified: metadata.modified,
-        }
-    }
-}
-
 #[cfg(test)]
 mod camera_tests {
     use super::*;
@@ -373,19 +315,13 @@ mod camera_tests {
     #[test]
     fn document_cameras_are_deactivated_and_editor_cameras_kept() {
         let mut world = World::new();
-        let ast_node = world.spawn_empty().id();
         let authored = world
-            .spawn((
-                bevy::camera::Camera::default(),
-                jackdaw_bsn::AstNodeRef {
-                    patches_entity: ast_node,
-                },
-            ))
+            .spawn((bevy::camera::Camera::default(), SceneEntity))
             .id();
         let editor = world.spawn(bevy::camera::Camera::default()).id();
 
         world
-            .run_system_cached(deactivate_document_cameras)
+            .run_system_cached(deactivate_scene_cameras)
             .expect("run the deactivation system");
 
         let is_active = |world: &World, e| world.get::<bevy::camera::Camera>(e).unwrap().is_active;

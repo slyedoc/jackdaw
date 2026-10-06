@@ -662,7 +662,7 @@ fn load_export_app(scene_text: &str) -> Result<App, String> {
     app.register_type::<Name>();
     app.register_type::<Transform>();
 
-    jackdaw_bsn::load_bsn_scene(app.world_mut(), scene_text).map_err(|error| error.to_string())?;
+    crate::scene_io::spawn_bsn_text(app.world_mut(), scene_text, "")?;
     app.update();
     Ok(app)
 }

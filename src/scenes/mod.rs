@@ -1,6 +1,5 @@
-//! Multi-scene editor state. Owns the tab list; the active tab's
-//! contents live in the live Bevy world, inactive tabs hold a
-//! scene-document snapshot plus the per-tab view state and history.
+//! Multi-scene editor state. Owns the tab list; every tab's entities live under its own
+//! physics/render world, and only the active tab's carry `SceneEntity`.
 
 pub mod confirm_dialog;
 pub mod external_watch;
@@ -10,7 +9,8 @@ pub mod ui;
 
 use std::path::PathBuf;
 
-use bevy::prelude::*;
+use bevy::{camera::visibility::RenderLayers, prelude::*};
+use bevy_aurora::world::RenderWorlds;
 
 use crate::commands::CommandHistory;
 use crate::project::ProjectRoot;
@@ -34,6 +34,7 @@ impl Plugin for ScenesPlugin {
                 ui::update_scene_tab_label_abbreviation,
                 ui::show_scene_tab_close_on_hover,
                 intercept_window_close,
+                follow_tab_world,
             ),
         );
         app.add_observer(ui::on_scene_tab_context_action);
@@ -83,6 +84,55 @@ pub struct Scenes {
     pub active: usize,
 }
 
+/// What an editor view of the open scene renders: the editor's world and the active tab's.
+pub fn scene_layers(world: &World) -> RenderLayers {
+    tab_layers(
+        world.get_resource::<RenderWorlds>(),
+        crate::scene_io::scene_world(world),
+    )
+}
+
+fn tab_layers(worlds: Option<&RenderWorlds>, tab_world: Option<Entity>) -> RenderLayers {
+    match tab_world.and_then(|tab| worlds?.bit(tab)) {
+        Some(bit) if bit > 0 => RenderLayers::from_layers(&[0, bit as usize]),
+        _ => RenderLayers::layer(0),
+    }
+}
+
+/// Viewport cameras see the active tab's world.
+fn follow_tab_world(
+    worlds: Option<Res<RenderWorlds>>,
+    scenes: Res<Scenes>,
+    cameras: Query<
+        (Entity, Option<&RenderLayers>),
+        Or<(
+            With<crate::viewport::MainViewportCamera>,
+            With<crate::camera_preview::CameraPreviewCamera>,
+        )>,
+    >,
+    mut commands: Commands,
+) {
+    let tab_world = scenes.tabs.get(scenes.active).and_then(|tab| tab.world);
+    let layers = tab_layers(worlds.as_deref(), tab_world);
+    for (camera, current) in &cameras {
+        if current != Some(&layers) {
+            commands.entity(camera).insert(layers.clone());
+        }
+    }
+}
+
+/// Whether another tab can get a world: each tab renders in its own world bit, and the 8 bits
+/// are shared with the editor's preview worlds.
+pub fn refuse_new_tab(world: &mut World) -> bool {
+    let full = world
+        .get_resource::<RenderWorlds>()
+        .is_some_and(|worlds| (1..8).all(|bit| worlds.world(bit).is_some()));
+    if full {
+        crate::status_bar::notify_error(world, "Too many open tabs: close one first".to_string());
+    }
+    full
+}
+
 impl Scenes {
     /// Append a tab and return its index. Does not activate it.
     pub fn push_tab(&mut self, tab: SceneTab) -> usize {
@@ -99,28 +149,16 @@ pub enum TabKind {
     Prefab,
 }
 
-/// What a tab holds when it isn't the active tab.
-///
-/// `Scene` owns its AST directly. `Prefab` keys into `PrefabAstCache`
-/// instead, so the cache stays the single source of truth for prefab
-/// content and a prefab tab can't drift from the cache entry.
+/// Where a tab's entities are.
+#[derive(Default, Debug)]
 pub enum TabContent {
-    /// Scene document. `None` is the just-pushed / never-captured state
-    /// for an untitled tab; `Some` is what `capture_active_tab` stores
-    /// during a swap. Boxed: the document holds a whole ECS world, so the
-    /// variant would otherwise dwarf `Prefab` (a path).
-    Scene(Option<Box<jackdaw_bsn::SceneBsnAst>>),
-    /// Prefab document. The AST lives in `PrefabAstCache`, keyed by
-    /// this canonical path. Capturing flushes the live scene document
-    /// into the cache entry; activating installs the cache entry back
-    /// into the live world.
-    Prefab(crate::prefab::CanonicalPrefabPath),
-}
-
-impl Default for TabContent {
-    fn default() -> Self {
-        Self::Scene(None)
-    }
+    /// Not spawned yet: activating the tab spawns its file (or starts empty).
+    #[default]
+    Unloaded,
+    /// In front: the open scene is this tab's.
+    Live,
+    /// Behind another tab: its entities stay in its world, out of view.
+    Parked,
 }
 
 pub struct SceneTab {
@@ -129,6 +167,8 @@ pub struct SceneTab {
     pub dirty: bool,
     pub kind: TabKind,
     pub content: TabContent,
+    /// The tab's physics/render world, its 3D roots' parent; spawned on first activation.
+    pub world: Option<Entity>,
     pub view_state: ViewState,
     pub history: CommandHistory,
     /// Decoded terrain sidecars owned by this tab while it is inactive.
@@ -181,6 +221,7 @@ impl SceneTab {
             dirty: false,
             kind: TabKind::Scene,
             content: TabContent::default(),
+            world: None,
             view_state: ViewState::with_default_camera(),
             history: CommandHistory::default(),
             terrain_data_store: TerrainDataStore::default(),
@@ -264,9 +305,7 @@ pub struct ViewState {
     /// reflect the entire `Projection` enum across tab swaps.
     pub camera_projection: Option<bevy::math::Mat4>,
     pub edit_mode: crate::brush::EditMode,
-    /// Object-level selection stored as scene node ids so it survives
-    /// the despawn / respawn cycle of a tab swap.
-    pub selection: Vec<jackdaw_scene_types::SceneNodeId>,
+    pub selection: Vec<Entity>,
     /// Brush sub-element selection (verts, edges, faces) for whichever
     /// brush is active in `selection`.
     pub brush_sub_selection: crate::brush::BrushSelection,

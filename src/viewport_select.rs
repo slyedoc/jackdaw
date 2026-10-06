@@ -3,7 +3,6 @@ use crate::{
     brush::BrushMeshCache,
     brush_drag_ops::cursor_over_brush_face,
     gizmos::handle_gizmo_hover,
-    schema_preview::SchemaPreview,
     selection::Selection,
     viewport::{InteractionGuards, SceneViewport, ViewportCursor},
     viewport_util::window_to_viewport_cursor_for,
@@ -163,7 +162,6 @@ pub(crate) fn handle_viewport_click(
     editor_entities: Query<(), With<EditorEntity>>,
     parents: Query<&ChildOf>,
     brushes: Query<(), With<Brush>>,
-    schema_previews: Query<(), With<SchemaPreview>>,
     reference_images: Query<&crate::reference_image::ReferenceImage>,
     guards: InteractionGuards,
     mut selection: ResMut<Selection>,
@@ -242,7 +240,6 @@ pub(crate) fn handle_viewport_click(
                 &scene_entities,
                 &parents,
                 &brushes,
-                &schema_previews,
                 &reference_images,
             ) {
                 best_entity = Some(ancestor);
@@ -262,8 +259,7 @@ pub(crate) fn handle_viewport_click(
                     &scene_entities,
                     &parents,
                     &brushes,
-                    &schema_previews,
-                    &reference_images,
+                        &reference_images,
                 ) == Some(current_primary)
                 {
                     return;
@@ -438,7 +434,7 @@ pub fn box_select(
     mouse: Res<ButtonInput<MouseButton>>,
     vp: ViewportCursor,
     mut box_state: ResMut<BoxSelectState>,
-    scene_entities: Query<(Entity, &GlobalTransform), (Without<EditorEntity>, With<Name>)>,
+    scene_entities: Query<(Entity, &GlobalTransform), (With<crate::scene_io::SceneEntity>, With<Name>)>,
     reference_images: Query<&crate::reference_image::ReferenceImage>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
@@ -553,16 +549,8 @@ fn find_selectable_ancestor(
     scene_entities: &Query<(Entity, &GlobalTransform), (Without<EditorEntity>, With<Transform>)>,
     parents: &Query<&ChildOf>,
     brushes: &Query<(), With<Brush>>,
-    schema_previews: &Query<(), With<SchemaPreview>>,
     reference_images: &Query<&crate::reference_image::ReferenceImage>,
 ) -> Option<Entity> {
-    if let Some(host) = schema_preview_host(entity, parents, schema_previews) {
-        return scene_entities
-            .contains(host)
-            .then_some(host)
-            .filter(|h| !is_locked_reference(reference_images, *h));
-    }
-
     loop {
         if is_locked_reference(reference_images, entity) {
             return None;
@@ -588,24 +576,6 @@ fn find_selectable_ancestor(
             entity = child_of.0;
         } else {
             return None;
-        }
-    }
-}
-
-/// If `entity` is a schema preview or lives under one, return the marker host
-/// that owns that preview.
-fn schema_preview_host(
-    mut entity: Entity,
-    parents: &Query<&ChildOf>,
-    schema_previews: &Query<(), With<SchemaPreview>>,
-) -> Option<Entity> {
-    loop {
-        if schema_previews.contains(entity) {
-            return parents.get(entity).ok().map(|child_of| child_of.0);
-        }
-        match parents.get(entity) {
-            Ok(child_of) => entity = child_of.0,
-            Err(_) => return None,
         }
     }
 }

@@ -247,7 +247,7 @@ fn region_pick_trigger(
     mouse: Res<ButtonInput<MouseButton>>,
     edit_mode: Res<TerrainEditMode>,
     vp: crate::viewport::ViewportCursor,
-    terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     selection: Res<Selection>,
     store: Res<TerrainDataStore>,
     mut commands: Commands,
@@ -277,7 +277,7 @@ fn region_pick_trigger(
 /// swallows picks no region for the same reason it starts no stroke.
 fn region_under_pointer(
     vp: &crate::viewport::ViewportCursor,
-    terrains: &Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: &Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     selection: &Selection,
     store: &TerrainDataStore,
 ) -> Option<RegionCoord> {
@@ -308,7 +308,7 @@ fn draw_region_grid(
     view: Res<TerrainRegionView>,
     edit_mode: Res<TerrainEditMode>,
     selection: Res<Selection>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     store: Res<TerrainDataStore>,
     mut gizmos: Gizmos,
 ) {
@@ -638,7 +638,7 @@ mod pointer_tests {
 
     fn probe_region(
         vp: crate::viewport::ViewportCursor,
-        terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+        terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
         selection: Res<Selection>,
         store: Res<TerrainDataStore>,
         mut probe: ResMut<RegionProbe>,

@@ -34,7 +34,7 @@ use wgpu_types::{Extent3d, TextureDimension, TextureUsages};
 
 use crate::{
     canvas_snap::{CanvasGuidesOp, CanvasRulersOp, CanvasSnap, CanvasSnapKind, CanvasSnapOp},
-    prefab::{AuthoredUiSceneRoot, ImportedUiSceneRoot},
+    instances::{AuthoredUiSceneRoot, ImportedUiSceneRoot},
     prelude::*,
     selection::Selection,
     ui_stage::{CanvasAxis, stage_to_authored},
@@ -2326,8 +2326,8 @@ fn parse_viewport_2d_mode(mode: &str) -> Option<Viewport2dMode> {
 )]
 pub(crate) fn selection_select(
     params: In<OperatorParameters>,
-    named: Query<(Entity, &Name), Without<crate::EditorEntity>>,
-    instances: Query<(Entity, &crate::prefab::IsA), (Without<Name>, Without<crate::EditorEntity>)>,
+    named: Query<(Entity, &Name), With<crate::scene_io::SceneEntity>>,
+    instances: Query<(Entity, &bevy::scene::SceneBase), (Without<Name>, With<crate::scene_io::SceneEntity>)>,
     authored: Query<(), Without<crate::EditorEntity>>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
@@ -2380,8 +2380,8 @@ pub(crate) fn selection_select(
 )]
 pub(crate) fn selection_extend(
     params: In<OperatorParameters>,
-    named: Query<(Entity, &Name), Without<crate::EditorEntity>>,
-    instances: Query<(Entity, &crate::prefab::IsA), (Without<Name>, Without<crate::EditorEntity>)>,
+    named: Query<(Entity, &Name), With<crate::scene_io::SceneEntity>>,
+    instances: Query<(Entity, &bevy::scene::SceneBase), (Without<Name>, With<crate::scene_io::SceneEntity>)>,
     mut selection: ResMut<Selection>,
     mut commands: Commands,
 ) -> OperatorResult {

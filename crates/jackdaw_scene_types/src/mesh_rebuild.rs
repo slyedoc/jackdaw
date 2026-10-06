@@ -10,6 +10,10 @@ use aurora_material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 use aurora_mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_geometry::compute_brush_geometry_from_planes;
 
+/// The material a brush face wears until one is assigned: the grid, as a file of its own so a
+/// save names it rather than writing an empty handle.
+pub const DEFAULT_BRUSH_MATERIAL: &str = "embedded://jackdaw_scene_types/default_brush.bsn";
+
 pub struct MeshRebuildPlugin;
 
 impl Plugin for MeshRebuildPlugin {
@@ -23,6 +27,53 @@ impl Plugin for MeshRebuildPlugin {
                 .chain(),
         );
         embedded_asset!(app, "../assets/jd_grid.png");
+    }
+}
+
+/// Register the default brush material and give every face that wears no material it, in the
+/// editor and the game alike.
+pub(crate) fn default_brush_material_plugin(app: &mut App) {
+    app.add_systems(Update, assign_default_brush_material);
+    let Some(embedded) = app
+        .world_mut()
+        .get_resource_mut::<bevy::asset::io::embedded::EmbeddedAssetRegistry>()
+    else {
+        return;
+    };
+    embedded.insert_asset(
+        std::path::PathBuf::new(),
+        std::path::Path::new("jackdaw_scene_types/jd_grid.png"),
+        include_bytes!("../assets/jd_grid.png"),
+    );
+    embedded.insert_asset(
+        std::path::PathBuf::new(),
+        std::path::Path::new("jackdaw_scene_types/default_brush.bsn"),
+        include_bytes!("../assets/default_brush.bsn"),
+    );
+}
+
+/// Give every brush face that wears no material the default one.
+fn assign_default_brush_material(
+    mut brushes: Query<&mut Brush, Changed<Brush>>,
+    assets: Res<AssetServer>,
+) {
+    let mut default = None;
+    for mut brush in &mut brushes {
+        if !brush
+            .faces
+            .iter()
+            .any(|face| face.material == Handle::default())
+        {
+            continue;
+        }
+        let material = default
+            .get_or_insert_with(|| assets.load::<AuroraMaterial>(DEFAULT_BRUSH_MATERIAL))
+            .clone();
+        for face in &mut brush.faces {
+            if face.material == Handle::default() {
+                face.material = material.clone();
+            }
+        }
     }
 }
 

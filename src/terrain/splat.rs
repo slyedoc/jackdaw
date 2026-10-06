@@ -555,7 +555,7 @@ fn refresh_control_maps(
     store: Res<TerrainDataStore>,
     view: Res<TerrainRegionView>,
     mut images: ResMut<Assets<Image>>,
-    terrains: Query<(Entity, &jackdaw_scene_types::Terrain)>,
+    terrains: Query<(Entity, &jackdaw_scene_types::Terrain), With<crate::scene_io::SceneEntity>>,
 ) {
     for (entity, terrain) in &terrains {
         let shape = store.grid_shape(terrain);

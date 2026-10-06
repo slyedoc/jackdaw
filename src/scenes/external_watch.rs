@@ -305,43 +305,23 @@ fn reload_tab_from_disk(world: &mut World, path: &Path) -> Result<(), RefusedRel
 
 /// Point the tab's own bookkeeping at the document read from disk.
 fn adopt_reloaded_document(world: &mut World, index: usize) {
-    let doc = world
-        .get_resource::<jackdaw_bsn::SceneBsnAst>()
-        .map(jackdaw_bsn::SceneBsnAst::deep_clone);
-    // The document that arrived decides the tab's kind: an outside edit can
-    // turn a scene file into a prefab.
-    let becomes_prefab = doc
-        .as_ref()
-        .is_some_and(crate::scenes::operators::document_is_prefab);
-    let path = world.resource::<Scenes>().tabs.get(index).and_then(|tab| {
-        becomes_prefab
-            .then(|| tab.path.clone())
-            .flatten()
-            .map(|path| crate::prefab::canonical_prefab_path(&path))
-    });
-    if let (Some(path), Some(doc)) = (path.as_ref(), doc.as_ref())
-        && world.contains_resource::<crate::prefab::PrefabAstCache>()
-    {
-        world
-            .resource_mut::<crate::prefab::PrefabAstCache>()
-            .insert(path.as_path(), doc.deep_clone());
-    }
-
+    let root_file = world
+        .resource::<Scenes>()
+        .tabs
+        .get(index)
+        .and_then(|tab| tab.path.as_ref())
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .is_some_and(|text| crate::bsn_files::is_root_file(&text));
     let mut scenes = world.resource_mut::<Scenes>();
     let Some(tab) = scenes.tabs.get_mut(index) else {
         return;
     };
-    match (path, doc) {
-        (Some(path), _) => {
-            tab.kind = TabKind::Prefab;
-            tab.content = TabContent::Prefab(path);
-        }
-        (None, Some(doc)) => {
-            tab.kind = TabKind::Scene;
-            tab.content = TabContent::Scene(Some(Box::new(doc)));
-        }
-        (None, None) => {}
-    }
+    tab.kind = if root_file {
+        TabKind::Prefab
+    } else {
+        TabKind::Scene
+    };
+    tab.content = TabContent::Live;
     tab.dirty = false;
     // The load cleared the undo stacks, so the tab's baseline is zero.
     tab.history_depth_at_last_check = 0;

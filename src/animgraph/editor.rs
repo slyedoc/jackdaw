@@ -227,7 +227,7 @@ pub(crate) fn plugin(app: &mut App) {
             scan_library.run_if(resource_changed::<AnimGraphRoot>),
             rebuild_browser,
             bind_when_loaded,
-            document::track_graph_document.run_if(resource_changed::<super::held::HeldGraph>),
+            document::track_graph_document,
             draw_canvas,
             highlight_selected,
             highlight_pins,
@@ -239,6 +239,8 @@ pub(crate) fn plugin(app: &mut App) {
             show_node_params,
             save_graph.run_if(graph_window_hovered),
             show_held_header,
+            // Before the clip's Esc, so one press leaves a timeline without leaving the graph.
+            step_out_of_graph.before(close_clip_timeline),
             close_clip_timeline,
         ),
     );
@@ -311,6 +313,40 @@ fn open_clip_timeline(world: &mut World, id: Uuid) {
     view.pan = Vec2::new(0.0, 12.0);
     view.zoom = 1.0;
     view.dirty = true;
+}
+
+/// Documents opened by double-clicking into a node, so Esc can step back out.
+#[derive(Resource, Default)]
+struct GraphTrail(Vec<std::path::PathBuf>);
+
+/// Double-click on a state machine node, graph node or state: open what it points at.
+fn open_linked(world: &mut World, asset_path: &str) {
+    let Some(assets) = world.resource::<super::AnimGraphRoot>().0.clone() else {
+        return;
+    };
+    let from = world
+        .resource::<super::held::HeldGraph>()
+        .0
+        .as_ref()
+        .map(|doc| doc.path.clone());
+    if let Some(from) = from {
+        world.get_resource_or_init::<GraphTrail>().0.push(from);
+    }
+    super::open_graph(world, &assets.join(asset_path));
+}
+
+/// Esc in a document opened from a node: back to the one it was opened from.
+fn step_out_of_graph(world: &mut World) {
+    if !world.resource::<ButtonInput<KeyCode>>().just_pressed(KeyCode::Escape)
+        || world.resource::<CanvasView>().clip.is_some()
+        || !pointer_over_graph_window(world)
+    {
+        return;
+    }
+    let Some(back) = world.get_resource_mut::<GraphTrail>().and_then(|mut t| t.0.pop()) else {
+        return;
+    };
+    super::open_graph(world, &back);
 }
 
 /// Esc on a clip opened from a graph: back to the graph.
@@ -616,7 +652,26 @@ fn rebuild_browser(
     }
     let mut rows = Vec::new();
     spawn_dir(&mut commands, &library.root, "", 0, &expanded.0, &mut rows);
-    commands.entity(browser).add_children(&rows);
+    attach(&mut commands, browser, None, rows);
+}
+
+/// Put freshly spawned widgets under `parent` (at `index`, else last), or drop them when the
+/// panel went away this frame: unparented, they would draw as UI roots at the window's corner.
+fn attach(commands: &mut Commands, parent: Entity, index: Option<usize>, children: Vec<Entity>) {
+    commands.queue(move |world: &mut World| {
+        if let Ok(mut parent) = world.get_entity_mut(parent) {
+            match index {
+                Some(index) => parent.insert_children(index, &children),
+                None => parent.add_children(&children),
+            };
+        } else {
+            for child in children {
+                if let Ok(child) = world.get_entity_mut(child) {
+                    child.despawn();
+                }
+            }
+        }
+    });
 }
 
 /// One row per directory, then one per file, depth-first. Only an expanded directory
@@ -1168,13 +1223,13 @@ fn draw_canvas(
         .iter()
         .map(|(from, to, color)| curve(&mut commands, to_px(*from), to_px(*to), zoom, *color))
         .collect();
-    commands.entity(canvas_entity).insert_children(0, &curves);
+    attach(&mut commands, canvas_entity, Some(0), curves);
     if !links_only {
         let boxes: Vec<Entity> = boxes
             .iter()
             .map(|boxed| spawn_box(&mut commands, boxed, to_px(boxed.pos), zoom))
             .collect();
-        commands.entity(canvas_entity).add_children(&boxes);
+        attach(&mut commands, canvas_entity, None, boxes);
     }
 }
 
@@ -1679,7 +1734,11 @@ fn spawn_box(commands: &mut Commands, boxed: &Boxed, px: Vec2, zoom: f32) -> Ent
             commands.queue(move |world: &mut World| {
                 document::select_node(world, id);
                 if double {
-                    open_clip_timeline(world, id);
+                    if document::clip_of_node(world, id).is_some() {
+                        open_clip_timeline(world, id);
+                    } else if let Some(path) = document::document_of_node(world, id) {
+                        open_linked(world, &path);
+                    }
                 }
             });
             },
@@ -1758,7 +1817,7 @@ fn draw_wire_preview(
     let Ok(canvas) = canvas.single() else {
         return;
     };
-    commands.spawn((
+    let preview = commands.spawn((
         WirePreview,
         Node {
             position_type: PositionType::Absolute,
@@ -1775,8 +1834,8 @@ fn draw_wire_preview(
             closed: false,
         },
         Pickable::IGNORE,
-        ChildOf(canvas),
-    ));
+    )).id();
+    attach(&mut commands, canvas, None, vec![preview]);
 }
 
 /// The pin a wiring drag started from, while it is in flight.
@@ -2342,7 +2401,7 @@ fn draw_timeline(
             .id(),
     );
 
-    commands.entity(canvas_entity).add_children(&children);
+    attach(commands, canvas_entity, None, children);
     info!(
         "timeline: {} tracks, {bars} events, {:.2}s",
         names.len(),
@@ -2634,7 +2693,7 @@ fn draw_ragdoll_list(
         ))
         .add_children(&rows)
         .id();
-    commands.entity(canvas_entity).add_child(panel);
+    attach(commands, canvas_entity, None, vec![panel]);
     info!(
         "ragdoll: {} bodies, {} colliders, {} joints",
         ragdoll.bodies.len(),

@@ -4,14 +4,14 @@
 //! `Tonemapping`, `ColorGrading`, `Fxaa`/`Smaa`/`Taa`, `Msaa` -- and drew the sky as a
 //! screen triangle wearing `SkyMaterial`. None of those exist on a ray tracer: the sky is
 //! evaluated in the miss shader, antialiasing is DLSS, and exposure is one camera component.
-//! So this reads the same authored `Environment` and writes aurora's sky (on the main world)
-//! and camera exposure instead.
+//! So this reads the same authored `Environment` and writes aurora's sky (on its world) and
+//! camera exposure instead.
 
 use bevy::prelude::*;
 use bevy_aurora::{
     auto_exposure::{AuroraExposure, FixedExposure},
     sky::{GradientSky, Sky as AuroraSky},
-    world::MainPhysicsWorldEntity,
+    world::{MainPhysicsWorldEntity, PhysicsWorld},
 };
 use jackdaw_scene_types::{Environment, Sky};
 
@@ -45,40 +45,46 @@ pub fn gradient_sky(sky: &Sky) -> GradientSky {
     }
 }
 
-/// The scene's sky onto the main world. The sun needs nothing here: aurora reads the scene's
-/// `DirectionalLight` (and its `SunDisk`) itself.
+/// Each scene's sky onto its world: the nearest `PhysicsWorld` above its `Environment`, else
+/// the main world. The sun needs nothing here: aurora reads the scene's `DirectionalLight` (and
+/// its `SunDisk`) itself.
 fn follow_the_scene_sky(
     mut commands: Commands,
-    environments: Query<&Environment>,
+    environments: Query<(Entity, &Environment)>,
     main_world: Res<MainPhysicsWorldEntity>,
+    parents: Query<&ChildOf>,
+    worlds: Query<(), With<PhysicsWorld>>,
     current: Query<(Option<&AuroraSky>, Option<&GradientSky>)>,
 ) {
-    let Some(environment) = environments.iter().next() else {
-        return;
-    };
-    let (sky, gradient) = current.get(main_world.0).unwrap_or((None, None));
-    // Guarded writes: inserting every frame would flag the components changed every frame.
-    if !environment.sky.enabled {
-        // A disabled sky is black, not absent -- a miss ray still has to be answered.
-        if !matches!(sky, Some(AuroraSky::Color { radiance }) if *radiance == Vec3::ZERO) {
-            commands.entity(main_world.0).insert(AuroraSky::Color {
-                radiance: Vec3::ZERO,
-            });
+    for (entity, environment) in &environments {
+        let world = parents
+            .iter_ancestors(entity)
+            .find(|&ancestor| worlds.contains(ancestor))
+            .unwrap_or(main_world.0);
+        let (sky, gradient) = current.get(world).unwrap_or((None, None));
+        // Guarded writes: inserting every frame would flag the components changed every frame.
+        if !environment.sky.enabled {
+            // A disabled sky is black, not absent -- a miss ray still has to be answered.
+            if !matches!(sky, Some(AuroraSky::Color { radiance }) if *radiance == Vec3::ZERO) {
+                commands.entity(world).insert(AuroraSky::Color {
+                    radiance: Vec3::ZERO,
+                });
+            }
+            continue;
         }
-        return;
-    }
-    if !matches!(sky, Some(AuroraSky::Gradient)) {
-        commands.entity(main_world.0).insert(AuroraSky::Gradient);
-    }
-    let next = gradient_sky(&environment.sky);
-    let same = gradient.is_some_and(|g| {
-        g.zenith == next.zenith
-            && g.zenith_nits == next.zenith_nits
-            && g.horizon == next.horizon
-            && g.ground == next.ground
-    });
-    if !same {
-        commands.entity(main_world.0).insert(next);
+        if !matches!(sky, Some(AuroraSky::Gradient)) {
+            commands.entity(world).insert(AuroraSky::Gradient);
+        }
+        let next = gradient_sky(&environment.sky);
+        let same = gradient.is_some_and(|g| {
+            g.zenith == next.zenith
+                && g.zenith_nits == next.zenith_nits
+                && g.horizon == next.horizon
+                && g.ground == next.ground
+        });
+        if !same {
+            commands.entity(world).insert(next);
+        }
     }
 }
 

@@ -15,7 +15,6 @@ use jackdaw_commands::EditorCommand;
 
 use crate::{EditorEntity, commands::CommandHistory, selection::Selection};
 
-const TAB_GROUP_TYPE_PATH: &str = "bevy_input_focus::tab_navigation::TabGroup";
 
 /// Add a registered widget to the open UI scene, as the Add menu's UI Widgets
 /// rows do.
@@ -43,7 +42,7 @@ const TAB_GROUP_TYPE_PATH: &str = "bevy_input_focus::tab_navigation::TabGroup";
 pub(crate) fn widget_add(
     params: In<OperatorParameters>,
     registry: Option<Res<WidgetRegistry>>,
-    ui_scenes: Query<(), crate::prefab::AuthoredUiSceneRoot>,
+    ui_scenes: Query<(), crate::instances::AuthoredUiSceneRoot>,
     mut commands: Commands,
 ) -> OperatorResult {
     let Some(definition_id) = params.as_str("name").map(str::to_string) else {
@@ -315,13 +314,12 @@ struct WidgetSlot {
 /// lowest entity, so the choice is stable across a session.
 pub fn ui_scene_root(world: &mut World) -> Option<Entity> {
     let candidates: Vec<Entity> = world
-        .query_filtered::<Entity, crate::prefab::AuthoredUiSceneRoot>()
+        .query_filtered::<Entity, crate::instances::AuthoredUiSceneRoot>()
         .iter(world)
         .collect();
-    let document = world.resource::<jackdaw_bsn::SceneBsnAst>();
     candidates
         .into_iter()
-        .filter(|&root| document.ast_for(root).is_some())
+        .filter(|&root| world.get::<crate::scene_io::SceneEntity>(root).is_some())
         .min()
 }
 
@@ -338,7 +336,6 @@ fn backfill_focus_group(world: &mut World) {
     }
     let group = TabGroup::default();
     world.entity_mut(root).insert(group);
-    crate::commands::sync_component_to_ast(world, root, TAB_GROUP_TYPE_PATH, &group);
 }
 
 /// Give the open UI scene's root the canvas-sized box the presets resolve
@@ -372,12 +369,6 @@ pub fn backfill_ui_root_size(world: &mut World) {
     if let Some(mut live) = world.get_mut::<Node>(root) {
         *live = node.clone();
     }
-    crate::commands::sync_component_to_ast(
-        world,
-        root,
-        crate::inspector::node_card::node_type_path(),
-        &node,
-    );
 }
 
 /// Whether `entity` is `root` or one of its descendants, and is an authored
@@ -399,9 +390,9 @@ fn is_in_ui_scene(world: &World, entity: Entity, root: Entity) -> bool {
 }
 
 /// Put `root` and everything under it into the scene document, parent before
-/// children. [`crate::scene_io::register_entity_in_ast`] links a node to its
+/// children. [`crate::scene_io::adopt_entity`] links a node to its
 /// parent only if the parent already has one, and
-/// `register_entities_in_ast` guarantees no such order.
+/// `adopt_entities` guarantees no such order.
 pub fn register_authored_subtree(world: &mut World, root: Entity) {
     let mut stack = vec![root];
     while let Some(entity) = stack.pop() {
@@ -409,7 +400,7 @@ pub fn register_authored_subtree(world: &mut World, root: Entity) {
             .get::<Children>(entity)
             .map(|children| children.iter().collect::<Vec<_>>())
             .unwrap_or_default();
-        crate::scene_io::register_entity_in_ast(world, entity);
+        crate::scene_io::adopt_entity(world, entity);
         stack.extend(children.into_iter().rev());
     }
 }
@@ -499,9 +490,6 @@ impl EditorCommand for InstantiateWidgetCommand {
             return;
         };
         crate::commands::deselect_entities(world, &[entity]);
-        world
-            .resource_mut::<jackdaw_bsn::SceneBsnAst>()
-            .remove_entity_node(entity);
         if let Ok(entity) = world.get_entity_mut(entity) {
             entity.despawn();
         }
@@ -531,7 +519,7 @@ pub fn seed_ui_scene_root(world: &mut World) -> Entity {
             ui_scene_root_node(),
         ))
         .id();
-    crate::scene_io::register_entity_in_ast(world, root);
+    crate::scene_io::adopt_entity(world, root);
     crate::selection::select_only(world, root);
     root
 }

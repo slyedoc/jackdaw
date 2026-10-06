@@ -460,25 +460,3 @@ fn a_terrain_gets_its_glyph_when_the_kind_lands_after_the_row() {
     );
 }
 
-/// Every `Node` is a container of some kind, so the rule saying so has to stand
-/// behind the rules that name kinds, including an extension's; answering first
-/// made every such rule unreachable.
-#[test]
-fn an_extension_rule_on_a_node_is_reachable_past_the_container_fallback() {
-    let mut app = palette_app();
-    let spawn_point = app
-        .world_mut()
-        .spawn((
-            Name::new("Spawn"),
-            jackdaw_multiplayer::SpawnPoint::default(),
-            Node::default(),
-        ))
-        .id();
-    app.update();
-
-    assert_eq!(
-        icon_of(&app, spawn_point),
-        Some(Icon::MapPin.unicode()),
-        "the extension's rule must be reachable on an entity the fallback also matches",
-    );
-}

@@ -9,12 +9,11 @@ mod util;
 
 mod animation_graph_document;
 mod asset_ingest;
+mod bsn_round_trip;
 mod bsn_scene_fixpoint;
 mod external_reload;
 mod headless;
 mod integration;
-mod jsn_conversion_commit;
-mod jsn_to_bsn;
 mod native_dialogs;
 mod scene_reopen;
 mod scenes_swap;

@@ -2,11 +2,8 @@
 //!
 //! `file.delete` confirms via a dialog before removing the path from disk,
 //! naming what would be left pointing at nothing, `asset.duplicate` copies one
-//! file beside itself, `asset.references` reports what points at a file,
-//! `file.convert_to_binary` and `file.convert_to_text` rewrite one document in
-//! the other form, and `project.export_binary` writes a whole tree out as
-//! binary for a shipped game. The Project window reaches these from its
-//! right-click menu.
+//! file beside itself, and `asset.references` reports what points at a file.
+//! The Project window reaches these from its right-click menu.
 
 use std::path::{Path, PathBuf};
 
@@ -46,23 +43,7 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<FileDeleteOp>();
     ctx.register_operator::<AssetDuplicateOp>();
     ctx.register_operator::<AssetReferencesOp>();
-    ctx.register_operator::<FileConvertToBinaryOp>();
-    ctx.register_operator::<FileConvertToTextOp>();
-    ctx.register_operator::<ProjectExportBinaryOp>();
 }
-
-/// The folder an export writes into when none is named: a sibling of the tree.
-fn default_export_dir(source: &Path) -> PathBuf {
-    let name = source
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "assets".to_string());
-    source
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(format!("{name}-binary"))
-}
-
 /// Confirm and delete a file or directory from disk. The path is taken either
 /// from the `path` param (preferred) or, if absent, from the file the Project
 /// window has selected.
@@ -299,7 +280,7 @@ fn next_free_stem(parent: &Path, stem: &str, suffix: &str) -> String {
     for counter in 1..1000 {
         let candidate = format!("{base}_{counter}");
         let file = parent.join(format!("{candidate}{suffix}"));
-        if !file.exists() && jackdaw_bsn::existing_form(&file).is_none() {
+        if !file.exists() {
             return candidate;
         }
     }
@@ -390,7 +371,6 @@ fn body_starts_at(lines: &[String]) -> usize {
 /// landed.
 fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<PathBuf> {
     let path = crate::definition_assets::resolve_project_path(world, path);
-    let path = jackdaw_bsn::existing_form(&path).unwrap_or(path);
     if !path.is_file() {
         warn_caller(
             world,
@@ -401,13 +381,13 @@ fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<
     let parent = path.parent()?.to_path_buf();
     let suffix = file_suffix(&path);
     let stem = match name {
-        Some(name) => crate::definition_assets::sanitize_definition_name(&jackdaw_bsn::path_stem(
+        Some(name) => crate::definition_assets::sanitize_definition_name(&crate::bsn_files::path_stem(
             Path::new(name),
         )),
-        None => next_free_stem(&parent, &jackdaw_bsn::path_stem(&path), &suffix),
+        None => next_free_stem(&parent, &crate::bsn_files::path_stem(&path), &suffix),
     };
     let target = parent.join(format!("{stem}{suffix}"));
-    if target.exists() || jackdaw_bsn::existing_form(&target).is_some() {
+    if target.exists() {
         warn_caller(
             world,
             format!("asset.duplicate: {} is already there", target.display()),
@@ -418,7 +398,7 @@ fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<
         let kinds = world.resource::<AssetKinds>();
         crate::asset_files::read_asset_kind(&path, kinds)
     };
-    if !jackdaw_bsn::is_document_path(&path) {
+    if !crate::bsn_files::is_document_path(&path) {
         if let Err(err) = std::fs::copy(&path, &target) {
             warn_caller(
                 world,
@@ -430,7 +410,7 @@ fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<
             return None;
         }
     } else {
-        let text = match jackdaw_bsn::read_document_text(&path) {
+        let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
             Err(err) => {
                 warn_caller(world, format!("asset.duplicate: {err}"));
@@ -441,9 +421,7 @@ fn duplicate_file(world: &mut World, path: &Path, name: Option<&str>) -> Option<
             AssetFileKind::Asset { .. } => with_root_named(&text, &stem),
             _ => text,
         };
-        let written = jackdaw_bsn::document_bytes(&target, &text)
-            .map_err(std::io::Error::other)
-            .and_then(|bytes| crate::scene_io::save::write_atomic(&target, &bytes));
+        let written = crate::scene_io::save::write_atomic(&target, text.as_bytes());
         if let Err(err) = written {
             warn_caller(
                 world,
@@ -508,146 +486,4 @@ pub fn asset_references(params: In<OperatorParameters>, mut commands: Commands) 
         report_to_caller(world, message);
     });
     OperatorResult::Finished
-}
-
-/// Rewrite one document as its binary twin, in place.
-#[operator(
-    id = "file.convert_to_binary",
-    label = "Convert to Binary",
-    description = "Rewrite one BSN document in the binary form, removing the text file.",
-    allows_undo = false,
-    params(path(String, doc = "The document to convert."))
-)]
-pub fn file_convert_to_binary(
-    params: In<OperatorParameters>,
-    scenes: Option<Res<crate::scenes::Scenes>>,
-) -> OperatorResult {
-    convert_document(
-        params.as_str("path"),
-        jackdaw_bsn::DocumentForm::Binary,
-        scenes.as_deref(),
-    )
-}
-
-/// Rewrite one document as `.bsn` text, in place.
-#[operator(
-    id = "file.convert_to_text",
-    label = "Convert to Text",
-    description = "Rewrite one BSN document in the text form, removing the binary file.",
-    allows_undo = false,
-    params(path(String, doc = "The document to convert."))
-)]
-pub fn file_convert_to_text(
-    params: In<OperatorParameters>,
-    scenes: Option<Res<crate::scenes::Scenes>>,
-) -> OperatorResult {
-    convert_document(
-        params.as_str("path"),
-        jackdaw_bsn::DocumentForm::Text,
-        scenes.as_deref(),
-    )
-}
-
-fn convert_document(
-    path: Option<&str>,
-    to: jackdaw_bsn::DocumentForm,
-    scenes: Option<&crate::scenes::Scenes>,
-) -> OperatorResult {
-    let Some(path) = path.map(PathBuf::from) else {
-        warn!("convert: no path provided");
-        return OperatorResult::Cancelled;
-    };
-    if !jackdaw_bsn::is_document_path(&path) {
-        warn!("convert: {} is not a BSN document", path.display());
-        return OperatorResult::Cancelled;
-    }
-    if scenes.is_some_and(|scenes| is_open_in_a_tab(scenes, &path)) {
-        warn!(
-            "convert: {} is open; close its tab before changing the form it is held in",
-            path.display()
-        );
-        return OperatorResult::Cancelled;
-    }
-    let converted = match to {
-        jackdaw_bsn::DocumentForm::Binary => jackdaw_bsn::convert_to_binary(&path),
-        jackdaw_bsn::DocumentForm::Text => jackdaw_bsn::convert_to_text(&path),
-    };
-    match converted {
-        Ok(written) => {
-            info!("{} is now {}", path.display(), written.display());
-            OperatorResult::Finished
-        }
-        Err(err) => {
-            warn!("convert: {err}");
-            OperatorResult::Cancelled
-        }
-    }
-}
-
-/// Whether a tab holds the document at `path`, whose file a conversion moves.
-fn is_open_in_a_tab(scenes: &crate::scenes::Scenes, path: &Path) -> bool {
-    let held = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    scenes.tabs.iter().any(|tab| {
-        tab.path
-            .as_ref()
-            .map(|open| open.canonicalize().unwrap_or_else(|_| open.clone()))
-            .is_some_and(|open| open == held)
-    })
-}
-
-/// Write a tree of documents out in the binary form, for a shipped game.
-#[operator(
-    id = "project.export_binary",
-    label = "Export Binary Assets",
-    description = "Write every BSN document under a folder out in the binary form, leaving the \
-                   source files as they are and copying everything else through.",
-    allows_undo = false,
-    params(
-        path(
-            String,
-            doc = "The folder to convert. Defaults to the project's assets folder."
-        ),
-        out(
-            String,
-            doc = "The folder to write into. Defaults to a sibling of the source."
-        )
-    )
-)]
-pub fn project_export_binary(
-    params: In<OperatorParameters>,
-    project: Option<Res<crate::project::ProjectRoot>>,
-) -> OperatorResult {
-    let source = params
-        .as_str("path")
-        .map(PathBuf::from)
-        .or_else(|| project.as_ref().map(|project| project.assets_dir()));
-    let Some(source) = source else {
-        warn!("project.export_binary: no folder to convert");
-        return OperatorResult::Cancelled;
-    };
-    if !source.is_dir() {
-        warn!(
-            "project.export_binary: {} is not a folder",
-            source.display()
-        );
-        return OperatorResult::Cancelled;
-    }
-    let destination = params
-        .as_str("out")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| default_export_dir(&source));
-    match jackdaw_bsn::export_binary(&source, &destination) {
-        Ok(converted) => {
-            info!(
-                "exported {converted} documents from {} into {}",
-                source.display(),
-                destination.display()
-            );
-            OperatorResult::Finished
-        }
-        Err(err) => {
-            warn!("project.export_binary: {err}");
-            OperatorResult::Cancelled
-        }
-    }
 }

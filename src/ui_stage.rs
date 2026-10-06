@@ -39,7 +39,7 @@ use crate::{
     EditorEntity,
     canvas_snap::CanvasSnap,
     commands::push_layout_edits,
-    prefab::AuthoredUiSceneRoot,
+    instances::AuthoredUiSceneRoot,
     selection::Selection,
     viewport_2d::{
         CanvasRuler, Scene2dViewport, Viewport2dMode, Viewport2dPanelHost, cursor_stage_offset,

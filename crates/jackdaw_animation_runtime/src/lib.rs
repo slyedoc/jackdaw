@@ -94,7 +94,8 @@ fn arm_rigs(
                     continue;
                 };
                 path.push(name.as_str());
-                commands.entity(entity).insert((
+                // The editor may respawn the rig this frame; a vanished bone is simply skipped.
+                commands.entity(entity).try_insert((
                     AnimationTargetId::from_iter(path.iter().copied()),
                     AnimatedBy(root),
                 ));
@@ -103,7 +104,7 @@ fn arm_rigs(
                 }
             }
         }
-        commands.entity(root).insert((
+        commands.entity(root).try_insert((
             AnimationGraphPlayer::new(rig.skeleton.clone()).with_graph(rig.graph.clone()),
             RigArmed {
                 graph: current.0,
@@ -119,6 +120,12 @@ pub struct AnimationRuntimePlugin;
 
 impl Plugin for AnimationRuntimePlugin {
     fn build(&self, app: &mut App) {
+        // A game on plain `DefaultPlugins` has no graph runtime of its own.
+        if !app.is_plugin_added::<bevy_animation_graph::AnimationGraphPlugin>()
+            && !app.is_plugin_added::<bevy_animation_graph::core::plugin::AnimationGraphCorePlugin>()
+        {
+            app.add_plugins(bevy_animation_graph::AnimationGraphPlugin::default());
+        }
         register_animation_types(app);
         app.add_message::<AnimationEvent>()
             .add_systems(Update, (arm_rigs, fire_clip_events));

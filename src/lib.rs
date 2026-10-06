@@ -17,14 +17,12 @@ pub mod asset_drag;
 pub mod asset_files;
 pub mod asset_index;
 pub mod asset_ingest;
-pub mod asset_migration;
 pub mod authored_widgets;
 pub mod boot_ops;
 pub mod brush;
+pub mod bsn_files;
 pub mod brush_drag_ops;
 pub mod brush_element_ops;
-pub mod build_panel;
-pub mod build_status;
 pub mod builtin_extensions;
 pub mod clip_ops;
 pub mod command_palette;
@@ -41,7 +39,6 @@ pub mod entity_ops;
 pub mod environment_ops;
 pub mod face_grid;
 pub mod frame_work;
-pub mod game_panel;
 pub mod gizmo_ops;
 pub mod gizmos;
 pub mod grid_ops;
@@ -52,11 +49,9 @@ pub mod infinite_grid;
 pub mod input_contexts;
 pub mod inspector;
 pub mod io_pool;
-pub mod jsn_to_bsn;
 pub mod keybind_focus;
 pub mod keybind_settings;
 pub mod keybinds;
-pub mod migrate_dialog;
 pub mod new_asset;
 pub mod panel_focus;
 
@@ -73,20 +68,12 @@ pub mod canvas_snap;
 pub mod core_extension;
 pub mod dock_ops;
 pub mod document_ops;
-pub mod ext_build;
 mod extension_lifecycle;
 pub mod extension_resolution;
 pub mod extensions_dialog;
 pub mod file_ops;
 pub mod fps_overlay;
-pub mod hot_reload;
 pub mod layout;
-pub mod live_edits;
-pub mod live_edits_ui;
-pub mod live_frame;
-pub mod live_frame_view;
-pub mod live_highlight;
-pub mod live_input;
 pub mod material_assets;
 pub mod material_browser;
 pub mod material_overrides;
@@ -99,44 +86,29 @@ pub mod modal_inputs;
 pub mod modal_transform;
 pub mod modifier_ops;
 pub mod native_dialog;
-pub mod new_project;
 pub mod numeric_transform;
 pub mod operator_tooltip;
 pub mod perf_probe;
 pub mod physics_brush_bridge;
 pub mod physics_tool;
-pub mod pie;
-pub mod pie_menu;
-pub mod pie_mirror;
-pub mod pie_projection;
-pub mod play_settings;
-pub mod prefab;
-pub mod preflight;
+pub mod instances;
 pub mod preview_context;
 pub(crate) mod preview_model;
 pub mod project;
-pub mod project_build;
-pub mod project_definitions;
 pub mod project_select;
 pub mod project_settings;
+// TODO(bsn-consolidation): always empty now; delete with the schema-only inspector paths.
 pub mod project_types;
 pub mod project_window;
 pub mod reference_image;
 pub mod reflect_default;
-pub mod remote;
-pub mod remote_ops;
+pub mod run_game;
 pub mod restart;
-pub mod run_config;
-pub mod scaffold;
 pub mod scene_io;
 pub mod scene_ops;
 pub mod scenes;
-pub mod schema_preview;
-pub mod schema_values;
 pub mod screenshot;
 pub mod scrolling_log;
-pub mod sdk_paths;
-pub mod sdk_setup;
 pub mod selection;
 pub mod snapping;
 pub mod status_bar;
@@ -190,7 +162,6 @@ use jackdaw_api_internal::{
 pub use jackdaw_camera;
 use jackdaw_feathers::EditorFeathersPlugin;
 use jackdaw_feathers::dialog::EditorDialog;
-pub use jackdaw_loader::DylibLoaderPlugin;
 use jackdaw_widgets::menu_bar::MenuAction;
 use selection::Selection;
 
@@ -198,7 +169,7 @@ use selection::Selection;
 pub mod prelude {
     pub use crate::windowing::{editor_window_plugin, primary_window_attributes};
     pub use crate::{
-        AppState, DylibLoaderPlugin, EditorCategory, EditorCorePlugin, EditorDescription,
+        AppState, EditorCategory, EditorCorePlugin, EditorDescription,
         EditorHidden, EditorPreview, ExtensionPlugin, JackdawEditorPlugins, SkipSerialization,
     };
     pub use jackdaw_api::prelude::*;
@@ -405,10 +376,8 @@ impl Plugin for EditorCorePlugin {
             jackdaw_scene_types::SceneTypesPlugin {
                 runtime_mesh_rebuild: false,
             },
-            jackdaw_bsn::BsnDocumentPlugin,
             (
                 project_select::ProjectSelectPlugin,
-                sdk_setup::SdkSetupPlugin,
                 scrolling_log::ScrollingLogPlugin,
                 inspector::InspectorPlugin,
                 hierarchy::HierarchyPlugin,
@@ -436,8 +405,7 @@ impl Plugin for EditorCorePlugin {
                 jackdaw_localization::LocalizationPlugin,
             ),
         ))
-        .add_plugins(prefab::PrefabPlugin)
-        .add_plugins(prefab::watcher::PrefabWatcherPlugin)
+        .add_plugins(instances::plugin)
         // TODO(aurora): these asset collections are normally created by the
         // `MaterialPlugin`s that are off on this branch (AURORA.md item 2) -- and
         // `Assets<AuroraMaterial>` by `PbrPlugin`, which goes with bevy's DefaultPlugins.
@@ -451,16 +419,13 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(file_ops::FileOpsPlugin)
         .add_plugins(keybinds::KeybindsPlugin)
         .add_plugins(keybind_settings::KeybindSettingsPlugin)
-        .add_plugins(play_settings::PlaySettingsPlugin)
         .add_plugins(panel_focus::PanelFocusPlugin)
         .add_plugins((
             (
                 viewport_overlays::ViewportOverlaysPlugin,
-                schema_preview::SchemaPreviewPlugin,
                 type_metadata::TypeMetadataPlugin,
                 view_modes::ViewModesPlugin,
                 status_bar::StatusBarPlugin,
-                build_panel::BuildPanelPlugin,
                 project_window::ProjectWindowPlugin,
                 modal_transform::ModalTransformPlugin,
             ),
@@ -473,7 +438,6 @@ impl Plugin for EditorCorePlugin {
                 material_ui::plugin,
                 canvas_snap::plugin,
                 undo_snapshot::plugin,
-                migrate_dialog::plugin,
             ),
         ))
         .add_plugins((
@@ -489,8 +453,6 @@ impl Plugin for EditorCorePlugin {
             reference_image::ReferenceImagePlugin,
             jackdaw_widgets::RadialMenuPlugin,
             mesh_quick_menu::MeshQuickMenuPlugin,
-            remote::RemoteConnectionPlugin,
-            remote::debug::RemoteDebugPlugin,
             camera_settings::plugin,
         ))
         .add_plugins(native_dialog::NativeDialogPlugin)
@@ -519,14 +481,8 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(input_contexts::InputContextsPlugin)
         .add_plugins(jackdaw_api_internal::ExtensionLoaderPlugin)
         .add_plugins(extensions_dialog::ExtensionsDialogPlugin)
-        .add_plugins(hot_reload::HotReloadPlugin)
-        .add_plugins(pie::PiePlugin)
-        .add_plugins(live_frame_view::LiveFrameViewPlugin)
-        .add_plugins(live_input::LiveInputPlugin)
-        .add_plugins(game_panel::GamePanelPlugin)
-        .add_plugins(live_edits_ui::LiveEditsUiPlugin)
-        .add_plugins(pie_menu::PieMenuPlugin)
         .add_plugins(dock_ops::DockOpsPlugin)
+        .add_plugins(run_game::plugin)
         // Force-exit on `AppExit`: bypass wgpu device cleanup
         // and AsyncComputeTaskPool shutdown that otherwise hang
         // the process after window close. Hosted here so every
@@ -549,7 +505,7 @@ impl Plugin for EditorCorePlugin {
             Update,
             EditorInteractionSystems
                 .run_if(in_state(AppState::Editor))
-                .run_if(no_dialog_open.and_then(crate::live_edits_ui::stop_prompt_closed)),
+                .run_if(no_dialog_open),
         )
         .configure_sets(
             PostUpdate,
@@ -561,14 +517,12 @@ impl Plugin for EditorCorePlugin {
         )
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(jackdaw_api_internal::load_active_keymap_preset())
+        .init_resource::<project_types::ProjectTypes>()
         .init_resource::<layout::ActiveDocument>()
         .init_resource::<layout::SceneViewPreset>()
         .init_resource::<asset_catalog::AssetCatalog>()
+        .init_resource::<jackdaw_runtime::JackdawCatalog>()
         .init_resource::<MenuBarDirty>()
-        // Always available so the Extensions dialog's runtime
-        // "Install from file" path can push into it even when
-        // `with_dylib_loader()` wasn't called.
-        .init_resource::<jackdaw_loader::LoadedDylibs>()
         .add_observer(flag_menu_dirty_on_window_add)
         .add_observer(flag_menu_dirty_on_window_remove)
         .add_observer(flag_menu_dirty_on_menu_entry_add)
@@ -582,13 +536,6 @@ impl Plugin for EditorCorePlugin {
                 populate_menu,
             )
                 .chain(),
-        )
-        .add_systems(
-            OnEnter(AppState::Editor),
-            (
-                run_config::read_run_configs,
-                project_definitions::register_project_definitions,
-            ),
         )
         // Outside the editor state, since the launcher opens and closes
         // projects too.
@@ -605,12 +552,6 @@ impl Plugin for EditorCorePlugin {
                 layout::update_grid_size_label,
                 layout::update_active_document_display,
                 layout::update_tab_strip_highlights,
-                layout::update_pie_view_toggle_appearance,
-                layout::update_pie_view_header_accent,
-                layout::update_save_to_scene_button,
-                layout::update_pie_instance_cycle_button,
-                layout::update_window_mode_button,
-                layout::update_live_badge,
                 auto_hide_internal_entities,
                 register_animation_entities_in_ast,
                 drop_imported_clip_entities.after(register_animation_entities_in_ast),
@@ -686,11 +627,9 @@ impl Plugin for ExtensionPlugin {
                 .register_extension::<builtin_extensions::ViewportExtension>()
                 .register_extension::<builtin_extensions::UiPaletteExtension>()
                 .register_extension::<builtin_extensions::ProjectWindowExtension>()
-                .register_extension::<builtin_extensions::GamePanelExtension>()
                 .register_extension::<builtin_extensions::TimelineExtension>()
                 .register_extension::<animgraph::AnimationGraphExtension>()
                 .register_extension::<builtin_extensions::TerminalExtension>()
-                .register_extension::<build_panel::BuildPanelExtension>()
                 .register_extension::<builtin_extensions::InspectorExtension>()
                 .add_plugins(test_input::plugin)
                 .register_extension::<test_input::TestInputExtension>();
@@ -702,11 +641,6 @@ impl Plugin for ExtensionPlugin {
         // extension. No lightyear is compiled into the editor here. Kept a
         // separate gated `if` so the cfg stays localized off the method chain
         // above; `ExtensionAppExt` is already in scope from the `use` above.
-        #[cfg(feature = "multiplayer")]
-        if self.enable_builtin_extensiosn {
-            app.add_plugins(jackdaw_multiplayer::JackdawMultiplayerTypesPlugin)
-                .register_extension::<jackdaw_multiplayer_editor::MultiplayerExtension>();
-        }
 
         // Bundled behind the default-on `camera_rig` feature: registers the
         // authorable camera-rig component types (ThirdPersonCamera / FirstPersonCamera /
@@ -777,14 +711,15 @@ fn auto_hide_internal_entities(
             Without<EditorEntity>,
             Without<EditorHidden>,
             Without<brush::BrushMeshChunk>,
-            Without<prefab::IsA>,
+            Without<bevy::scene::SceneBase>,
         ),
     >,
     parent_query: Query<&ChildOf>,
     gltf_sources: Query<(), With<entity_ops::GltfSource>>,
+    tab_worlds: Query<(), With<avian3d::world::PhysicsWorld>>,
 ) {
     for (entity, name, parent) in &new_entities {
-        if name.is_none() && parent.is_some() {
+        if name.is_none() && parent.is_some_and(|parent| !tab_worlds.contains(parent.0)) {
             // Skip GLTF descendants, they'll be shown in the hierarchy.
             let mut current = entity;
             let mut is_gltf_descendant = false;
@@ -1996,10 +1931,10 @@ fn sync_selected_keyframes_from_selection(
 }
 
 /// Observer: when the timeline header's duration field commits,
-/// route the edit through `SetBsnField` so it flows through the
+/// route the edit through `SetField` so it flows through the
 /// document and participates in undo/redo + save/load. This is the
 /// hand-off point between the animation crate (which can't import
-/// `SetBsnField`) and the editor binary.
+/// `SetField`) and the editor binary.
 fn on_duration_input_commit(
     event: On<jackdaw_feathers::text_edit::TextEditCommitEvent>,
     duration_inputs: Query<&jackdaw_animation::TimelineDurationInput>,
@@ -2042,13 +1977,12 @@ fn on_duration_input_commit(
             .remove_resource::<jackdaw_commands::CommandHistory>()
             .unwrap_or_default();
         history.execute(
-            Box::new(commands::SetBsnField {
+            Box::new(commands::SetField {
                 entity: clip_entity,
                 type_path: "jackdaw_animation::clip::Clip".to_string(),
                 field_path: "duration".to_string(),
-                old_value: Some(jackdaw_bsn::BsnValue::Float(f64::from(old_duration))),
-                new_value: jackdaw_bsn::BsnValue::Float(f64::from(new_value)),
-                was_derived: false,
+                old_value: Some(Box::new(old_duration)),
+                new_value: Box::new(new_value),
             }),
             world,
         );
@@ -2059,7 +1993,7 @@ fn on_duration_input_commit(
 /// After the animation crate spawns new clip/track/keyframe entities,
 /// register them in the JSN AST so they participate in save/load and
 /// undo/redo snapshotting. Runs every frame; cheap because
-/// `register_entity_in_ast` is a no-op for already-registered entities.
+/// `adopt_entity` is a no-op for already-registered entities.
 fn register_animation_entities_in_ast(
     world: &mut World,
     params: &mut QueryState<
@@ -2078,7 +2012,7 @@ fn register_animation_entities_in_ast(
 ) {
     let entities: Vec<Entity> = params.iter(world).collect();
     for entity in entities {
-        scene_io::register_entity_in_ast(world, entity);
+        scene_io::adopt_entity(world, entity);
     }
 }
 
@@ -2251,21 +2185,10 @@ fn populate_menu(
         .copied()
         .unwrap_or_default();
 
-    // Current hot-reload state ->reflect in the menu label.
-    let hot_reload_on = world
-        .get_resource::<hot_reload::HotReloadEnabled>()
-        .map(|h| h.0)
-        .unwrap_or(false);
-    let hot_reload_label = if hot_reload_on {
-        "Hot Reload: On"
-    } else {
-        "Hot Reload: Off"
-    };
-
     let mut menu_items = [
         (
             TopLevelMenu::File,
-            file_menu_rows(hot_reload_label, recent_projects_rows()),
+            file_menu_rows(recent_projects_rows()),
         ),
         (
             TopLevelMenu::Edit,
@@ -2632,7 +2555,7 @@ fn section_label(name: &str) -> (String, String) {
 }
 
 /// The File menu: entries and dividers, no headings.
-fn file_menu_rows(hot_reload_label: &str, recent: Vec<(String, String)>) -> Vec<(String, String)> {
+fn file_menu_rows(recent: Vec<(String, String)>) -> Vec<(String, String)> {
     [
         new_scene_rows(),
         vec![op_entry::<crate::scenes::operators::SceneOpenOp>("Open")],
@@ -2647,7 +2570,6 @@ fn file_menu_rows(hot_reload_label: &str, recent: Vec<(String, String)>) -> Vec<
             separator(),
             op_entry::<app_ops::AppOpenKeybindsOp>("Keybinds..."),
             op_entry::<app_ops::AppOpenExtensionsOp>("Extensions..."),
-            op_entry::<app_ops::AppToggleHotReloadOp>(hot_reload_label),
             op_entry::<app_ops::AppGoHomeOp>("Home"),
         ],
     ]
@@ -2865,7 +2787,6 @@ fn cleanup_editor(world: &mut World) {
     world.insert_resource(commands::CommandHistory::default());
     world.insert_resource(asset_catalog::AssetCatalog::default());
     world.insert_resource(material_assets::MaterialRegistry::default());
-    project_definitions::forget_project_definitions(world);
     world.insert_resource(asset_files::AssetKindCache::default());
     world.insert_resource(asset_index::AssetIndex::default());
     world.insert_resource(definition_assets::OpenDefinition::default());
@@ -4006,7 +3927,7 @@ mod file_menu_tests {
 
     #[test]
     fn the_file_menu_names_no_sections() {
-        let rows = file_menu_rows("Hot Reload: On", recent());
+        let rows = file_menu_rows(recent());
         assert!(
             !rows
                 .iter()
@@ -4021,7 +3942,7 @@ mod file_menu_tests {
 
     #[test]
     fn the_recent_projects_are_a_group_of_the_menus_two() {
-        let rows = file_menu_rows("Hot Reload: On", recent());
+        let rows = file_menu_rows(recent());
         let openers = rows
             .iter()
             .filter(|(action, _)| action.starts_with(SUBMENU_ACTION_PREFIX))
@@ -4085,7 +4006,6 @@ mod file_menu_tests {
     #[test]
     fn an_empty_recent_list_is_no_group_at_all() {
         let rows = file_menu_rows(
-            "Hot Reload: Off",
             vec![op_entry::<scene_ops::SceneOpenRecentOp>("Open Recent...")],
         );
         assert!(
@@ -4105,7 +4025,7 @@ mod file_menu_tests {
     fn the_new_group_offers_the_three_scene_kinds() {
         use jackdaw_feathers::button::ButtonOperatorCall;
 
-        let rows = file_menu_rows("Hot Reload: On", recent());
+        let rows = file_menu_rows(recent());
         let open = rows
             .iter()
             .position(|(action, _)| action == &format!("{SUBMENU_ACTION_PREFIX}New"))
@@ -4286,3 +4206,5 @@ mod extension_menu_tests {
         assert_eq!(actions(&rows), vec!["##Terrain", "op:terrain.paint"]);
     }
 }
+
+

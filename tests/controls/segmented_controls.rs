@@ -17,8 +17,6 @@ use bevy::ui::Checked;
 use bevy::ui_widgets::{RadioButton, RadioGroup};
 use bevy::window::{PrimaryWindow, WindowRef};
 
-use jackdaw::game_panel::{GameModeSegment, GamePanelMode, game_panel_content};
-use jackdaw::pie_mirror::{PieViewMode, PieViewSegment};
 
 /// Click `entity` the way a user does: the `PointerClick` the radio
 /// widget is watching for.
@@ -78,94 +76,6 @@ fn assert_is_a_segment(app: &App, segment: Entity) {
         app.world().get::<RadioGroup>(bar).is_some(),
         "the bar the segments share is the radio group",
     );
-}
-
-fn game_app() -> App {
-    let mut app = util::editor_test_app();
-    app.world_mut().spawn(game_panel_content());
-    app.update();
-    app
-}
-
-/// The Play/Select bar is a radio group, and the mode the panel is in is
-/// the checked segment.
-#[test]
-fn the_game_mode_bar_is_a_radio_group() {
-    let mut app = game_app();
-
-    let play = segment_of(&mut app, &GameModeSegment::Play);
-    let select = segment_of(&mut app, &GameModeSegment::Select);
-    assert_is_a_segment(&app, play);
-    assert_is_a_segment(&app, select);
-
-    app.update();
-    let checked = if *app.world().resource::<GamePanelMode>() == GamePanelMode::Play {
-        play
-    } else {
-        select
-    };
-    assert!(
-        app.world().get::<Checked>(checked).is_some(),
-        "the mode the panel is in is the checked segment",
-    );
-}
-
-/// Clicking a segment moves the panel's mode, the effect the bar existed
-/// for before it was a radio group.
-#[test]
-fn clicking_a_game_mode_segment_moves_the_mode() {
-    let mut app = game_app();
-    let start = *app.world().resource::<GamePanelMode>();
-    let other = match start {
-        GamePanelMode::Play => GameModeSegment::Select,
-        GamePanelMode::Select => GameModeSegment::Play,
-    };
-    let wanted = match other {
-        GameModeSegment::Play => GamePanelMode::Play,
-        GameModeSegment::Select => GamePanelMode::Select,
-    };
-
-    let segment = segment_of(&mut app, &other);
-    click(&mut app, segment);
-    app.update();
-
-    assert_eq!(
-        *app.world().resource::<GamePanelMode>(),
-        wanted,
-        "the click reached the mode through the group",
-    );
-    assert!(
-        app.world().get::<Checked>(segment).is_some(),
-        "and the segment it named is now the checked one",
-    );
-}
-
-/// The Scene/Live toggle is a radio group too, with Scene checked while
-/// the editor is showing the authored scene.
-#[test]
-fn the_scene_live_toggle_is_a_radio_group() {
-    let mut app = util::editor_test_app();
-    app.world_mut()
-        .spawn(jackdaw::layout::hierarchy_content(default()));
-    app.update();
-    // The appearance pass is scheduled behind `AppState::Editor`, which a
-    // headless test never enters.
-    app.world_mut()
-        .run_system_cached(jackdaw::layout::update_pie_view_toggle_appearance)
-        .expect("the toggle's appearance pass runs");
-    app.update();
-
-    let scene = segment_of(&mut app, &PieViewSegment::Scene);
-    let live = segment_of(&mut app, &PieViewSegment::Live);
-    assert_is_a_segment(&app, scene);
-    assert_is_a_segment(&app, live);
-
-    assert_eq!(*app.world().resource::<PieViewMode>(), PieViewMode::Scene);
-    assert!(
-        app.world().get::<Checked>(scene).is_some(),
-        "the view the editor is in is the checked segment",
-    );
-    assert!(app.world().get::<Checked>(live).is_none());
 }
 
 /// The workspace tab strip is a radio group: the strip is the group,

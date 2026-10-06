@@ -220,7 +220,7 @@ fn file_name(path: &Path) -> String {
 /// The name a document's first root carries, which is what a scene or a prefab
 /// is called wherever it is used.
 fn root_name(path: &Path) -> Option<String> {
-    let text = jackdaw_bsn::read_document_text(path).ok()?;
+    let text = crate::bsn_files::read_document_text(path).ok()?;
     text.lines()
         .filter_map(|line| line.trim().strip_prefix('#'))
         .map(str::trim)
@@ -288,10 +288,10 @@ fn fill_body(world: &mut World, body: Entity, path: &Path, kind: &AssetFileKind)
         return;
     }
 
-    let is_document = matches!(kind, AssetFileKind::Prefab) || jackdaw_bsn::is_document_path(path);
+    let is_document = matches!(kind, AssetFileKind::Prefab) || crate::bsn_files::is_document_path(path);
     spawn_row(world, body, "Path", &shown_path);
     if is_document {
-        let name = root_name(path).unwrap_or_else(|| jackdaw_bsn::path_stem(path));
+        let name = root_name(path).unwrap_or_else(|| crate::bsn_files::path_stem(path));
         let label = match kind {
             AssetFileKind::Prefab => "Prefab",
             _ => "Scene",

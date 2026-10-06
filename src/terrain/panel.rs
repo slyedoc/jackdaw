@@ -1418,7 +1418,7 @@ fn spawn_slot_editor(
     refs: &TexturesTabRefs,
 ) {
     let icon_font = refs.icon_font.0.clone();
-    let name = jackdaw_bsn::asset_stem(&slot.material);
+    let name = crate::bsn_files::asset_stem(&slot.material);
     let handle = crate::material_assets::material_of_reference(
         refs.index.as_deref(),
         &refs.registry,
@@ -2996,7 +2996,7 @@ mod tests {
                 },
             ))
             .id();
-        crate::scene_io::register_entity_in_ast(world, terrain);
+        crate::scene_io::adopt_entity(world, terrain);
         world.insert_resource(Selection {
             entities: vec![terrain],
         });

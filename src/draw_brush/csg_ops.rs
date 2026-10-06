@@ -415,7 +415,6 @@ pub(crate) fn join_selected_brushes_impl(world: &mut World) {
         }
 
         // Apply: update primary brush (ECS + AST)
-        crate::brush::sync_brush_to_ast(world, primary_entity, &new_brush);
         if let Some(mut brush) = world.get_mut::<Brush>(primary_entity) {
             *brush = new_brush;
         }

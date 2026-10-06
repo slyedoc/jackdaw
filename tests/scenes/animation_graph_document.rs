@@ -12,7 +12,7 @@ use jackdaw::animgraph::document;
 
 const GRAPH: &str = r#"#walk
 AnimGraph { outputs: [Time, Data("pose", Pose)] }
-Links([Link(Data("pose"), Node("loop", "pose"))])
+Links([Link(Data("pose"), Node(#loop, "pose"))])
 Children [
     #clip
     ClipNode { }
@@ -100,20 +100,18 @@ fn a_graph_document_opens_on_the_canvas_and_edits_undo_and_save() {
     assert_eq!(saved.matches("NodePosition(").count(), 3, "{saved}");
 
     // The saved file is still a graph the runtime loader builds.
-    let ast = jackdaw_bsn::parse_bsn(&saved).expect("saved text parses");
-    let registry = app.world().resource::<AppTypeRegistry>().read();
-    let reloaded = bevy_animation_graph::core::animation_graph::bsn::graph_from_document(
-        &ast,
-        ast.roots[0],
-        &registry,
-        None,
-    )
-    .expect("the saved document builds");
+    use bevy_animation_graph::core::animation_graph::bsn::{graph_from_world, spawn_document};
+    let registry = app.world().resource::<AppTypeRegistry>().clone();
+    let server = app.world().resource::<AssetServer>().clone();
+    let mut handles = |type_id, path| server.load_builder().load_erased(type_id, path);
+    let (world, root) = spawn_document(&saved, "walk.animgraph.bsn", &registry.0, &server, &mut handles)
+        .expect("the saved document spawns");
+    let reloaded = graph_from_world(&world, root, &registry.read()).expect("and builds");
     assert_eq!(reloaded.nodes.len(), 3);
 }
 
 const MACHINE: &str = r#"#moves
-AnimFsm { start: "idle", outputs: [Time, Data("pose", Pose)] }
+AnimFsm { start: #idle, outputs: [Time, Data("pose", Pose)] }
 Children [
     #idle
     AnimState { }
@@ -158,11 +156,10 @@ fn a_state_machine_document_wires_transitions_and_adds_states() {
     );
 }
 
-/// Links name nodes, so renaming a node carries every link that names it, and undo puts both
-/// back in one step.
+/// Links name nodes by entity, so a renamed node keeps every link, and undo puts the name back.
 #[test]
 fn renaming_a_node_keeps_its_links() {
-    use jackdaw::commands::{CommandHistory, SetBsnField};
+    use jackdaw::commands::CommandHistory;
 
     let mut app = util::editor_test_app();
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -172,22 +169,7 @@ fn renaming_a_node_keeps_its_links() {
 
     let looped = document::node_entity(app.world(), node_id("loop").uuid()).expect("loop node");
     edit(&mut app, |world| {
-        world.resource_scope(|world, mut history: Mut<CommandHistory>| {
-            history.execute(
-                Box::new(jackdaw::animgraph::held::HeldCommand {
-                    path: path.clone(),
-                    inner: Box::new(SetBsnField {
-                        entity: looped,
-                        type_path: "bevy_ecs::name::Name".into(),
-                        field_path: String::new(),
-                        old_value: Some(jackdaw_bsn::BsnValue::String("loop".into())),
-                        new_value: jackdaw_bsn::BsnValue::String("cycle".into()),
-                        was_derived: false,
-                    }),
-                }),
-                world,
-            );
-        });
+        document::rename(world, looped, "cycle");
     });
     app.update();
     let output = TargetPin::OutputData("pose".into());
@@ -372,6 +354,38 @@ fn a_clip_node_names_its_clip() {
     assert!(document::clip_of_node(app.world(), node_id("loop").uuid()).is_none());
 }
 
+/// A state machine node, and a state, name the document a double-click opens.
+#[test]
+fn a_machine_node_and_a_state_name_what_they_open() {
+    use bevy_animation_graph::core::state_machine::high_level::bsn::state_id;
+    let mut app = util::editor_test_app();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("top.animgraph.bsn");
+    std::fs::write(
+        &path,
+        GRAPH.replace("ClipNode { }", r#"FsmNode { fsm: "priest/priest.fsm.bsn" }"#),
+    )
+    .expect("write graph");
+    open(&mut app, &path);
+    assert_eq!(
+        document::document_of_node(app.world(), node_id("clip").uuid()).as_deref(),
+        Some("priest/priest.fsm.bsn")
+    );
+    assert!(document::document_of_node(app.world(), node_id("loop").uuid()).is_none());
+
+    let fsm = tmp.path().join("moves.fsm.bsn");
+    std::fs::write(&fsm, MACHINE.replace(
+        "#run\n    AnimState { }",
+        "#run\n    AnimState { graph: \"priest/run.animgraph.bsn\" }",
+    ))
+    .expect("write machine");
+    open(&mut app, &fsm);
+    assert_eq!(
+        document::document_of_node(app.world(), state_id("run").uuid()).as_deref(),
+        Some("priest/run.animgraph.bsn")
+    );
+}
+
 /// Add > Character writes a character prefab holding the project's rig and a starter graph that
 /// loops its idle clip, and opens the character.
 #[test]
@@ -478,7 +492,7 @@ fn a_held_graph_leaves_the_open_scene_alone() {
         "bevy_ecs::hierarchy::Children [\n    #Crate\n    bevy_transform::components::transform::Transform\n]\n",
     )
     .expect("write scene");
-    jackdaw::migrate_dialog::request_open_with_conversion(app.world_mut(), &scene);
+    jackdaw::scenes::operators::scene_open_system(app.world_mut(), &scene);
     for _ in 0..3 {
         app.update();
     }

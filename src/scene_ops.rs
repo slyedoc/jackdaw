@@ -87,7 +87,9 @@ pub(crate) fn scene_save_selection_as_prefab(
             Some(root) => root.root.join("assets/prefabs").join(format!("{name}.bsn")),
             None => std::path::PathBuf::from(format!("{name}.bsn")),
         };
-        crate::prefab::operators::save_as_prefab_from_selection(world, &selection, &target);
+        if let Err(err) = crate::instances::save_as_instance(world, &selection, &target) {
+            crate::status_bar::notify_error(world, format!("{}: {err}", target.display()));
+        }
     });
     OperatorResult::Finished
 }

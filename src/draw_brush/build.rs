@@ -93,7 +93,7 @@ pub(crate) fn spawn_drawn_brush(active: &ActiveDraw, commands: &mut Commands) {
             .spawn((Name::new("Brush"), brush, transform, Visibility::default()))
             .id();
 
-        crate::scene_io::register_entity_in_ast(world, entity);
+        crate::scene_io::adopt_entity(world, entity);
         crate::physics_brush_bridge::insert_default_brush_physics(world, entity);
 
         let selection = world.resource::<Selection>();
@@ -175,7 +175,6 @@ pub(crate) fn append_to_brush(active: &ActiveDraw, commands: &mut Commands) {
         // Apply (ECS + AST). Undo is handled by the enclosing
         // `viewport.draw_brush_modal` operator's snapshot diff; no
         // per-command push needed here.
-        crate::brush::sync_brush_to_ast(world, target_entity, &new_brush);
         if let Some(mut brush) = world.get_mut::<Brush>(target_entity) {
             *brush = new_brush;
         }

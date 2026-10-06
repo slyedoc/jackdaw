@@ -7,7 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
 [dependencies]
-# See `jackdaw_pie_protocol`: this crate ships inside games, so its bevy
+# This crate ships inside games, so its bevy
 # features unify into theirs. Keep the list minimal and explicit.
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, features = [
     "std",

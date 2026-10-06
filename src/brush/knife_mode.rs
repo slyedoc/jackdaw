@@ -1569,7 +1569,6 @@ fn commit_path(world: &mut World, brush_entity: Entity) {
     // reloads see the cut. The operator-driven path has no `apply_brush`
     // hook, so the sync happens explicitly before the framework captures
     // the after-snapshot.
-    crate::brush::sync_brush_to_ast(world, brush_entity, &new_brush);
 
     world.resource_mut::<KnifeMode>().path.clear();
 }

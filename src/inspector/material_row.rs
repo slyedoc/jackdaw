@@ -110,9 +110,8 @@ fn write_entity_material(world: &mut World, source: Entity, path: &str) -> bool 
             None => false,
         };
     }
-    let worn = jackdaw_bsn::BsnValue::String(material_path(world, source));
     let json = serde_json::Value::String(path.to_string());
-    crate::commands::field_edit_commit_on_from(world, source, component, HANDLE_FIELD, &json, worn)
+    crate::commands::field_edit_commit_on(world, source, component, HANDLE_FIELD, &json)
 }
 
 /// Run a command and put it on the history.
@@ -127,10 +126,7 @@ fn commit(world: &mut World, mut command: Box<dyn EditorCommand>) {
 /// row writes. A part of a loaded model has none: the model file is the whole
 /// of what the scene says about it.
 fn authored(world: &World, source: Entity) -> bool {
-    world
-        .get_resource::<jackdaw_bsn::SceneBsnAst>()
-        .and_then(|ast| ast.ast_for(source))
-        .is_some()
+    world.get::<crate::scene_io::SceneEntity>(source).is_some()
 }
 
 /// Put a material on a part of a loaded model, as a saved override on its placed model when it has one.
@@ -172,101 +168,36 @@ fn wear_until_reloaded(world: &mut World, source: Entity, path: &str) -> bool {
 }
 
 /// Swap the material an entity wears, and swap it back.
-///
-/// A material of another kind is worn on a component of its own, so the
-/// document's patch moves with it: the old component's patch comes out and the
-/// new one names the file the material came from.
 pub(crate) struct WearMaterial {
     entity: Entity,
     previous: WornMaterial,
-    previous_patch: Option<jackdaw_bsn::BsnValue>,
     chosen: WornMaterial,
-    chosen_path: Option<String>,
 }
 
 impl WearMaterial {
     /// The swap that puts `chosen` on `entity`, reading what it wears now.
-    /// `chosen_path` is the file the material came from, when one holds it.
     pub(crate) fn new(
         world: &World,
         entity: Entity,
         chosen: WornMaterial,
-        chosen_path: Option<String>,
+        _chosen_path: Option<String>,
     ) -> Option<Self> {
         let previous = WornMaterial::of(world, entity)?;
-        let previous_patch = authored_material(world, entity, previous.component_type_path());
         Some(Self {
             entity,
             previous,
-            previous_patch,
             chosen,
-            chosen_path,
         })
     }
-
-    /// Point the document at `worn`: take the patch `taken_off` carried out,
-    /// and name the file `worn` came from on the component it is worn on.
-    fn write_patch(
-        &self,
-        world: &mut World,
-        worn: &WornMaterial,
-        taken_off: &str,
-        named: Option<&str>,
-    ) {
-        if let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>()
-            && let Some(node) = ast.ast_for(self.entity)
-        {
-            ast.remove_component_patch(node, taken_off);
-        }
-        let Some(named) = named else {
-            return;
-        };
-        let registry = world.resource::<AppTypeRegistry>().clone();
-        let registry = registry.read();
-        let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-        if let Some(node) = ast.ast_for(self.entity) {
-            jackdaw_bsn::set_bsn_field(
-                &mut ast,
-                node,
-                worn.component_type_path(),
-                HANDLE_FIELD,
-                jackdaw_bsn::BsnValue::String(named.to_string()),
-                &registry,
-            );
-        }
-    }
-}
-
-/// The value the document binds an entity's material component to, if it binds
-/// one.
-fn authored_material(
-    world: &World,
-    entity: Entity,
-    component: &str,
-) -> Option<jackdaw_bsn::BsnValue> {
-    let ast = world.get_resource::<jackdaw_bsn::SceneBsnAst>()?;
-    let node = ast.ast_for(entity)?;
-    jackdaw_bsn::get_bsn_field(ast, node, component, HANDLE_FIELD)
 }
 
 impl EditorCommand for WearMaterial {
     fn execute(&mut self, world: &mut World) {
         self.chosen.wear(world, self.entity);
-        let chosen = self.chosen.clone();
-        let taken_off = self.previous.component_type_path();
-        let named = self.chosen_path.clone();
-        self.write_patch(world, &chosen, taken_off, named.as_deref());
     }
 
     fn undo(&mut self, world: &mut World) {
         self.previous.wear(world, self.entity);
-        let previous = self.previous.clone();
-        let taken_off = self.chosen.component_type_path();
-        let named = match self.previous_patch.clone() {
-            Some(jackdaw_bsn::BsnValue::String(named)) => Some(named),
-            _ => None,
-        };
-        self.write_patch(world, &previous, taken_off, named.as_deref());
     }
 
     fn description(&self) -> &str {
@@ -280,18 +211,8 @@ fn clear_entity_material(world: &mut World, source: Entity) -> bool {
     let Some(previous) = WornMaterial::of(world, source) else {
         return false;
     };
-    let component = previous.component_type_path();
-    let authored = world
-        .get_resource::<jackdaw_bsn::SceneBsnAst>()
-        .and_then(|ast| ast.ast_for(source))
-        .and_then(|node| {
-            let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-            jackdaw_bsn::get_bsn_field(ast, node, component, HANDLE_FIELD)
-        });
     let mut command: Box<dyn EditorCommand> = Box::new(ClearEntityMaterial {
         entity: source,
-        component,
-        authored,
         previous,
     });
     command.execute(world);
@@ -304,37 +225,15 @@ fn clear_entity_material(world: &mut World, source: Entity) -> bool {
 /// Take the material a document overrides off an entity, and put it back.
 struct ClearEntityMaterial {
     entity: Entity,
-    component: &'static str,
-    authored: Option<jackdaw_bsn::BsnValue>,
     previous: WornMaterial,
 }
 
 impl EditorCommand for ClearEntityMaterial {
     fn execute(&mut self, world: &mut World) {
-        if let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>()
-            && let Some(node) = ast.ast_for(self.entity)
-        {
-            ast.remove_component_patch(node, self.component);
-        }
         WornMaterial::Standard(Handle::default()).wear(world, self.entity);
     }
 
     fn undo(&mut self, world: &mut World) {
-        if let Some(authored) = self.authored.clone() {
-            let registry = world.resource::<AppTypeRegistry>().clone();
-            let registry = registry.read();
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(self.entity) {
-                jackdaw_bsn::set_bsn_field(
-                    &mut ast,
-                    node,
-                    self.component,
-                    HANDLE_FIELD,
-                    authored,
-                    &registry,
-                );
-            }
-        }
         self.previous.wear(world, self.entity);
     }
 

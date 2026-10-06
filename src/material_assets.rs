@@ -17,19 +17,12 @@
 //! same textures on the next open. A material whose file has gone reads as
 //! unsaved again, so nothing writes the file back on its own.
 //!
-//! # The catalog file
-//!
-//! The index *is* the material list: a file's stem is the `@Name` older scenes
-//! spell. `assets/catalog.bsn` is read for what a project kept there before
-//! each asset had a file of its own; nothing writes it, and
-//! `project.migrate_asset_references` moves its entries into files.
+//! The index *is* the material list: a file's stem is the `@Name` older scenes spell.
 
 use std::path::{Path, PathBuf};
 
 use bevy::asset::{UntypedAssetId, UntypedHandle};
-use bevy::image::ImageLoaderSettings;
 use bevy::prelude::*;
-use jackdaw_bsn::{BsnPatch, BsnValue, CatalogAssetRef, SceneBsnAst};
 
 use crate::asset_catalog::AssetCatalog;
 use crate::prelude::*;
@@ -42,22 +35,6 @@ pub const MATERIALS_DIR: &str = "materials";
 // The type path a saved material file carries: the editor authors `AuroraMaterial`, so that
 // is what `material_to_bsn` writes and what the loader looks up.
 const STANDARD_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial";
-
-/// Material texture slots holding linear (non-color) data. These must be
-/// loaded with `is_srgb = false` before anything else resolves their paths,
-/// since the asset server keys images by path and hands out whichever decode
-/// was requested first.
-const LINEAR_SLOTS: [&str; 9] = [
-    "normal_map_texture",
-    "foam_mask",
-    "metallic_roughness_texture",
-    "occlusion_texture",
-    "depth_map",
-    "layer_normal_map_texture",
-    "layer_orm_texture",
-    "detail_normal_map_texture",
-    "detail_orm_texture",
-];
 
 /// The materials editor surfaces browse, in display order.
 ///
@@ -159,7 +136,7 @@ pub fn material_file_of<'a>(
     index
         .get(&path)
         .filter(|entry| entry.kind == crate::definition_assets::MATERIAL_KIND)
-        .or_else(|| index.material_named(jackdaw_bsn::asset_stem(reference)))
+        .or_else(|| index.material_named(crate::bsn_files::asset_stem(reference)))
 }
 
 /// The material a reference names: the file it spells the path of, or, for the
@@ -180,7 +157,7 @@ pub fn material_of_reference(
         return Some(typed);
     }
     registry
-        .get_by_name(jackdaw_bsn::asset_stem(reference))
+        .get_by_name(crate::bsn_files::asset_stem(reference))
         .map(|entry| entry.handle.clone())
 }
 
@@ -261,24 +238,22 @@ pub fn material_save_path(
         .get_resource::<crate::asset_index::AssetIndex>()
         .and_then(|index| index.by_handle(&handle.clone().untyped()))
         .filter(|entry| entry.name() == stem)
-        .map(|entry| {
-            let filed = project.assets_dir().join(&entry.path);
-            jackdaw_bsn::existing_form(&filed).unwrap_or(filed)
-        });
+        .map(|entry| project.assets_dir().join(&entry.path));
     Some(filed.unwrap_or_else(|| material_file_path(project, name)))
 }
 
 /// Reflect one material out of its `Assets` store as a single-entry `.bsn`
 /// document. Texture slots emit as project-relative asset paths.
 pub fn material_to_bsn(world: &World, name: &str, asset_id: UntypedAssetId) -> String {
-    jackdaw_bsn::serialize_assets_to_bsn(
-        world,
-        &[CatalogAssetRef {
-            name: sanitize_material_name(name),
-            type_id: std::any::TypeId::of::<AuroraMaterial>(),
-            asset_id,
-        }],
-    )
+    let Some(material) = world
+        .resource::<Assets<AuroraMaterial>>()
+        .get(asset_id.typed::<AuroraMaterial>())
+    else {
+        return String::new();
+    };
+    bevy::bsn_asset::write_asset_value(world, &sanitize_material_name(name), material)
+        .map(|document| document.to_bsn_string())
+        .unwrap_or_default()
 }
 
 /// Write a live material back to the file the index holds it at, or to
@@ -319,7 +294,6 @@ pub fn remove_material_file(world: &World, name: &str) {
         .and_then(|index| index.material_named(name))
         .map(|entry| project.assets_dir().join(&entry.path));
     let path = filed.unwrap_or_else(|| material_file_path(project, name));
-    let path = jackdaw_bsn::existing_form(&path).unwrap_or(path);
     match std::fs::remove_file(&path) {
         Ok(()) => info!("Removed {}", path.display()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -336,7 +310,7 @@ pub fn load_material_file(world: &mut World, path: &Path) -> Option<UntypedHandl
 
 /// Load one file holding a single material value of `type_path`.
 pub fn load_surface_file(world: &mut World, path: &Path, type_path: &str) -> Option<UntypedHandle> {
-    let text = match jackdaw_bsn::read_document_text(path) {
+    let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(err) => {
             warn!("Failed to read {}: {err}", path.display());
@@ -365,90 +339,14 @@ pub fn load_surface_bsn(world: &mut World, text: &str, type_path: &str) -> Optio
     if text.trim().is_empty() {
         return None;
     }
-    let expected = crate::definition_assets::registered_type_id(world, type_path)?;
-    // Claim the linear slots' images as non-sRGB first; the generic applier below resolves
-    // the same paths and gets these handles.
-    let _linear = preload_linear_textures(world, text);
-    let entries = match jackdaw_bsn::load_bsn_assets(world, text) {
-        Ok(entries) => entries,
+    let document = match bevy::bsn::BsnDocument::parse(text) {
+        Ok(document) => document,
         Err(err) => {
-            warn!("Failed to parse material: {err}");
+            warn!("Failed to parse material: {err:?}");
             return None;
         }
     };
-    if entries.len() > 1 {
-        warn!(
-            "material document holds {} assets; only the first is used",
-            entries.len()
-        );
-    }
-    let entry = entries.into_iter().next()?;
-    if entry.handle.type_id() != expected {
-        warn!(
-            "material document '{}' does not hold a {type_path}",
-            entry.name
-        );
-        return None;
-    }
-    Some(entry.handle)
-}
-
-/// Pre-load the linear-space textures a material's `.bsn` text references with
-/// `is_srgb = false`. The returned handles keep the images alive until the
-/// material takes its own strong references.
-pub(crate) fn preload_linear_textures(world: &mut World, text: &str) -> Vec<UntypedHandle> {
-    let Ok(ast) = jackdaw_bsn::parse_bsn_text(text) else {
-        return Vec::new();
-    };
-    let paths = linear_texture_paths(&ast);
-    if paths.is_empty() {
-        return Vec::new();
-    }
-    let asset_server = world.resource::<AssetServer>().clone();
-    paths
-        .into_iter()
-        .map(|path| {
-            asset_server
-                .load_builder()
-                .with_settings(|s: &mut ImageLoaderSettings| s.is_srgb = false)
-                .load::<Image>(&path)
-                .untyped()
-        })
-        .collect()
-}
-
-/// Asset paths bound to a linear texture slot anywhere in the document,
-/// whatever material type holds it.
-fn linear_texture_paths(ast: &SceneBsnAst) -> Vec<String> {
-    let mut paths = Vec::new();
-    for &root in &ast.roots {
-        let Some(patches) = ast.get_patches(root) else {
-            continue;
-        };
-        for &pe in &patches.0 {
-            if let Some(BsnPatch::Struct(data)) = ast.get_patch(pe) {
-                collect_linear_paths(data, &mut paths);
-            }
-        }
-    }
-    paths
-}
-
-fn collect_linear_paths(data: &jackdaw_bsn::BsnStructData, paths: &mut Vec<String>) {
-    for field in &data.fields.0 {
-        match &field.value {
-            BsnValue::String(path)
-                if LINEAR_SLOTS.contains(&field.name.as_str())
-                    && !path.is_empty()
-                    && !path.starts_with('@')
-                    && !path.starts_with('#') =>
-            {
-                paths.push(path.clone());
-            }
-            BsnValue::Struct(nested) => collect_linear_paths(nested, paths),
-            _ => {}
-        }
-    }
+    jackdaw_runtime::load_asset_document(world, &document, "", type_path)
 }
 
 /// The materials a panel has edited since the last frame wrote them back.
@@ -778,7 +676,7 @@ pub fn save_previewed_material_to(world: &mut World, file: &Path) {
         .resource::<MaterialRegistry>()
         .name_of(&handle)
         .map(str::to_owned);
-    let name = sanitize_material_name(&jackdaw_bsn::path_stem(file));
+    let name = sanitize_material_name(&crate::bsn_files::path_stem(file));
     if let Some(owner) = name_owner(world.resource::<MaterialRegistry>(), &handle, &name) {
         warn!("material.save_as: '{name}' already belongs to material '{owner}'");
         return;
@@ -849,10 +747,6 @@ fn write_and_promote(
     world
         .resource_mut::<AssetCatalog>()
         .insert(format!("@{name}"), handle.clone().untyped());
-    world
-        .resource_mut::<AssetCatalog>()
-        .inline_materials
-        .remove(name);
     info!("Saved material '{name}'");
 }
 
@@ -886,10 +780,6 @@ fn forget_material_file(world: &mut World, name: &str) {
             .resource_mut::<crate::asset_index::AssetIndex>()
             .remove(&path);
     }
-    world
-        .resource_mut::<AssetCatalog>()
-        .inline_materials
-        .remove(name);
 }
 
 /// The material a confirmed delete will remove, and the dialog asking about it.

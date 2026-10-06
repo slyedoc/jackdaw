@@ -9,7 +9,7 @@ use bevy::{asset::AssetServer, prelude::*};
 
 use crate::{
     EditorEntity,
-    commands::{CommandHistory, EditorCommand, sync_component_to_ast},
+    commands::{CommandHistory, EditorCommand},
 };
 
 /// The palette definition a dropped image becomes.
@@ -31,8 +31,7 @@ impl SetImageTexture {
             return;
         };
         image.image = texture;
-        let value = image.clone();
-        sync_component_to_ast(world, self.entity, ImageNode::type_path(), &value);
+        let _value = image.clone();
     }
 }
 
@@ -126,18 +125,11 @@ impl EditorCommand for DropImage {
             node.position_type = PositionType::Absolute;
             node.left = px(at.x);
             node.top = px(at.y);
-            let value = node.clone();
-            sync_component_to_ast(
-                world,
-                spawned,
-                crate::inspector::node_card::node_type_path(),
-                &value,
-            );
+            let _value = node.clone();
         }
         if let Some(mut image) = world.get_mut::<ImageNode>(spawned) {
             image.image = self.texture.clone();
-            let value = image.clone();
-            sync_component_to_ast(world, spawned, ImageNode::type_path(), &value);
+            let _value = image.clone();
         }
         self.spawned = Some(spawned);
     }

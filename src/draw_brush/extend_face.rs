@@ -319,7 +319,6 @@ pub(crate) fn extend_face_to_brush_impl(
         faces: local_clean,
         topology,
     };
-    crate::brush::sync_brush_to_ast(world, primary, &new_brush);
     if let Some(mut brush) = world.get_mut::<Brush>(primary) {
         *brush = new_brush.clone();
     }

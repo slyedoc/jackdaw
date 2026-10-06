@@ -32,7 +32,7 @@ pub use environment::{
     ShadowFiltering, Sky, Tonemapper,
 };
 #[cfg(feature = "render")]
-pub use mesh_rebuild::evaluate_brush_geometry;
+pub use mesh_rebuild::{DEFAULT_BRUSH_MATERIAL, evaluate_brush_geometry};
 pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
 pub use types::{
     Brush, BrushFaceData, BrushPlane, BrushTopology, CustomProperties, DerivedFaceMesh,
@@ -146,6 +146,7 @@ impl Plugin for SceneTypesPlugin {
                     .register_asset_reflect::<bevy::image::Image>();
             }
 
+            app.add_plugins(mesh_rebuild::default_brush_material_plugin);
             if self.runtime_mesh_rebuild {
                 app.add_plugins(mesh_rebuild::MeshRebuildPlugin);
             }

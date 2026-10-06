@@ -6,7 +6,7 @@ use bevy::{
         reflect::{AppTypeRegistry, ReflectComponent},
     },
     prelude::*,
-    reflect::PartialReflect,
+    reflect::{GetPath, PartialReflect, TypeRegistry},
 };
 use serde::de::DeserializeSeed;
 
@@ -25,6 +25,22 @@ impl Plugin for CommandHistoryPlugin {
     }
 }
 
+/// One field's (or a whole component's) value, as reflect holds it.
+pub type FieldValue = Box<dyn PartialReflect>;
+
+/// A copy of a reflected value, concrete where the type can clone itself.
+pub fn clone_value(value: &dyn PartialReflect) -> Option<FieldValue> {
+    value
+        .reflect_clone()
+        .map(|v| v.into_partial_reflect())
+        .or_else(|_| value.to_dynamic())
+        .ok()
+}
+
+fn values_equal(a: &dyn PartialReflect, b: &dyn PartialReflect) -> bool {
+    a.reflect_partial_eq(b).unwrap_or(false)
+}
+
 /// Key for an in-progress field-edit gesture session entry.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct FieldEditSessionKey {
@@ -33,17 +49,11 @@ struct FieldEditSessionKey {
     field_path: String,
 }
 
-/// Live field values at [`field_edit_begin`] for in-progress gestures.
-///
-/// Lifecycle: [`field_edit_begin`] -> [`field_edit_preview`]* ->
-/// [`field_edit_commit`].
-///
-/// Preview mutates ECS before any `SetBsnField` exists. Capturing live values
-/// at begin lets commit build undo baselines for derived (no-patch) components.
+/// Live field values at [`field_edit_begin`], so a commit after previews undoes to the value
+/// before the gesture.
 #[derive(Resource, Default)]
 pub(crate) struct FieldEditSessions {
-    /// Live field value at gesture start, keyed by entity + field.
-    live_at_begin: std::collections::HashMap<FieldEditSessionKey, jackdaw_bsn::BsnValue>,
+    live_at_begin: std::collections::HashMap<FieldEditSessionKey, FieldValue>,
 }
 
 fn field_edit_session_targets(world: &World) -> Vec<Entity> {
@@ -53,12 +63,6 @@ fn field_edit_session_targets(world: &World) -> Vec<Entity> {
         .unwrap_or_default()
 }
 
-fn document_has_component_patch(world: &World, entity: Entity, type_path: &str) -> bool {
-    let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-    ast.ast_for(entity)
-        .is_some_and(|node| ast.find_patch_by_type_path(node, type_path).is_some())
-}
-
 fn clear_field_edit_session(world: &mut World, type_path: &str, field_path: &str) {
     let mut sessions = world.resource_mut::<FieldEditSessions>();
     sessions
@@ -66,92 +70,57 @@ fn clear_field_edit_session(world: &mut World, type_path: &str, field_path: &str
         .retain(|key, _| key.type_path != type_path || key.field_path != field_path);
 }
 
-fn peek_live_at_begin(
-    world: &World,
+fn take_live_at_begin(
+    world: &mut World,
     entity: Entity,
     type_path: &str,
     field_path: &str,
-) -> Option<jackdaw_bsn::BsnValue> {
+) -> Option<FieldValue> {
     world
-        .resource::<FieldEditSessions>()
+        .resource_mut::<FieldEditSessions>()
         .live_at_begin
-        .get(&FieldEditSessionKey {
+        .remove(&FieldEditSessionKey {
             entity,
             type_path: type_path.to_string(),
             field_path: field_path.to_string(),
         })
-        .cloned()
 }
 
-/// Undo baseline for one target: authored document field, else `None` when
-/// the component patch exists but the field does not (sparse absence), else
-/// the live value captured at begin (derived), else the current live field.
-fn resolve_field_edit_old_value(
-    world: &World,
+/// Undo baseline for one target: the value captured when the gesture began, else the live one.
+fn field_edit_old_value(
+    world: &mut World,
     entity: Entity,
     type_path: &str,
     field_path: &str,
-) -> Option<jackdaw_bsn::BsnValue> {
-    if let Some(authored) = authored_bsn_field(world, entity, type_path, field_path) {
-        return Some(authored);
-    }
-    if document_has_component_patch(world, entity, type_path) {
-        // Sparse patch: field was not authored. Undo must remove it, not
-        // write back the live default captured for cancel.
-        return None;
-    }
-    peek_live_at_begin(world, entity, type_path, field_path)
-        .or_else(|| live_bsn_field(world, entity, type_path, field_path))
+) -> Option<FieldValue> {
+    take_live_at_begin(world, entity, type_path, field_path)
+        .or_else(|| live_field(world, entity, type_path, field_path))
 }
 
-/// Begin a field-edit gesture for the current selection.
-///
-/// Captures each target's live field value so later preview ticks can mutate
-/// ECS without losing the pre-gesture baseline. Idempotent for entities that
-/// already have an entry for this field.
+/// Begin a field-edit gesture for the current selection, capturing each target's live value.
 pub(crate) fn field_edit_begin(world: &mut World, type_path: &str, field_path: &str) {
     let targets = field_edit_session_targets(world);
-    if targets.is_empty() {
-        return;
-    }
-
-    let already_captured: std::collections::HashSet<Entity> = world
-        .resource::<FieldEditSessions>()
-        .live_at_begin
-        .keys()
-        .filter(|key| key.type_path == type_path && key.field_path == field_path)
-        .map(|key| key.entity)
-        .collect();
-
-    let mut to_capture: Vec<(Entity, jackdaw_bsn::BsnValue)> = Vec::new();
+    let mut to_capture = Vec::new();
     for &entity in &targets {
-        if already_captured.contains(&entity) {
+        let key = FieldEditSessionKey {
+            entity,
+            type_path: type_path.to_string(),
+            field_path: field_path.to_string(),
+        };
+        if world.resource::<FieldEditSessions>().live_at_begin.contains_key(&key) {
             continue;
         }
-        if let Some(live) = live_bsn_field(world, entity, type_path, field_path) {
-            to_capture.push((entity, live));
+        if let Some(live) = live_field(world, entity, type_path, field_path) {
+            to_capture.push((key, live));
         }
     }
-    if to_capture.is_empty() {
-        return;
-    }
     let mut sessions = world.resource_mut::<FieldEditSessions>();
-    for (entity, live) in to_capture {
-        sessions.live_at_begin.insert(
-            FieldEditSessionKey {
-                entity,
-                type_path: type_path.to_string(),
-                field_path: field_path.to_string(),
-            },
-            live,
-        );
+    for (key, live) in to_capture {
+        sessions.live_at_begin.insert(key, live);
     }
 }
 
-/// Preview a field value on live ECS for the current selection.
-///
-/// Does not touch the scene document or mint undo. Calls [`field_edit_begin`]
-/// so a baseline exists before the first write.
+/// Preview a field value on the selection, with no undo entry yet.
 pub(crate) fn field_edit_preview(
     world: &mut World,
     type_path: &str,
@@ -170,11 +139,10 @@ pub(crate) fn field_edit_preview(
     }
 }
 
-/// Commit a field edit: build [`SetBsnField`] commands from session / document
-/// baselines, execute them, push history, and clear the gesture session.
+/// Commit a field edit on the selection as one undo entry, and end the gesture.
 ///
-/// A target whose component the running binding preview drives is dropped
-/// here: the evaluator rewrites that value every frame.
+/// A target whose component the running binding preview drives is dropped: the evaluator
+/// rewrites that value every frame.
 pub(crate) fn field_edit_commit(
     world: &mut World,
     type_path: &str,
@@ -185,39 +153,11 @@ pub(crate) fn field_edit_commit(
     if crate::definition_assets::commit_definition_field(world, type_path, field_path, new_json) {
         return;
     }
-    // A node of a graph held beside the scene: the edit goes to the held document, as one entry
-    // on the scene's history.
-    let held_path = world
+    if let Some(entity) = world
         .get_resource::<crate::selection::Selection>()
         .and_then(crate::selection::Selection::primary)
-        .filter(|&entity| crate::animgraph::held::is_held(world, entity))
-        .and_then(|_| {
-            world
-                .get_resource::<crate::animgraph::held::HeldGraph>()?
-                .0
-                .as_ref()
-                .map(|doc| doc.path.clone())
-        });
-    if let Some(path) = held_path {
-        let (type_path, field_path, group_label) =
-            (type_path.to_string(), field_path.to_string(), group_label.to_string());
-        let new_json = new_json.clone();
-        let built = crate::animgraph::held::with_held(world, |world| {
-            field_edit_commit_built(world, &type_path, &field_path, &new_json, &group_label)
-        })
-        .flatten();
-        if let Some(inner) = built {
-            if let Some(doc) = world
-                .resource_mut::<crate::animgraph::held::HeldGraph>()
-                .0
-                .as_mut()
-            {
-                doc.dirty = true;
-            }
-            world
-                .resource_mut::<CommandHistory>()
-                .push_executed(Box::new(crate::animgraph::held::HeldCommand { path, inner }));
-        }
+        && crate::animgraph::document::commit_field(world, entity, type_path, field_path, new_json)
+    {
         return;
     }
     if let Some(cmd) = field_edit_commit_built(world, type_path, field_path, new_json, group_label) {
@@ -233,8 +173,6 @@ fn field_edit_commit_built(
     new_json: &serde_json::Value,
     group_label: &str,
 ) -> Option<Box<dyn EditorCommand>> {
-    // Immediate commits (no prior preview) still need a derived baseline.
-    field_edit_begin(world, type_path, field_path);
     let mut targets = field_edit_session_targets(world);
     targets.retain(|&target| {
         let previewed = crate::preview_context::preview_writes_type_path(world, target, type_path);
@@ -249,24 +187,23 @@ fn field_edit_commit_built(
 
     let mut sub_commands: Vec<Box<dyn EditorCommand>> = Vec::new();
     for &target in &targets {
-        let Some((path, new_value)) =
-            field_edit_to_bsn_value(world, target, type_path, field_path, new_json)
+        let Some((path, new_value)) = field_edit_value(world, target, type_path, field_path, new_json)
         else {
             continue;
         };
-        let old_value = resolve_field_edit_old_value(world, target, type_path, &path);
-        // A commit that leaves the field as it was must not bury the edit
-        // before it under an entry that undoes to the same value.
-        if old_value.as_ref() == Some(&new_value) {
+        let old_value = field_edit_old_value(world, target, type_path, &path);
+        if old_value
+            .as_deref()
+            .is_some_and(|old| values_equal(old, new_value.as_ref()))
+        {
             continue;
         }
-        sub_commands.push(Box::new(SetBsnField {
+        sub_commands.push(Box::new(SetField {
             entity: target,
             type_path: type_path.to_string(),
             field_path: path,
             old_value,
             new_value,
-            was_derived: false,
         }));
     }
     clear_field_edit_session(world, type_path, field_path);
@@ -274,7 +211,6 @@ fn field_edit_commit_built(
     if sub_commands.is_empty() {
         return None;
     }
-
     let mut cmd: Box<dyn EditorCommand> = if sub_commands.len() == 1 {
         sub_commands.remove(0)
     } else {
@@ -287,12 +223,7 @@ fn field_edit_commit_built(
     Some(cmd)
 }
 
-/// Set one field on one entity's component, as one undo entry. Unlike
-/// [`field_edit_commit`], which writes the whole selection, this writes only
-/// the named entity.
-///
-/// Returns whether a value was written; `false` when the JSON does not
-/// convert to the field's type.
+/// Set one field on one entity's component, as one undo entry. Whether a value was written.
 pub(crate) fn field_edit_commit_on(
     world: &mut World,
     entity: Entity,
@@ -307,54 +238,21 @@ pub(crate) fn field_edit_commit_on(
         );
         return false;
     }
-    let Some((path, new_value)) =
-        field_edit_to_bsn_value(world, entity, type_path, field_path, new_json)
+    let Some((path, new_value)) = field_edit_value(world, entity, type_path, field_path, new_json)
     else {
         return false;
     };
-    let old_value = resolve_field_edit_old_value(world, entity, type_path, &path);
-    let mut cmd: Box<dyn EditorCommand> = Box::new(SetBsnField {
+    let old_value = field_edit_old_value(world, entity, type_path, &path);
+    let mut cmd: Box<dyn EditorCommand> = Box::new(SetField {
         entity,
         type_path: type_path.to_string(),
         field_path: path,
         old_value,
         new_value,
-        was_derived: false,
     });
     cmd.execute(world);
     world.resource_mut::<CommandHistory>().push_executed(cmd);
     true
-}
-
-/// Set one field on one entity's component, as one undo entry, undoing to the
-/// baseline the caller supplies rather than one read back off the live value.
-///
-/// An asset `Handle<T>` reflects as no path at all, so a row that already
-/// knows the file the handle names hands that path over and undo puts it back.
-pub(crate) fn field_edit_commit_on_from(
-    world: &mut World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-    new_json: &serde_json::Value,
-    baseline: jackdaw_bsn::BsnValue,
-) -> bool {
-    let key = FieldEditSessionKey {
-        entity,
-        type_path: type_path.to_string(),
-        field_path: field_path.to_string(),
-    };
-    let held = world
-        .resource_mut::<FieldEditSessions>()
-        .live_at_begin
-        .insert(key.clone(), baseline);
-    let written = field_edit_commit_on(world, entity, type_path, field_path, new_json);
-    let mut sessions = world.resource_mut::<FieldEditSessions>();
-    match held {
-        Some(held) => sessions.live_at_begin.insert(key, held),
-        None => sessions.live_at_begin.remove(&key),
-    };
-    written
 }
 
 pub struct SetTransform {
@@ -368,41 +266,16 @@ impl EditorCommand for SetTransform {
         if let Some(mut transform) = world.get_mut::<Transform>(self.entity) {
             *transform = self.new_transform;
         }
-        sync_component_to_ast::<Transform>(
-            world,
-            self.entity,
-            "bevy_transform::components::transform::Transform",
-            &self.new_transform,
-        );
     }
 
     fn undo(&mut self, world: &mut World) {
         if let Some(mut transform) = world.get_mut::<Transform>(self.entity) {
             *transform = self.old_transform;
         }
-        sync_component_to_ast::<Transform>(
-            world,
-            self.entity,
-            "bevy_transform::components::transform::Transform",
-            &self.old_transform,
-        );
     }
 
     fn description(&self) -> &str {
         "Set transform"
-    }
-
-    fn sync_after_external_execute(&self, world: &mut World) {
-        // Live-drag paths (gizmo, modal transform) mutate the ECS
-        // Transform every frame. By the time the command reaches the
-        // history, the ECS is already at `new_transform`. Only the
-        // AST sync still needs to happen.
-        sync_component_to_ast::<Transform>(
-            world,
-            self.entity,
-            "bevy_transform::components::transform::Transform",
-            &self.new_transform,
-        );
     }
 }
 
@@ -450,20 +323,15 @@ pub struct HierarchyLocation {
 impl HierarchyLocation {
     /// Read an entity's current parent and sibling index.
     pub fn from_world(world: &World, entity: Entity) -> Self {
-        let parent = world.get::<ChildOf>(entity).map(ChildOf::parent);
+        let parent = crate::scene_io::scene_parent(world, entity);
         let index = parent
             .and_then(|parent| world.get::<Children>(parent))
             .and_then(|children| children.iter().position(|child| child == entity))
             .unwrap_or_else(|| {
-                let Some(ast) = world.get_resource::<jackdaw_bsn::SceneBsnAst>() else {
-                    return 0;
-                };
-                let Some(node) = ast.ast_for(entity) else {
-                    return 0;
-                };
-                ast.roots
-                    .iter()
-                    .position(|candidate| *candidate == node)
+                world
+                    .get::<crate::scene_io::SceneRootOf>(entity)
+                    .and_then(|of| world.get::<crate::scene_io::SceneRoots>(of.0))
+                    .and_then(|roots| roots.entities().iter().position(|&root| root == entity))
                     .unwrap_or(0)
             });
         Self { parent, index }
@@ -558,6 +426,13 @@ pub fn place_entity(
         warn!("{entity} is no longer in the scene, so its move was skipped");
         return;
     }
+    // The tab world is the top level.
+    let location = HierarchyLocation {
+        parent: location
+            .parent
+            .filter(|&parent| world.get::<avian3d::world::PhysicsWorld>(parent).is_none()),
+        ..location
+    };
     if let Some(parent) = location.parent
         && world.get_entity(parent).is_err()
     {
@@ -571,8 +446,6 @@ pub fn place_entity(
         .parent
         .and_then(|parent| world.get::<GlobalTransform>(parent).copied());
 
-    jackdaw_bsn::sync_hierarchy_to_ast_at(world, entity, location.parent, location.index);
-
     match location.parent {
         Some(parent) => {
             // `insert_children` removes the entity before re-inserting it,
@@ -584,11 +457,10 @@ pub fn place_entity(
                     location.index.min(children.len() - usize::from(already))
                 })
                 .unwrap_or(0);
+            world.entity_mut(entity).remove::<crate::scene_io::SceneRootOf>();
             world.entity_mut(parent).insert_children(index, &[entity]);
         }
-        None => {
-            world.entity_mut(entity).remove::<ChildOf>();
-        }
+        None => crate::scene_io::place_root(world, entity, location.index),
     }
 
     let new_transform =
@@ -605,14 +477,6 @@ pub fn place_entity(
         && let Some(mut tf) = world.get_mut::<Transform>(entity)
     {
         *tf = new_tf;
-    }
-    if let Some(new_tf) = new_transform {
-        sync_component_to_ast(
-            world,
-            entity,
-            "bevy_transform::components::transform::Transform",
-            &new_tf,
-        );
     }
 }
 
@@ -645,16 +509,7 @@ impl EditorCommand for AddComponent {
             "AddComponent::execute entered: type_path={}, type_id={:?}, component_id={:?}, entity={:?}",
             self.type_path, self.type_id, self.component_id, self.entity
         );
-        if world
-            .resource::<jackdaw_bsn::SceneBsnAst>()
-            .ast_for(self.entity)
-            .is_none()
-        {
-            warn!(
-                "AddComponent: entity {:?} is not tracked in the scene document; \
-                 {} was not added.",
-                self.entity, self.type_path
-            );
+        if world.get_entity(self.entity).is_err() {
             return;
         }
 
@@ -694,8 +549,6 @@ impl EditorCommand for AddComponent {
         }
         drop(registry);
 
-        sync_component_to_bsn_doc(world, self.entity, default_value.as_partial_reflect());
-
         // Insert through reflection so types without `ReflectDefault` still
         // land, and so `#[require]` companions appear the same way they do
         // on a fresh spawn. Remove/undo resync from the document; add does
@@ -731,13 +584,7 @@ impl EditorCommand for AddComponent {
     }
 
     fn undo(&mut self, world: &mut World) {
-        {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(self.entity) {
-                ast.remove_component_patch(node, &self.type_path);
-            }
-        }
-        crate::scene_io::resync_entity_from_ast(world, self.entity);
+        remove_component_from_ecs(world, self.entity, &self.type_path);
         if let Ok(mut ec) = world.get_entity_mut(self.entity) {
             ec.insert(crate::inspector::InspectorDirty);
         }
@@ -745,129 +592,6 @@ impl EditorCommand for AddComponent {
 
     fn description(&self) -> &str {
         "Add component"
-    }
-}
-
-/// Add a project component to an entity as a document-only patch.
-/// Project types are never registered as real ECS components in the
-/// editor -- loading their code would leak -- so the component lives
-/// purely in the scene document as a default-valued struct patch,
-/// editable through the inspector's document path and materialized as
-/// a real component only in the game binary at Play.
-pub struct AddProjectComponent {
-    pub entity: Entity,
-    pub type_path: String,
-}
-
-impl AddProjectComponent {
-    pub fn new(entity: Entity, type_path: String) -> Self {
-        Self { entity, type_path }
-    }
-}
-
-impl EditorCommand for AddProjectComponent {
-    fn execute(&mut self, world: &mut World) {
-        let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-        let Some(node) = ast.ast_for(self.entity) else {
-            warn!(
-                "AddProjectComponent: entity {:?} is not tracked in the scene document; \
-                 project component {} cannot be added.",
-                self.entity, self.type_path
-            );
-            return;
-        };
-        if ast.find_patch_by_type_path(node, &self.type_path).is_some() {
-            return;
-        }
-        // A struct patch with no field overrides materializes as the
-        // type's Default at Play; the inspector shows the schema
-        // defaults until a field is edited (which writes an override).
-        let patch = jackdaw_bsn::BsnPatch::Struct(jackdaw_bsn::BsnStructData {
-            type_path: self.type_path.clone(),
-            fields: jackdaw_bsn::BsnStructFields(Vec::new()),
-        });
-        let patch_entity = ast.world.spawn(patch).id();
-        if let Some(patches) = ast.get_patches_mut(node) {
-            patches.0.push(patch_entity);
-        }
-
-        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
-            ec.insert(crate::inspector::InspectorDirty);
-        }
-    }
-
-    fn undo(&mut self, world: &mut World) {
-        {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(self.entity) {
-                ast.remove_component_patch(node, &self.type_path);
-            }
-        }
-        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
-            ec.insert(crate::inspector::InspectorDirty);
-        }
-    }
-
-    fn description(&self) -> &str {
-        "Add component"
-    }
-}
-
-/// Drop a project component's document patch. Project types have no live ECS
-/// component in the editor, so this is the whole of the removal.
-pub struct RemoveProjectComponent {
-    pub entity: Entity,
-    pub type_path: String,
-    ast_snapshot: jackdaw_bsn::BsnPatch,
-}
-
-impl RemoveProjectComponent {
-    pub fn from_world(world: &World, entity: Entity, type_path: String) -> Option<Self> {
-        let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-        let ast_snapshot = ast.ast_for(entity).and_then(|node| {
-            ast.find_patch_by_type_path(node, &type_path)
-                .and_then(|pe| ast.get_patch(pe))
-                .cloned()
-        })?;
-        Some(Self {
-            entity,
-            type_path,
-            ast_snapshot,
-        })
-    }
-}
-
-impl EditorCommand for RemoveProjectComponent {
-    fn execute(&mut self, world: &mut World) {
-        {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            let Some(node) = ast.ast_for(self.entity) else {
-                return;
-            };
-            if ast.find_patch_by_type_path(node, &self.type_path).is_none() {
-                return;
-            }
-            ast.remove_component_patch(node, &self.type_path);
-        }
-        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
-            ec.insert(crate::inspector::InspectorDirty);
-        }
-    }
-
-    fn undo(&mut self, world: &mut World) {
-        restore_ast_component_patch(
-            world,
-            self.entity,
-            &self.type_path,
-            self.ast_snapshot.clone(),
-        );
-        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
-            ec.insert(crate::inspector::InspectorDirty);
-        }
-    }
-
-    fn description(&self) -> &str {
-        "Remove component"
     }
 }
 
@@ -876,11 +600,8 @@ pub struct RemoveComponent {
     pub type_id: TypeId,
     pub component_id: ComponentId,
     pub type_path: String,
-    /// Live value when the type was not in the document, so undo can put a
-    /// derived component back without authoring it.
-    derived_snapshot: Option<Box<dyn PartialReflect>>,
-    /// Document patch snapshot for undo.
-    ast_snapshot: Option<jackdaw_bsn::BsnPatch>,
+    /// The value removed, for undo.
+    snapshot: Option<FieldValue>,
 }
 
 impl RemoveComponent {
@@ -891,72 +612,28 @@ impl RemoveComponent {
         component_id: ComponentId,
         type_path: String,
     ) -> Self {
-        let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-        let ast_snapshot = ast.ast_for(entity).and_then(|node| {
-            ast.find_patch_by_type_path(node, &type_path)
-                .and_then(|pe| ast.get_patch(pe))
-                .cloned()
-        });
-        let derived_snapshot = if ast_snapshot.is_none() {
-            let registry = world.resource::<AppTypeRegistry>().clone();
-            let registry = registry.read();
-            registry
-                .get(type_id)
-                .and_then(|registration| registration.data::<ReflectComponent>())
-                .and_then(|reflect_component| {
-                    let entity_ref = world.get_entity(entity).ok()?;
-                    reflect_component.reflect(entity_ref)
-                })
-                .and_then(|v| v.to_dynamic().ok())
-        } else {
-            None
-        };
+        let snapshot = live_field(world, entity, &type_path, "");
         Self {
             entity,
             type_id,
             component_id,
             type_path,
-            derived_snapshot,
-            ast_snapshot,
+            snapshot,
         }
     }
 }
 
 impl EditorCommand for RemoveComponent {
     fn execute(&mut self, world: &mut World) {
-        let tracked = world
-            .resource::<jackdaw_bsn::SceneBsnAst>()
-            .ast_for(self.entity)
-            .is_some();
-        if tracked {
-            {
-                let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-                if let Some(node) = ast.ast_for(self.entity) {
-                    ast.remove_component_patch(node, &self.type_path);
-                }
-            }
-            crate::scene_io::resync_entity_from_ast(world, self.entity);
-        } else if let Ok(mut entity) = world.get_entity_mut(self.entity) {
+        if let Ok(mut entity) = world.get_entity_mut(self.entity) {
             entity.remove_by_id(self.component_id);
-        }
-        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
-            ec.insert(crate::inspector::InspectorDirty);
+            entity.insert(crate::inspector::InspectorDirty);
         }
     }
 
     fn undo(&mut self, world: &mut World) {
-        if let Some(patch) = self.ast_snapshot.clone() {
-            restore_ast_component_patch(world, self.entity, &self.type_path, patch);
-            crate::scene_io::resync_entity_from_ast(world, self.entity);
-        } else if let Some(snapshot) = &self.derived_snapshot {
-            let registry = world.resource::<AppTypeRegistry>().clone();
-            let registry = registry.read();
-            if let Some(registration) = registry.get(self.type_id)
-                && let Some(reflect_component) = registration.data::<ReflectComponent>()
-                && let Ok(mut entity_mut) = world.get_entity_mut(self.entity)
-            {
-                reflect_component.insert(&mut entity_mut, snapshot.as_ref(), &registry);
-            }
+        if let Some(snapshot) = &self.snapshot {
+            write_field(world, self.entity, &self.type_path, "", snapshot.as_ref());
         }
         if let Ok(mut ec) = world.get_entity_mut(self.entity) {
             ec.insert(crate::inspector::InspectorDirty);
@@ -1082,7 +759,7 @@ impl EditorCommand for DespawnEntity {
         if let Some(&new_id) = entity_map.get(&self.snapshot_root) {
             self.entity = new_id;
         }
-        crate::scene_io::register_entity_in_ast(world, self.entity);
+        crate::scene_io::adopt_entity(world, self.entity);
         // A parent that has gone since leaves the entity at the top.
         let location = HierarchyLocation {
             parent: self
@@ -1127,9 +804,8 @@ pub(crate) fn deselect_entities(world: &mut World, entities: &[Entity]) {
     selection.entities.retain(|e| !entities.contains(e));
 }
 
-/// Remove `entity` from the live BSN document, then despawn it from ECS.
+/// Despawn a scene entity and what is under it.
 pub(crate) fn despawn_scene_entity(world: &mut World, entity: Entity) {
-    jackdaw_bsn::delete_entity_from_ast(world, entity);
     if let Ok(entity_mut) = world.get_entity_mut(entity) {
         entity_mut.despawn();
     }
@@ -1191,294 +867,37 @@ pub(crate) fn snapshot_rebuild(scene: &DynamicWorld) -> DynamicWorld {
     }
 }
 
-// ============================== Document-First Commands ==============================
+// ============================== Field Commands ==============================
 
-/// Write a field into the live [`jackdaw_bsn::SceneBsnAst`] document, promote
-/// the component to authored if it was derived, and mirror the change onto
-/// the live ECS entity. The dispatched field-edit command for inspector and
-/// tool edits.
-pub struct SetBsnField {
+/// Set one field of an entity's component (or, with an empty `field_path`, the whole
+/// component), undoably.
+pub struct SetField {
     pub entity: Entity,
     pub type_path: String,
     pub field_path: String,
-    /// Pre-edit baseline for undo. `None` when the field/component did not
-    /// exist before this edit; undo then removes what execute authored.
-    ///
-    /// For derived (ECS-only) components, callers should supply the pre-edit
-    /// live value via `field_edit_commit` / the gesture session. If still
-    /// `None` at execute, the live field is captured as a fallback for
-    /// immediate edits that never preview-mutated ECS.
-    pub old_value: Option<jackdaw_bsn::BsnValue>,
-    pub new_value: jackdaw_bsn::BsnValue,
-    /// True when execute authored an override for a component that was not
-    /// already in the document: either a derived (ECS-only) component, or a
-    /// project (document-only) component. Undo drops that override patch;
-    /// for derived components the live ECS value stays (optionally restored
-    /// from [`Self::old_value`]).
-    pub was_derived: bool,
+    /// `None` when the component was absent before; undo then removes it.
+    pub old_value: Option<FieldValue>,
+    pub new_value: FieldValue,
 }
 
-/// Reflect type path of [`Name`], which the document stores as a
-/// [`jackdaw_bsn::BsnPatch::Name`] reference patch rather than a component
-/// patch. [`SetBsnField`] routes edits of this type through the name patch.
-pub(crate) const NAME_TYPE_PATH: &str = "bevy_ecs::name::Name";
-
-/// The string carried by a [`jackdaw_bsn::BsnValue`], for name edits.
-fn bsn_value_string(value: &jackdaw_bsn::BsnValue) -> Option<&str> {
-    match value {
-        jackdaw_bsn::BsnValue::String(s) => Some(s.as_str()),
-        _ => None,
-    }
-}
-
-/// Set, replace, or remove the [`jackdaw_bsn::BsnPatch::Name`] patch on a
-/// document node.
-pub(crate) fn set_name_patch(ast: &mut jackdaw_bsn::SceneBsnAst, node: Entity, name: Option<&str>) {
-    let existing = ast.get_patches(node).and_then(|patches| {
-        patches
-            .0
-            .iter()
-            .copied()
-            .find(|&pe| matches!(ast.get_patch(pe), Some(jackdaw_bsn::BsnPatch::Name(_))))
-    });
-    match name {
-        Some(name) => {
-            if let Some(pe) = existing {
-                ast.set_patch(pe, jackdaw_bsn::BsnPatch::Name(name.to_string()));
-            } else {
-                let pe = ast
-                    .world
-                    .spawn(jackdaw_bsn::BsnPatch::Name(name.to_string()))
-                    .id();
-                if let Some(patches) = ast.get_patches_mut(node) {
-                    patches.0.insert(0, pe);
-                }
-            }
-        }
-        None => {
-            if let Some(pe) = existing {
-                if let Some(patches) = ast.get_patches_mut(node) {
-                    patches.0.retain(|&x| x != pe);
-                }
-                ast.world.despawn(pe);
-            }
-        }
-    }
-}
-
-impl SetBsnField {
-    /// Write an entity name into the document's `#name` reference patch and
-    /// mirror it onto the live ECS entity. `None` removes both.
-    fn apply_name(&self, world: &mut World, name: Option<&str>) {
-        {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(self.entity) {
-                set_name_patch(&mut ast, node, name);
-            }
-        }
-        let Ok(mut entity_mut) = world.get_entity_mut(self.entity) else {
-            return;
-        };
-        match name {
-            Some(name) => {
-                entity_mut.insert(Name::new(name.to_string()));
-            }
-            None => {
-                entity_mut.remove::<Name>();
-            }
-        }
-    }
-
-    /// Re-apply this command's component patch from the document to the live
-    /// entity, so ECS matches the document after execute or undo.
-    fn mirror_patch_to_ecs(&self, world: &mut World) {
-        let patch = {
-            let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-            let Some(patches_entity) = ast.ast_for(self.entity) else {
-                return;
-            };
-            ast.find_patch_by_type_path(patches_entity, &self.type_path)
-                .and_then(|pe| ast.get_patch(pe))
-                .cloned()
-        };
-        if let Some(patch) = patch {
-            jackdaw_bsn::apply_component_patch(world, self.entity, &patch);
-        }
-    }
-}
-
-impl EditorCommand for SetBsnField {
+impl EditorCommand for SetField {
     fn execute(&mut self, world: &mut World) {
-        // Names live in the document as `#name` reference patches, not
-        // component patches, so route them through the name path.
-        if self.type_path == NAME_TYPE_PATH {
-            let new_name = bsn_value_string(&self.new_value)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            self.apply_name(world, new_name.as_deref());
-            return;
-        }
-        let is_project = world
-            .get_resource::<crate::project_types::ProjectTypes>()
-            .is_some_and(|pt| pt.is_project_component(&self.type_path));
-        let had_patch = {
-            let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-            ast.ast_for(self.entity)
-                .is_some_and(|node| ast.find_patch_by_type_path(node, &self.type_path).is_some())
-        };
-        // Derived = on the live entity with no document patch. Project
-        // components are document-only; a missing patch is still a first
-        // author that undo should drop entirely.
-        let live_before =
-            !is_project && entity_has_reflected_component(world, self.entity, &self.type_path);
-        // First override of a derived component: capture the pre-edit live
-        // field when the caller did not supply a baseline.
-        if self.old_value.is_none() && !self.field_path.is_empty() && live_before && !had_patch {
-            self.old_value = live_bsn_field(world, self.entity, &self.type_path, &self.field_path);
-        }
-        {
-            let registry = world.resource::<AppTypeRegistry>().clone();
-            let registry = registry.read();
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            let Some(patches_entity) = ast.ast_for(self.entity) else {
-                return;
-            };
-            if is_project {
-                set_project_field(
-                    &mut ast,
-                    patches_entity,
-                    &self.type_path,
-                    &self.field_path,
-                    self.new_value.clone(),
-                );
-            } else {
-                jackdaw_bsn::set_bsn_field(
-                    &mut ast,
-                    patches_entity,
-                    &self.type_path,
-                    &self.field_path,
-                    self.new_value.clone(),
-                    &registry,
-                );
-            }
-            if !had_patch && (is_project || live_before) {
-                self.was_derived = true;
-                if live_before {
-                    info!(
-                        "Authored override for previously derived component '{}'",
-                        self.type_path
-                    );
-                }
-            }
-        }
-        // A project component has no real ECS counterpart to mirror into; the
-        // document is the whole of its editor state.
-        if !is_project {
-            self.mirror_patch_to_ecs(world);
-        }
+        write_field(
+            world,
+            self.entity,
+            &self.type_path,
+            &self.field_path,
+            self.new_value.as_ref(),
+        );
     }
 
     fn undo(&mut self, world: &mut World) {
-        if self.type_path == NAME_TYPE_PATH {
-            let old_name = self
-                .old_value
-                .as_ref()
-                .and_then(bsn_value_string)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
-            self.apply_name(world, old_name.as_deref());
-            return;
-        }
-        // A missing old value means execute authored something that did not
-        // exist before: a whole component (empty field path) or a single
-        // field of a sparse patch. Undo removes what execute authored.
-        let removes_component = self.field_path.is_empty() && self.old_value.is_none();
-        let removes_field = !self.field_path.is_empty() && self.old_value.is_none();
-        let is_project = world
-            .get_resource::<crate::project_types::ProjectTypes>()
-            .is_some_and(|pt| pt.is_project_component(&self.type_path));
-        {
-            let registry = world.resource::<AppTypeRegistry>().clone();
-            let registry = registry.read();
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            let Some(patches_entity) = ast.ast_for(self.entity) else {
-                return;
-            };
-            if self.was_derived {
-                // Drop the override so the component is derived (or absent
-                // from the document) again. Restore the pre-edit live field
-                // onto the temporary patch when one exists, so mirror can
-                // put ECS back before the patch is removed.
-                if let Some(old_value) = &self.old_value {
-                    jackdaw_bsn::set_bsn_field(
-                        &mut ast,
-                        patches_entity,
-                        &self.type_path,
-                        &self.field_path,
-                        old_value.clone(),
-                        &registry,
-                    );
-                }
-            } else if removes_component {
-                ast.remove_component_patch(patches_entity, &self.type_path);
-            } else if removes_field {
-                jackdaw_bsn::remove_bsn_field(
-                    &mut ast,
-                    patches_entity,
-                    &self.type_path,
-                    &self.field_path,
-                );
-            } else if let Some(old_value) = &self.old_value {
-                if is_project {
-                    set_project_field(
-                        &mut ast,
-                        patches_entity,
-                        &self.type_path,
-                        &self.field_path,
-                        old_value.clone(),
-                    );
-                } else {
-                    jackdaw_bsn::set_bsn_field(
-                        &mut ast,
-                        patches_entity,
-                        &self.type_path,
-                        &self.field_path,
-                        old_value.clone(),
-                        &registry,
-                    );
-                }
+        match &self.old_value {
+            Some(old) => write_field(world, self.entity, &self.type_path, &self.field_path, old.as_ref()),
+            None if self.field_path.is_empty() => {
+                remove_component_from_ecs(world, self.entity, &self.type_path)
             }
-        }
-        // Project components have no ECS counterpart; the document write above
-        // is the whole of the undo.
-        if is_project {
-            if self.was_derived {
-                let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-                if let Some(patches_entity) = ast.ast_for(self.entity) {
-                    ast.remove_component_patch(patches_entity, &self.type_path);
-                }
-            }
-            return;
-        }
-        if self.was_derived {
-            // Demote only: restore the pre-edit live field when captured,
-            // then drop the override. The component stays on the entity.
-            if self.old_value.is_some() {
-                self.mirror_patch_to_ecs(world);
-            }
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(patches_entity) = ast.ast_for(self.entity) {
-                ast.remove_component_patch(patches_entity, &self.type_path);
-            }
-        } else if removes_component {
-            remove_component_from_ecs(world, self.entity, &self.type_path);
-        } else if removes_field {
-            // The doc field is gone; restore the ECS field to the type's
-            // default, which is what the sparse patch resolves to when the
-            // field is absent.
-            reset_ecs_field_to_default(world, self.entity, &self.type_path, &self.field_path);
-        } else {
-            self.mirror_patch_to_ecs(world);
+            None => reset_ecs_field_to_default(world, self.entity, &self.type_path, &self.field_path),
         }
     }
 
@@ -1487,12 +906,45 @@ impl EditorCommand for SetBsnField {
     }
 }
 
+/// Reflect type path of [`Name`].
+pub(crate) const NAME_TYPE_PATH: &str = "bevy_ecs::name::Name";
+
+/// Write a reflected value into one field of a live component, or insert the whole component
+/// for an empty `field_path`.
+pub(crate) fn write_field(
+    world: &mut World,
+    entity: Entity,
+    type_path: &str,
+    field_path: &str,
+    value: &dyn PartialReflect,
+) {
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+    let Some(reflect_component) = registry
+        .get_with_type_path(type_path)
+        .and_then(|registration| registration.data::<ReflectComponent>())
+    else {
+        return;
+    };
+    let Ok(mut entity_mut) = world.get_entity_mut(entity) else {
+        return;
+    };
+    if field_path.is_empty() {
+        reflect_component.insert(&mut entity_mut, value, &registry);
+        return;
+    }
+    let Some(component) = reflect_component.reflect_mut(entity_mut) else {
+        return;
+    };
+    if let Ok(field) = component.into_inner().reflect_path_mut(field_path)
+        && let Err(err) = field.try_apply(value)
+    {
+        warn!("{type_path}.{field_path}: {err}");
+    }
+}
+
 /// Apply a JSON value to an ECS component -- either full component replacement
-/// (empty `field_path`) or field-level update.
-///
-/// Writes only the live ECS component, leaving the scene document untouched.
-/// Prefer [`field_edit_preview`] for inspector gestures; this is the live write
-/// primitive that preview uses.
+/// (empty `field_path`) or field-level update. The live write a preview uses.
 pub(crate) fn apply_json_field_to_ecs(
     world: &mut World,
     entity: Entity,
@@ -1573,7 +1025,7 @@ fn reset_ecs_field_to_default(
     }
 }
 
-fn remove_component_from_ecs(world: &mut World, entity: Entity, type_path: &str) {
+pub(crate) fn remove_component_from_ecs(world: &mut World, entity: Entity, type_path: &str) {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
     let Some(registration) = registry.get_with_type_path(type_path) else {
@@ -1587,25 +1039,6 @@ fn remove_component_from_ecs(world: &mut World, entity: Entity, type_path: &str)
     };
     reflect_component.remove(&mut entity_mut);
 }
-
-/// Whether `entity` currently carries the reflected component named by
-/// `type_path`. Used to distinguish derived (ECS-only) components from
-/// components that execute will mint for the first time.
-fn entity_has_reflected_component(world: &World, entity: Entity, type_path: &str) -> bool {
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-    let Some(registration) = registry.get_with_type_path(type_path) else {
-        return false;
-    };
-    let Some(reflect_component) = registration.data::<ReflectComponent>() else {
-        return false;
-    };
-    let Ok(entity_ref) = world.get_entity(entity) else {
-        return false;
-    };
-    reflect_component.reflect(entity_ref).is_some()
-}
-
 /// A JSON number as a signed integer. `as_i64` is `None` for a float even
 /// when it is a whole value, which is what a drag-scrub widget writes.
 fn json_number_as_i64(n: &serde_json::Number) -> i64 {
@@ -1705,36 +1138,21 @@ fn try_typed_deserialize(
     }
 }
 
-/// The authored value of one field on `entity`'s document node, read from the
-/// live BSN document. `None` when the entity has no node or the component or
-/// field is not authored.
-pub(crate) fn authored_bsn_field(
-    world: &World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-) -> Option<jackdaw_bsn::BsnValue> {
-    let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-    let node = ast.ast_for(entity)?;
-    jackdaw_bsn::get_bsn_field(ast, node, type_path, field_path)
-}
-
-/// The path to author a field edit at and the value to author there.
+/// The path to write a field edit at and the value to write there.
 ///
-/// An edit reaching into a map entry authors the whole map at the map's own
-/// path: a reflect path cannot name a map key, so the entry is written on a
-/// copy of the map and the map is what the document records.
-fn field_edit_to_bsn_value(
+/// An edit reaching into a map entry writes the whole map at the map's own path: a reflect
+/// path cannot name a map key.
+fn field_edit_value(
     world: &World,
     entity: Entity,
     type_path: &str,
     field_path: &str,
     value: &serde_json::Value,
-) -> Option<(String, jackdaw_bsn::BsnValue)> {
+) -> Option<(String, FieldValue)> {
     if let Some(edit) = map_entry_edit(world, entity, type_path, field_path, value) {
         return Some(edit);
     }
-    json_field_edit_to_bsn_value(world, entity, type_path, field_path, value)
+    json_field_value(world, entity, type_path, field_path, value)
         .map(|new_value| (field_path.to_string(), new_value))
 }
 
@@ -1812,9 +1230,7 @@ fn map_entry_edit(
     type_path: &str,
     field_path: &str,
     value: &serde_json::Value,
-) -> Option<(String, jackdaw_bsn::BsnValue)> {
-    use bevy::reflect::GetPath;
-
+) -> Option<(String, FieldValue)> {
     if !field_path.contains('[') {
         return None;
     }
@@ -1838,10 +1254,7 @@ fn map_entry_edit(
     } else {
         merged.reflect_path(map_path.as_str()).ok()?
     };
-    Some((
-        map_path.clone(),
-        jackdaw_bsn::BsnValue::from_reflect(map, &registry),
-    ))
+    Some((map_path.clone(), clone_value(map)?))
 }
 
 /// Write `value` into the live map entry `field_path` names. Whether the path
@@ -1923,199 +1336,55 @@ fn write_map_entry(
     written.then_some(map_path)
 }
 
-/// Convert one field edit given as reflect-format JSON into the
-/// [`jackdaw_bsn::BsnValue`] to author. Field-level edits merge the JSON into
-/// a copy of the entity's current component so nested values convert with
-/// their concrete types; whole-component edits deserialize the JSON directly.
-pub(crate) fn json_field_edit_to_bsn_value(
+/// The value one field edit given as reflect-format JSON stands for. Field-level edits merge
+/// the JSON into a copy of the entity's current component so nested values convert with their
+/// concrete types; a string for an asset handle loads that path.
+pub(crate) fn json_field_value(
     world: &World,
     entity: Entity,
     type_path: &str,
     field_path: &str,
     value: &serde_json::Value,
-) -> Option<jackdaw_bsn::BsnValue> {
-    use bevy::reflect::GetPath;
-    use serde::de::DeserializeSeed;
-
+) -> Option<FieldValue> {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
-    let Some(registration) = registry.get_with_type_path(type_path) else {
-        // Project (schema-reported) components have no editor registration; the
-        // field's authored value comes straight from the extracted schema type.
-        drop(registry);
-        return project_field_edit_to_bsn_value(world, entity, type_path, field_path, value);
-    };
+    let registration = registry.get_with_type_path(type_path)?;
     if field_path.is_empty() {
         let deserializer =
             bevy::reflect::serde::TypedReflectDeserializer::new(registration, &registry);
-        let reflected = deserializer.deserialize(value).ok()?;
-        return Some(jackdaw_bsn::BsnValue::from_reflect(
-            reflected.as_ref(),
-            &registry,
-        ));
+        return deserializer.deserialize(value).ok();
     }
     let reflect_component = registration.data::<ReflectComponent>()?;
-    let entity_ref = world.get_entity(entity).ok()?;
-    let component = reflect_component.reflect(entity_ref)?;
-    // Path navigation needs a concrete (`Reflect`) clone of the component.
+    let component = reflect_component.reflect(world.get_entity(entity).ok()?)?;
     let mut merged: Box<dyn Reflect> = registration
         .data::<bevy::reflect::ReflectFromReflect>()?
         .from_reflect(component.as_partial_reflect())?;
-    // A field naming an asset is authored as the path itself.
     if let Some(text) = value.as_str()
         && let Ok(field) = merged.reflect_path(field_path)
-        && field
-            .get_represented_type_info()
-            .is_some_and(|info| crate::typed_values::takes_asset_path(&registry, info.type_id()))
+        && let Some(handle) = handle_for_path(world, &registry, field, text)
     {
-        return Some(jackdaw_bsn::BsnValue::String(text.to_string()));
+        return Some(handle);
     }
     if let Ok(field) = merged.reflect_path_mut(field_path) {
         apply_json_to_reflect(field, value, &registry);
     }
-    let field = merged.reflect_path(field_path).ok()?;
-    Some(jackdaw_bsn::BsnValue::from_reflect(field, &registry))
+    clone_value(merged.reflect_path(field_path).ok()?)
 }
 
-/// Convert a field edit on a project (schema-reported) component into the
-/// [`jackdaw_bsn::BsnValue`] to author, without an editor registration. The
-/// value is read as the field's schema type, so a type the editor does know --
-/// a colour, an asset path -- converts through its own registration, and a
-/// value the type does not take is refused rather than authored as its own
-/// JSON text.
-///
-/// A path reaching past the field itself is merged into the field's current
-/// value, so `tint.Srgba.red` writes one channel of the colour the field
-/// already holds and the answer is still the whole field, which is what
-/// [`set_project_field`] authors.
-fn project_field_edit_to_bsn_value(
+/// A handle of the type `field` holds, loading `path`; `None` when `field` is no asset handle.
+fn handle_for_path(
     world: &World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-    value: &serde_json::Value,
-) -> Option<jackdaw_bsn::BsnValue> {
-    use crate::schema_values::{self, Step};
-
-    let types = world.get_resource::<crate::project_types::ProjectTypes>()?;
-    let schema = types.component(type_path)?;
-    let steps = schema_values::parse_path(field_path);
-    let Some(Step::Field(name)) = steps.first() else {
-        return schema_values::bsn_for_json(world, types, type_path, value);
-    };
-    let field = schema.fields.iter().find(|f| &f.name == name)?;
-    if steps.len() == 1 {
-        return schema_values::bsn_for_json(world, types, &field.type_path, value);
-    }
-
-    let mut held = authored_project_field_json(world, entity, types, schema, field)?;
-    if !schema_values::json_set(&mut held, &steps[1..], value.clone()) {
-        warn!("`{field_path}` does not reach into the value `{type_path}` holds");
-        return None;
-    }
-    schema_values::bsn_for_json(world, types, &field.type_path, &held)
-}
-
-/// One field of a project component as JSON: what the document authors for it,
-/// and the type's default where the document is silent.
-fn authored_project_field_json(
-    world: &World,
-    entity: Entity,
-    types: &crate::project_types::ProjectTypes,
-    schema: &jackdaw_schema::TypeSchema,
-    field: &jackdaw_schema::FieldSchema,
-) -> Option<serde_json::Value> {
-    let authored = world
-        .get_resource::<jackdaw_bsn::SceneBsnAst>()
-        .and_then(|ast| {
-            let node = ast.ast_for(entity)?;
-            let patch = ast.find_patch_by_type_path(node, &schema.type_path)?;
-            match ast.get_patch(patch)? {
-                jackdaw_bsn::BsnPatch::Struct(data) => Some(data.clone()),
-                _ => None,
-            }
-        });
-    match authored {
-        Some(data) => crate::schema_values::field_json(world, types, schema, &data, field),
-        None => crate::schema_values::default_field_json(schema, &field.name),
-    }
-}
-
-/// Author a field value on a project component's document patch without a
-/// registration. Project types are never in the editor registry, so the
-/// registry-gated [`jackdaw_bsn::set_bsn_field`] refuses them; this upserts the
-/// named field directly on the node's struct patch instead. A path reaching
-/// deeper names the same top-level field, whose whole new value
-/// [`project_field_edit_to_bsn_value`] has already merged.
-fn set_project_field(
-    ast: &mut jackdaw_bsn::SceneBsnAst,
-    node: Entity,
-    type_path: &str,
-    field_path: &str,
-    value: jackdaw_bsn::BsnValue,
-) {
-    let patch_entity = match ast.find_patch_by_type_path(node, type_path) {
-        Some(pe) => pe,
-        None => {
-            let pe = ast
-                .world
-                .spawn(jackdaw_bsn::BsnPatch::Struct(jackdaw_bsn::BsnStructData {
-                    type_path: type_path.to_string(),
-                    fields: jackdaw_bsn::BsnStructFields(Vec::new()),
-                }))
-                .id();
-            if let Some(patches) = ast.get_patches_mut(node) {
-                patches.0.push(pe);
-            }
-            pe
-        }
-    };
-    let Some(patch) = ast.world.get_mut::<jackdaw_bsn::BsnPatch>(patch_entity) else {
-        return;
-    };
-    let patch = patch.into_inner();
-    if let jackdaw_bsn::BsnPatch::Type(existing) = patch {
-        let existing = existing.clone();
-        *patch = jackdaw_bsn::BsnPatch::Struct(jackdaw_bsn::BsnStructData {
-            type_path: existing,
-            fields: jackdaw_bsn::BsnStructFields(Vec::new()),
-        });
-    }
-    if field_path.is_empty() {
-        if let jackdaw_bsn::BsnValue::Struct(data) = value {
-            *patch = jackdaw_bsn::BsnPatch::Struct(data);
-        }
-        return;
-    }
-    let jackdaw_bsn::BsnPatch::Struct(data) = patch else {
-        return;
-    };
-    let steps = crate::schema_values::parse_path(field_path);
-    let Some(crate::schema_values::Step::Field(name)) = steps.first() else {
-        return;
-    };
-    if let Some(existing) = data.fields.0.iter_mut().find(|f| &f.name == name) {
-        existing.value = value;
-    } else {
-        data.fields.0.push(jackdaw_bsn::BsnField {
-            name: name.clone(),
-            value,
-        });
-    }
-}
-
-/// Write a component value into the live scene document. The patch key
-/// comes from the value's own reflected type path, so a stale
-/// caller-supplied string cannot skew it; `type_path` is kept in the
-/// signature for call-site clarity.
-pub fn sync_component_to_ast<T: bevy::reflect::Reflect>(
-    world: &mut World,
-    entity: Entity,
-    type_path: &str,
-    value: &T,
-) {
-    let _ = type_path;
-    sync_component_to_bsn_doc(world, entity, value.as_partial_reflect());
+    registry: &TypeRegistry,
+    field: &dyn PartialReflect,
+    path: &str,
+) -> Option<FieldValue> {
+    let reflect_handle = registry
+        .get_type_data::<bevy::asset::ReflectHandle>(field.get_represented_type_info()?.type_id())?;
+    let untyped = world
+        .resource::<AssetServer>()
+        .load_builder()
+        .load_erased(reflect_handle.asset_type_id(), path.to_string());
+    Some(reflect_handle.typed(untyped).into_partial_reflect())
 }
 
 /// Record an authored layout edit a live gesture already applied to the ECS,
@@ -2151,7 +1420,6 @@ pub fn push_layout_edits(world: &mut World, edits: Vec<(Entity, Node, Node)>) {
             before,
             after,
         };
-        command.sync_after_external_execute(world);
         commands.push(Box::new(command));
     }
     let entry: Box<dyn EditorCommand> = match commands.len() {
@@ -2177,12 +1445,6 @@ impl SetUiNode {
         if let Some(mut node) = world.get_mut::<Node>(self.entity) {
             *node = value.clone();
         }
-        sync_component_to_ast::<Node>(
-            world,
-            self.entity,
-            crate::inspector::node_card::node_type_path(),
-            value,
-        );
     }
 }
 
@@ -2200,16 +1462,6 @@ impl EditorCommand for SetUiNode {
     fn description(&self) -> &str {
         "Edit UI layout"
     }
-
-    fn sync_after_external_execute(&self, world: &mut World) {
-        let after = self.after.clone();
-        sync_component_to_ast::<Node>(
-            world,
-            self.entity,
-            crate::inspector::node_card::node_type_path(),
-            &after,
-        );
-    }
 }
 
 /// Undoable edit of one UI scene root's [`jackdaw_scene_types::CanvasGuides`].
@@ -2223,22 +1475,15 @@ pub struct SetCanvasGuides {
 
 impl SetCanvasGuides {
     fn apply(&self, world: &mut World, value: &Option<jackdaw_scene_types::CanvasGuides>) {
-        let type_path = <jackdaw_scene_types::CanvasGuides as bevy::reflect::TypePath>::type_path();
         match value {
             Some(guides) => {
                 if let Ok(mut entity) = world.get_entity_mut(self.root) {
                     entity.insert(guides.clone());
                 }
-                sync_component_to_ast(world, self.root, type_path, guides);
             }
             None => {
                 if let Ok(mut entity) = world.get_entity_mut(self.root) {
                     entity.remove::<jackdaw_scene_types::CanvasGuides>();
-                }
-                if let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>()
-                    && let Some(node) = ast.ast_for(self.root)
-                {
-                    ast.remove_component_patch(node, type_path);
                 }
             }
         }
@@ -2264,693 +1509,23 @@ impl EditorCommand for SetCanvasGuides {
     }
 }
 
-/// Put `patch` back on `entity`'s document node when that type is absent.
-fn restore_ast_component_patch(
-    world: &mut World,
-    entity: Entity,
-    type_path: &str,
-    patch: jackdaw_bsn::BsnPatch,
-) {
-    let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-    let Some(node) = ast.ast_for(entity) else {
-        return;
-    };
-    if ast.find_patch_by_type_path(node, type_path).is_some() {
-        return;
-    }
-    let pe = ast.world.spawn(patch).id();
-    if let Some(patches) = ast.get_patches_mut(node) {
-        patches.0.push(pe);
-    }
-}
-
-/// Upsert one component's patch on the entity's BSN document node from a
-/// reflected value.
-pub(crate) fn sync_component_to_bsn_doc(
-    world: &mut World,
-    entity: Entity,
-    value: &dyn bevy::reflect::PartialReflect,
-) {
-    let patch = {
-        let registry = world.resource::<AppTypeRegistry>().read();
-        jackdaw_bsn::component_to_bsn_patch(value, &registry)
-    };
-    let type_path = match value.get_represented_type_info() {
-        Some(info) => info.type_path().to_string(),
-        None => return,
-    };
-    let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>() else {
-        return;
-    };
-    let Some(patches_entity) = ast.ast_for(entity) else {
-        return;
-    };
-    if let Some(existing) = ast.find_patch_by_type_path(patches_entity, &type_path) {
-        ast.set_patch(existing, patch);
-    } else {
-        let patch_entity = ast.world.spawn(patch).id();
-        if let Some(patches) = ast.get_patches_mut(patches_entity) {
-            patches.0.push(patch_entity);
-        }
-    }
-}
-
-/// Reflect a live ECS component field into a [`jackdaw_bsn::BsnValue`] for
-/// undo when the field was not previously authored in the document.
-pub(crate) fn live_bsn_field(
+/// A copy of one live field (or, for an empty `field_path`, the whole component).
+pub(crate) fn live_field(
     world: &World,
     entity: Entity,
     type_path: &str,
     field_path: &str,
-) -> Option<jackdaw_bsn::BsnValue> {
-    use bevy::reflect::GetPath;
-
+) -> Option<FieldValue> {
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
-    let registration = registry.get_with_type_path(type_path)?;
-    let reflect_component = registration.data::<ReflectComponent>()?;
-    let entity_ref = world.get_entity(entity).ok()?;
-    let component = reflect_component.reflect(entity_ref)?;
-    let field = component.reflect_path(field_path).ok()?;
-    Some(jackdaw_bsn::BsnValue::from_reflect(
-        field.as_partial_reflect(),
-        &registry,
-    ))
-}
-
-#[cfg(test)]
-mod set_bsn_field_tests {
-    use super::*;
-    use jackdaw_bsn::{BsnValue, SceneBsnAst, create_entity_in_ast, get_bsn_field};
-
-    fn field_app() -> App {
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        app.init_resource::<SceneBsnAst>();
-        app.init_resource::<FieldEditSessions>();
-        app.init_resource::<Selection>();
-        app.init_resource::<CommandHistory>();
-        app
+    let reflect_component = registry
+        .get_with_type_path(type_path)?
+        .data::<ReflectComponent>()?;
+    let component = reflect_component.reflect(world.get_entity(entity).ok()?)?;
+    if field_path.is_empty() {
+        return clone_value(component.as_partial_reflect());
     }
-
-    /// A model's material overrides, by the model's material name.
-    #[derive(Component, Reflect, Default, Clone)]
-    #[reflect(Component, Default)]
-    struct Worn {
-        materials: std::collections::BTreeMap<String, String>,
-        tints: std::collections::BTreeMap<String, Vec3>,
-    }
-
-    fn worn_app() -> (App, Entity, String) {
-        let mut app = field_app();
-        app.init_resource::<AppTypeRegistry>();
-        app.register_type::<Worn>();
-        let entity = app
-            .world_mut()
-            .spawn(Worn {
-                materials: [
-                    ("Bark".to_string(), "bark.bsn".to_string()),
-                    ("Leaves".to_string(), "leaves.bsn".to_string()),
-                ]
-                .into(),
-                tints: [("Leaves".to_string(), Vec3::ONE)].into(),
-            })
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        jackdaw_bsn::sync_to_ast(app.world_mut(), entity, std::any::TypeId::of::<Worn>());
-        app.world_mut().resource_mut::<Selection>().entities = vec![entity];
-        let type_path = <Worn as bevy::reflect::TypePath>::type_path().to_string();
-        (app, entity, type_path)
-    }
-
-    #[test]
-    fn an_edit_to_one_map_entry_authors_the_map_and_undoes() {
-        let (mut app, entity, type_path) = worn_app();
-        field_edit_commit(
-            app.world_mut(),
-            &type_path,
-            r#"materials["Leaves"]"#,
-            &serde_json::json!("pine.bsn"),
-            "Set field on multiple entities",
-        );
-
-        let worn = app.world().get::<Worn>(entity).expect("worn");
-        assert_eq!(worn.materials["Leaves"], "pine.bsn");
-        assert_eq!(
-            worn.materials["Bark"], "bark.bsn",
-            "the other entry is untouched"
-        );
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let node = ast.ast_for(entity).expect("linked");
-            let authored = get_bsn_field(ast, node, &type_path, "materials");
-            assert!(
-                format!("{authored:?}").contains("pine.bsn"),
-                "the document holds the new entry: {authored:?}"
-            );
-        }
-        assert_eq!(
-            app.world().resource::<CommandHistory>().undo_stack.len(),
-            1,
-            "one undo entry"
-        );
-
-        app.world_mut()
-            .resource_scope(|world, mut history: Mut<CommandHistory>| history.undo(world));
-        let worn = app.world().get::<Worn>(entity).expect("worn");
-        assert_eq!(worn.materials["Leaves"], "leaves.bsn", "undo puts it back");
-        assert_eq!(worn.materials["Bark"], "bark.bsn");
-    }
-
-    #[test]
-    fn a_path_running_on_inside_a_map_entry_writes_that_part_of_it() {
-        let (mut app, entity, type_path) = worn_app();
-        field_edit_commit(
-            app.world_mut(),
-            &type_path,
-            r#"tints["Leaves"].y"#,
-            &serde_json::json!(0.5),
-            "Set field on multiple entities",
-        );
-        let worn = app.world().get::<Worn>(entity).expect("worn");
-        assert_eq!(worn.tints["Leaves"], Vec3::new(1.0, 0.5, 1.0));
-    }
-
-    #[test]
-    fn a_key_the_map_does_not_hold_writes_nothing() {
-        let (mut app, entity, type_path) = worn_app();
-        field_edit_commit(
-            app.world_mut(),
-            &type_path,
-            r#"materials["Moss"]"#,
-            &serde_json::json!("moss.bsn"),
-            "Set field on multiple entities",
-        );
-        let worn = app.world().get::<Worn>(entity).expect("worn");
-        assert_eq!(worn.materials.len(), 2);
-        assert!(
-            app.world()
-                .resource::<CommandHistory>()
-                .undo_stack
-                .is_empty()
-        );
-    }
-
-    #[test]
-    fn set_bsn_field_round_trips_document_and_ecs_with_undo() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(1.0, 0.0, 0.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        // Author the transform into the document so the field edit has a
-        // baseline value to restore.
-        jackdaw_bsn::sync_to_ast(app.world_mut(), entity, std::any::TypeId::of::<Transform>());
-
-        let type_path = "bevy_transform::components::transform::Transform";
-        let mut command = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "translation.x".to_string(),
-            old_value: Some(BsnValue::Float(1.0)),
-            new_value: BsnValue::Float(9.0),
-            was_derived: false,
-        };
-
-        command.execute(app.world_mut());
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).expect("linked");
-            let value = get_bsn_field(ast, pe, type_path, "translation.x");
-            assert!(
-                matches!(value, Some(BsnValue::Float(x)) if (x - 9.0).abs() < 1e-6),
-                "document holds the new value"
-            );
-        }
-        let x = app.world().get::<Transform>(entity).unwrap().translation.x;
-        assert!((x - 9.0).abs() < 1e-6, "ECS mirrors the new value, got {x}");
-
-        command.undo(app.world_mut());
-        let x = app.world().get::<Transform>(entity).unwrap().translation.x;
-        assert!((x - 1.0).abs() < 1e-6, "undo restores ECS, got {x}");
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).expect("linked");
-            let value = get_bsn_field(ast, pe, type_path, "translation.x");
-            assert!(
-                matches!(value, Some(BsnValue::Float(x)) if (x - 1.0).abs() < 1e-6),
-                "undo restores the document"
-            );
-        }
-    }
-
-    /// A field-level execute with no old value authored a previously-absent
-    /// field of a sparse patch; undo removes the field again and resets the
-    /// live ECS field to the type's default.
-    #[test]
-    fn undo_removes_field_authored_by_execute() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(5.0, 0.0, 0.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        let type_path = "bevy_transform::components::transform::Transform";
-        // Author only translation.x, mirroring a sparse patch.
-        let mut cmd_translation = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "translation.x".to_string(),
-            old_value: None,
-            new_value: BsnValue::Float(5.0),
-            was_derived: false,
-        };
-        cmd_translation.execute(app.world_mut());
-
-        // Author a second, previously-absent field.
-        let mut cmd_scale = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "scale.x".to_string(),
-            old_value: None,
-            new_value: BsnValue::Float(3.0),
-            was_derived: false,
-        };
-        cmd_scale.execute(app.world_mut());
-        assert_eq!(app.world().get::<Transform>(entity).unwrap().scale.x, 3.0);
-
-        cmd_scale.undo(app.world_mut());
-
-        // The doc field is gone and the ECS field is back at the default.
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let node = ast.ast_for(entity).expect("linked");
-            assert!(
-                get_bsn_field(ast, node, type_path, "scale.x").is_none(),
-                "undo removes the authored field from the sparse patch"
-            );
-        }
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().scale.x,
-            1.0,
-            "the live field resets to the type default"
-        );
-        // The other authored field is untouched.
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation.x,
-            5.0
-        );
-    }
-
-    #[test]
-    fn undo_removes_component_authored_by_execute() {
-        let mut app = field_app();
-        let entity = app.world_mut().spawn_empty().id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-
-        let type_path = "bevy_transform::components::transform::Transform";
-        let registry = app.world().resource::<AppTypeRegistry>().clone();
-        let registry = registry.read();
-        let new_value = BsnValue::from_reflect(&Transform::from_xyz(4.0, 0.0, 0.0), &registry);
-        drop(registry);
-
-        // Whole-component mint: no prior ECS component, empty field path.
-        let mut command = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: String::new(),
-            old_value: None,
-            new_value,
-            was_derived: false,
-        };
-        command.execute(app.world_mut());
-        assert!(
-            !command.was_derived,
-            "mint from nothing is not a derived promote"
-        );
-        assert!(app.world().get::<Transform>(entity).is_some());
-
-        command.undo(app.world_mut());
-        assert!(
-            app.world().get::<Transform>(entity).is_none(),
-            "undo removes the component execute authored"
-        );
-        let ast = app.world().resource::<SceneBsnAst>();
-        let pe = ast.ast_for(entity).expect("linked");
-        assert!(
-            ast.find_patch_by_type_path(pe, type_path).is_none(),
-            "document no longer carries the authored patch"
-        );
-    }
-
-    #[test]
-    fn whole_component_author_of_derived_undo_keeps_ecs() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(2.0, 5.0, 8.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-
-        let type_path = "bevy_transform::components::transform::Transform";
-        let registry = app.world().resource::<AppTypeRegistry>().clone();
-        let registry = registry.read();
-        let new_value = BsnValue::from_reflect(&Transform::from_xyz(9.0, 5.0, 8.0), &registry);
-        drop(registry);
-
-        let mut command = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: String::new(),
-            old_value: None,
-            new_value,
-            was_derived: false,
-        };
-        command.execute(app.world_mut());
-        assert!(
-            command.was_derived,
-            "pre-existing ECS-only component is a derived promote"
-        );
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation.x,
-            9.0
-        );
-
-        command.undo(app.world_mut());
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).unwrap();
-            assert!(
-                !ast.component_type_paths(pe).iter().any(|p| p == type_path),
-                "undo drops the authored override"
-            );
-        }
-        assert!(
-            app.world().get::<Transform>(entity).is_some(),
-            "demote keeps the live component"
-        );
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation.x,
-            9.0,
-            "without an old_value baseline, live state stays at the post-edit value"
-        );
-    }
-
-    #[test]
-    fn editing_derived_component_authors_override_and_undo_drops_it() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(2.0, 5.0, 8.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        // Transform is on the entity but not in the document, so it is derived.
-        let type_path = "bevy_transform::components::transform::Transform";
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).unwrap();
-            assert!(
-                !ast.component_type_paths(pe).iter().any(|p| p == type_path),
-                "precondition: Transform is not authored"
-            );
-        }
-
-        let mut command = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "translation.x".to_string(),
-            old_value: None,
-            new_value: BsnValue::Float(7.0),
-            was_derived: false,
-        };
-        command.execute(app.world_mut());
-        assert!(command.was_derived, "execute records prior derived state");
-        assert!(
-            command.old_value.is_some(),
-            "execute captures the live field for undo"
-        );
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).unwrap();
-            assert!(
-                ast.component_type_paths(pe).iter().any(|p| p == type_path),
-                "edit authors an override patch"
-            );
-            assert_eq!(
-                get_bsn_field(ast, pe, type_path, "translation.x"),
-                Some(BsnValue::Float(7.0))
-            );
-            assert!(
-                get_bsn_field(ast, pe, type_path, "translation.y").is_none(),
-                "sibling fields stay unauthored (sparse override)"
-            );
-            assert!(
-                get_bsn_field(ast, pe, type_path, "translation.z").is_none(),
-                "sibling fields stay unauthored (sparse override)"
-            );
-        }
-        let translation = app.world().get::<Transform>(entity).unwrap().translation;
-        assert_eq!(translation, Vec3::new(7.0, 5.0, 8.0));
-
-        command.undo(app.world_mut());
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let pe = ast.ast_for(entity).unwrap();
-            assert!(
-                !ast.component_type_paths(pe).iter().any(|p| p == type_path),
-                "undo drops the override; component is derived again"
-            );
-        }
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation,
-            Vec3::new(2.0, 5.0, 8.0),
-            "undo restores the pre-edit live field; siblings unchanged"
-        );
-    }
-
-    #[test]
-    fn gesture_session_baseline_survives_live_preview_mutation() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(2.0, 5.0, 8.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        app.world_mut().resource_mut::<Selection>().entities = vec![entity];
-
-        let type_path = "bevy_transform::components::transform::Transform";
-        let field_path = "translation.x";
-
-        // Preview ticks capture begin baseline then mutate live ECS.
-        field_edit_preview(
-            app.world_mut(),
-            type_path,
-            field_path,
-            &serde_json::json!(7.0),
-        );
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation.x,
-            7.0
-        );
-
-        // Commit must use the session baseline, not the post-preview live value.
-        field_edit_commit(
-            app.world_mut(),
-            type_path,
-            field_path,
-            &serde_json::json!(7.0),
-            "test",
-        );
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation.x,
-            7.0
-        );
-        {
-            let history = app.world().resource::<CommandHistory>();
-            assert_eq!(history.undo_stack.len(), 1);
-        }
-        app.world_mut()
-            .resource_scope(|world, mut history: Mut<CommandHistory>| {
-                history.undo(world);
-            });
-        assert_eq!(
-            app.world().get::<Transform>(entity).unwrap().translation,
-            Vec3::new(2.0, 5.0, 8.0),
-            "undo restores the gesture-start live value, not the previewed value"
-        );
-    }
-
-    #[test]
-    fn sparse_missing_field_commit_undo_removes_field() {
-        let mut app = field_app();
-        let entity = app
-            .world_mut()
-            .spawn(Transform::from_xyz(5.0, 0.0, 0.0))
-            .id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-        app.world_mut().resource_mut::<Selection>().entities = vec![entity];
-        let type_path = "bevy_transform::components::transform::Transform";
-
-        // Author only translation.x (sparse patch).
-        let mut cmd_translation = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "translation.x".to_string(),
-            old_value: None,
-            new_value: BsnValue::Float(5.0),
-            was_derived: false,
-        };
-        cmd_translation.execute(app.world_mut());
-
-        // Preview+commit a previously-absent field; undo must remove it,
-        // not write the live default back into the sparse patch.
-        field_edit_preview(
-            app.world_mut(),
-            type_path,
-            "scale.x",
-            &serde_json::json!(3.0),
-        );
-        field_edit_commit(
-            app.world_mut(),
-            type_path,
-            "scale.x",
-            &serde_json::json!(3.0),
-            "test",
-        );
-        assert_eq!(app.world().get::<Transform>(entity).unwrap().scale.x, 3.0);
-
-        app.world_mut()
-            .resource_scope(|world, mut history: Mut<CommandHistory>| {
-                history.undo(world);
-            });
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let node = ast.ast_for(entity).expect("linked");
-            assert!(
-                get_bsn_field(ast, node, type_path, "scale.x").is_none(),
-                "undo removes the authored field from the sparse patch"
-            );
-        }
-        assert_eq!(app.world().get::<Transform>(entity).unwrap().scale.x, 1.0);
-    }
-
-    /// The `#name` reference patches on an entity's document node.
-    fn name_patch_count(ast: &SceneBsnAst, node: Entity) -> usize {
-        ast.get_patches(node)
-            .map(|patches| {
-                patches
-                    .0
-                    .iter()
-                    .filter(|&&pe| {
-                        matches!(ast.get_patch(pe), Some(jackdaw_bsn::BsnPatch::Name(_)))
-                    })
-                    .count()
-            })
-            .unwrap_or(0)
-    }
-
-    /// The document name and the ECS `Name` for an entity, together.
-    fn doc_and_ecs_name(app: &App, entity: Entity) -> (Option<String>, Option<String>) {
-        let ast = app.world().resource::<SceneBsnAst>();
-        let doc = ast
-            .ast_for(entity)
-            .and_then(|node| ast.get_name(node))
-            .map(str::to_string);
-        let ecs = app
-            .world()
-            .get::<Name>(entity)
-            .map(|n| n.as_str().to_string());
-        (doc, ecs)
-    }
-
-    fn name_command(entity: Entity, old: Option<&str>, new: &str) -> SetBsnField {
-        SetBsnField {
-            entity,
-            type_path: NAME_TYPE_PATH.to_string(),
-            field_path: String::new(),
-            old_value: old.map(|s| BsnValue::String(s.to_string())),
-            new_value: BsnValue::String(new.to_string()),
-            was_derived: false,
-        }
-    }
-
-    #[test]
-    fn naming_an_unnamed_entity_inserts_the_name_patch_and_undo_removes_it() {
-        let mut app = field_app();
-        let entity = app.world_mut().spawn_empty().id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-
-        let mut command = name_command(entity, None, "Hero");
-        command.execute(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (Some("Hero".to_string()), Some("Hero".to_string())),
-            "document and ECS agree after execute"
-        );
-
-        command.undo(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (None, None),
-            "undo removes the name from both document and ECS"
-        );
-    }
-
-    #[test]
-    fn renaming_replaces_the_existing_name_patch_and_undo_restores_it() {
-        let mut app = field_app();
-        let entity = app.world_mut().spawn(Name::new("Old")).id();
-        // create_entity_in_ast seeds the node's name patch from the ECS Name.
-        create_entity_in_ast(app.world_mut(), entity, None);
-
-        let mut command = name_command(entity, Some("Old"), "New");
-        command.execute(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (Some("New".to_string()), Some("New".to_string()))
-        );
-        {
-            let ast = app.world().resource::<SceneBsnAst>();
-            let node = ast.ast_for(entity).unwrap();
-            assert_eq!(
-                name_patch_count(ast, node),
-                1,
-                "a rename replaces the patch instead of stacking a second one"
-            );
-        }
-
-        command.undo(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (Some("Old".to_string()), Some("Old".to_string())),
-            "undo restores the old name in both document and ECS"
-        );
-        let ast = app.world().resource::<SceneBsnAst>();
-        let node = ast.ast_for(entity).unwrap();
-        assert_eq!(name_patch_count(ast, node), 1);
-    }
-
-    #[test]
-    fn renaming_to_an_empty_string_removes_the_name_and_undo_restores_it() {
-        let mut app = field_app();
-        let entity = app.world_mut().spawn(Name::new("Old")).id();
-        create_entity_in_ast(app.world_mut(), entity, None);
-
-        let mut command = name_command(entity, Some("Old"), "");
-        command.execute(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (None, None),
-            "an empty name removes the patch and the ECS Name"
-        );
-
-        command.undo(app.world_mut());
-        assert_eq!(
-            doc_and_ecs_name(&app, entity),
-            (Some("Old".to_string()), Some("Old".to_string()))
-        );
-    }
+    clone_value(component.reflect_path(field_path).ok()?)
 }
 
 #[cfg(test)]
@@ -2998,120 +1573,3 @@ mod spawned_entities_tests {
     }
 }
 
-#[cfg(test)]
-mod bsn_doc_coherence_tests {
-    use super::*;
-    use jackdaw_api_internal::snapshot::SceneSnapshotter;
-    use jackdaw_bsn::{BsnValue, SceneBsnAst, get_bsn_field};
-
-    /// A world holding what the snapshotter reads.
-    fn coherence_app() -> App {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, bevy::asset::AssetPlugin::default()));
-        app.init_resource::<SceneBsnAst>();
-        app.init_resource::<crate::selection::Selection>();
-        app.init_resource::<jackdaw_commands::CommandHistory>();
-        // Editor-state resources the snapshotter captures alongside the doc.
-        app.init_resource::<crate::brush::EditMode>();
-        app.init_resource::<crate::active_tool::ActiveTool>();
-        app.init_resource::<crate::gizmos::GizmoSpace>();
-        app.init_resource::<crate::snapping::SnapSettings>();
-        app.init_resource::<crate::view_modes::ViewModeSettings>();
-        app.init_resource::<crate::viewport_overlays::OverlaySettings>();
-        app.init_resource::<jackdaw_avian_integration::PhysicsOverlayConfig>();
-        app.register_type::<Name>();
-        app.register_type::<Transform>();
-        app.register_type::<jackdaw_scene_types::SceneRootTag>();
-        app
-    }
-
-    #[test]
-    fn undo_respawn_rebuilds_the_bsn_document() {
-        let mut app = coherence_app();
-
-        let entity = app
-            .world_mut()
-            .spawn((
-                Name::new("Node"),
-                Transform::from_xyz(1.0, 0.0, 0.0),
-                jackdaw_scene_types::SceneRootTag,
-            ))
-            .id();
-        crate::scene_io::register_entity_in_ast(app.world_mut(), entity);
-
-        // Snapshot through the document snapshotter (the undo baseline).
-        let snapshot = crate::undo_snapshot::BsnDocumentSnapshotter.capture(app.world_mut());
-
-        let type_path = "bevy_transform::components::transform::Transform";
-        let mut command = SetBsnField {
-            entity,
-            type_path: type_path.to_string(),
-            field_path: "translation.x".to_string(),
-            old_value: Some(BsnValue::Float(1.0)),
-            new_value: BsnValue::Float(9.0),
-            was_derived: false,
-        };
-        command.execute(app.world_mut());
-
-        // Undo restore path: respawn the world from the snapshot.
-        snapshot.apply(app.world_mut());
-
-        // The respawn re-minted the entity; the document must follow it.
-        let mut query = app
-            .world_mut()
-            .query_filtered::<Entity, With<jackdaw_scene_types::SceneRootTag>>();
-        let respawned = query.single(app.world()).expect("respawned entity");
-        let ast = app.world().resource::<SceneBsnAst>();
-        let pe = ast
-            .ast_for(respawned)
-            .expect("document links the respawned entity");
-        let value = get_bsn_field(ast, pe, type_path, "translation.x");
-        assert!(
-            matches!(value, Some(BsnValue::Float(x)) if (x - 1.0).abs() < 1e-6),
-            "document reflects the restored value"
-        );
-        assert!(
-            ast.ast_for(entity).is_none() || entity == respawned,
-            "no stale link to the pre-undo entity"
-        );
-    }
-
-    /// A restore mints a fresh id, so a second undo must still find the
-    /// snapshot under the id it was taken with.
-    #[test]
-    fn a_despawn_undoes_again_after_a_redo() {
-        let mut app = coherence_app();
-        let entity = app
-            .world_mut()
-            .spawn((
-                Name::new("Node"),
-                Transform::from_xyz(1.0, 0.0, 0.0),
-                jackdaw_scene_types::SceneRootTag,
-            ))
-            .id();
-        crate::scene_io::register_entity_in_ast(app.world_mut(), entity);
-
-        let mut command = DespawnEntity::from_world(app.world_mut(), entity);
-        command.execute(app.world_mut());
-        command.undo(app.world_mut());
-        assert!(
-            app.world().get_entity(command.entity).is_ok(),
-            "the first undo puts the entity back"
-        );
-
-        command.execute(app.world_mut());
-        command.undo(app.world_mut());
-
-        assert!(
-            app.world().get_entity(command.entity).is_ok(),
-            "the second undo puts the entity back too"
-        );
-        assert!(
-            app.world()
-                .resource::<SceneBsnAst>()
-                .ast_for(command.entity)
-                .is_some(),
-            "and the document links what it put back"
-        );
-    }
-}

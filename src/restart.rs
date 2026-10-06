@@ -63,7 +63,7 @@ use bevy::prelude::Resource;
 /// restart -> auto-open -> build -> restart infinite loop.
 ///
 /// The other gate a launch can be waved past is
-/// [`jackdaw_project_build::bootstrap::ENV_SKIP_SETUP_CHECK`], which skips
+/// the setup check, which skips
 /// the first-run SDK setup screen. This one skips the project build; that
 /// one skips the SDK build behind it.
 pub const ENV_SKIP_INITIAL_BUILD: &str = "JACKDAW_SKIP_INITIAL_BUILD";

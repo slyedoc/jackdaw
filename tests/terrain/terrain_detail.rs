@@ -631,27 +631,6 @@ fn the_mesh_field_takes_the_card_or_a_model_and_refuses_a_missing_file() {
 }
 
 #[test]
-fn the_reported_bsn_carries_the_detail_block() {
-    let mut app = layered_app();
-    assert_eq!(
-        set_field(&mut app, "cull_distance", "83"),
-        OperatorResult::Finished
-    );
-    let (entity, _) = the_terrain(&mut app);
-
-    let bsn = jackdaw_remote::bsn_methods::entity_bsn(app.world_mut(), entity)
-        .expect("the terrain reports as BSN");
-    assert!(
-        bsn.contains("DetailLayer"),
-        "the reported BSN carries no detail layer:\n{bsn}"
-    );
-    assert!(
-        bsn.contains("cull_distance: 83"),
-        "the reported BSN carries no edited cull distance:\n{bsn}"
-    );
-}
-
-#[test]
 fn a_stroke_marks_the_ground_it_is_crossing_rather_than_all_it_has_crossed() {
     let mut app = layered_app();
     let (entity, _) = the_terrain(&mut app);

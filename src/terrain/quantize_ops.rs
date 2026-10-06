@@ -43,13 +43,7 @@ pub(super) fn commit_quantization(
         return;
     }
     let shading_changed = terrain.quantization.enabled != before.enabled;
-    let terrain = terrain.clone();
-    crate::commands::sync_component_to_ast(
-        world,
-        entity,
-        "jackdaw_scene_types::types::Terrain",
-        &terrain,
-    );
+    let _terrain = terrain.clone();
     if shading_changed && let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(entity) {
         dirty.rebuild_all = true;
     }

@@ -120,7 +120,7 @@ pub fn ensure_terrain_dirty_chunks(
 /// carrying the original's `data_path`, which would alias two terrains onto one
 /// heightmap, so the copy is re-keyed and the original's data cloned into it.
 pub fn ensure_terrain_data_path(world: &mut World) {
-    let mut query = world.query::<(Entity, &jackdaw_scene_types::Terrain)>();
+    let mut query = world.query_filtered::<(Entity, &jackdaw_scene_types::Terrain), With<crate::scene_io::SceneEntity>>();
     let mut seen: HashSet<String> = HashSet::new();
     let mut needs_path: Vec<(Entity, Option<String>)> = Vec::new();
     for (entity, terrain) in query.iter(world) {
@@ -174,12 +174,6 @@ pub fn ensure_terrain_data_path(world: &mut World) {
         }
         // The document is the save-time source of truth, so the emptied
         // heights and the minted path have to reach it explicitly.
-        crate::commands::sync_component_to_ast(
-            world,
-            entity,
-            "jackdaw_scene_types::types::Terrain",
-            &terrain,
-        );
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(entity) {
             dirty.rebuild_all = true;
         }
@@ -203,7 +197,7 @@ fn fold_per_layer_wind_into_the_scenes_wind(world: &mut World) {
     {
         return;
     }
-    let mut terrains = world.query::<(Entity, &jackdaw_scene_types::Terrain)>();
+    let mut terrains = world.query_filtered::<(Entity, &jackdaw_scene_types::Terrain), With<crate::scene_io::SceneEntity>>();
     let carrying_detail: Vec<Entity> = terrains
         .iter(world)
         .filter(|(_, terrain)| !terrain.detail.is_empty())
@@ -219,13 +213,7 @@ fn fold_per_layer_wind_into_the_scenes_wind(world: &mut World) {
             let folded = layer.take_legacy_wind();
             blowing.get_or_insert(folded);
         }
-        let terrain = terrain.clone();
-        crate::commands::sync_component_to_ast(
-            world,
-            *entity,
-            "jackdaw_scene_types::types::Terrain",
-            &terrain,
-        );
+        let _terrain = terrain.clone();
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(*entity) {
             dirty.rebuild_all = true;
         }
@@ -235,12 +223,6 @@ fn fold_per_layer_wind_into_the_scenes_wind(world: &mut World) {
         return;
     };
     world.entity_mut(first).insert(blowing);
-    crate::commands::sync_component_to_ast(
-        world,
-        first,
-        "jackdaw_scene_types::types::Wind",
-        &blowing,
-    );
 }
 
 /// Keeps an `Aabb` on every terrain describing the ground it authors.

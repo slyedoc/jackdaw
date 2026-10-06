@@ -729,7 +729,7 @@ fn dolly_available(
 pub(crate) fn view_frame_all(
     _: In<OperatorParameters>,
     active: Res<ActiveViewport>,
-    scene_entities: Query<(Entity, &GlobalTransform), (With<Name>, Without<crate::EditorEntity>)>,
+    scene_entities: Query<(Entity, &GlobalTransform), (With<Name>, With<crate::scene_io::SceneEntity>)>,
     children: Query<&Children>,
     bounded: Query<(&GlobalTransform, &Aabb), Without<crate::ViewDependentBounds>>,
     camera_entities: Query<Entity, With<MainViewportCamera>>,

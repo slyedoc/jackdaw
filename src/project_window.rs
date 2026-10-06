@@ -126,7 +126,7 @@ impl KindFilter {
         match self {
             KindFilter::All => true,
             KindFilter::Scenes => {
-                entry.kind == AssetFileKind::Scene && jackdaw_bsn::is_document_path(&entry.path)
+                entry.kind == AssetFileKind::Scene && crate::bsn_files::is_document_path(&entry.path)
             }
             KindFilter::Prefabs => entry.kind == AssetFileKind::Prefab,
             KindFilter::Materials => entry_kind_id(entry, kinds)
@@ -529,35 +529,43 @@ fn scan_folders(dir: &Path) -> Vec<PathBuf> {
     folders
 }
 
-/// Rebuild the tree from the root whenever the filesystem moved under it.
+/// Rebuild the tree from the root whenever the filesystem moved under it. Applied against the
+/// tree as it stands when the commands run: a dock rebuild can replace the panel in the same
+/// frame, and rows parented to the old tree would float free at the window's corner.
 fn refresh_folder_tree(
     mut state: ResMut<ProjectWindowState>,
-    trees: Query<(Entity, Option<&Children>), With<ProjectFolderTree>>,
+    trees: Query<Entity, With<ProjectFolderTree>>,
     mut commands: Commands,
 ) {
     if !state.needs_tree_refresh {
         return;
     }
-    let Ok((tree, existing)) = trees.single() else {
+    let Ok(tree) = trees.single() else {
         return;
     };
     state.needs_tree_refresh = false;
-
-    if let Some(children) = existing {
-        for child in children.iter() {
-            commands.entity(child).despawn();
+    commands.queue(move |world: &mut World| {
+        if world.get_entity(tree).is_err() {
+            world.resource_mut::<ProjectWindowState>().needs_tree_refresh = true;
+            return;
         }
-    }
-    if !state.root_directory.is_dir() {
-        return;
-    }
-    spawn_folder_row(
-        &mut commands,
-        tree,
-        &state.root_directory,
-        true,
-        &state.expanded,
-    );
+        let children: Vec<Entity> = world
+            .get::<Children>(tree)
+            .map(|children| children.iter().collect())
+            .unwrap_or_default();
+        for child in children {
+            world.entity_mut(child).despawn();
+        }
+        let state = world.resource::<ProjectWindowState>();
+        let root = state.root_directory.clone();
+        let expanded = state.expanded.clone();
+        if !root.is_dir() {
+            return;
+        }
+        let mut commands = world.commands();
+        spawn_folder_row(&mut commands, tree, &root, true, &expanded);
+        world.flush();
+    });
 }
 
 /// Spawn one folder row. `is_root` names the row after the project's assets
@@ -769,10 +777,7 @@ fn dir_entry(path: PathBuf, current: &Path, selected: Option<&str>) -> Option<Di
     if file_name.starts_with('.') {
         return None;
     }
-    let is_selected = selected == Some(path.to_string_lossy().as_ref());
-    if !is_selected && jackdaw_bsn::is_binary_path(&path) && path.with_extension("bsn").is_file() {
-        return None;
-    }
+    let _ = selected;
     let folder = path
         .parent()
         .filter(|parent| *parent != current)
@@ -859,8 +864,7 @@ fn scan_current_directory(state: &mut ProjectWindowState, kinds: &AssetKinds) ->
                 .extension()
                 .and_then(|e| e.to_str())
                 .is_some_and(|extension| {
-                    extension.eq_ignore_ascii_case("jsn")
-                        || jackdaw_bsn::is_document_extension(extension)
+                    extension.eq_ignore_ascii_case("bsn")
                 });
         if !entry.is_directory && reads_a_type {
             entry.kind = state.kind_cache.check(&entry.path, kinds);
@@ -1181,7 +1185,7 @@ fn tile_subject(entry: &DirEntry, kinds: &AssetKinds) -> Option<crate::thumbnail
     if entry.is_prefab() {
         return Some(Subject::Prefab);
     }
-    (entry.kind == AssetFileKind::Scene && jackdaw_bsn::is_document_path(&entry.path))
+    (entry.kind == AssetFileKind::Scene && crate::bsn_files::is_document_path(&entry.path))
         .then_some(Subject::Scene)
 }
 
@@ -1380,7 +1384,7 @@ fn attach_tile_behaviour(commands: &mut Commands, tile: Entity, entry: &DirEntry
         );
         return;
     }
-    if entry.is_prefab() || jackdaw_bsn::is_document_path(&entry.path) {
+    if entry.is_prefab() || crate::bsn_files::is_document_path(&entry.path) {
         let path = entry.path.clone();
         commands.entity(tile).observe(
             move |_: On<PointerDragStart>, mut drag: ResMut<ActiveAssetDrag>| {
@@ -1592,7 +1596,7 @@ fn open_path(world: &mut World, path: &Path, is_directory: bool) {
         return;
     }
 
-    let is_document = jackdaw_bsn::is_document_path(&path)
+    let is_document = crate::bsn_files::is_document_path(&path)
         || path
             .extension()
             .is_some_and(|extension| extension.eq_ignore_ascii_case("jsn"));
@@ -1637,12 +1641,11 @@ const NEW_SCENE_ACTION: &str = "project.new_scene";
 const NEW_ASSET_ACTION: &str = "project.new_asset";
 const NEW_ANIM_GRAPH_ACTION: &str = "project.new_anim_graph";
 const NEW_ANIM_FSM_ACTION: &str = "project.new_anim_fsm";
+const NEW_CHARACTER_ACTION: &str = "project.new_character";
 const DUPLICATE_ACTION: &str = "project.duplicate";
 const RENAME_ACTION: &str = "project.rename";
 const REVEAL_ACTION: &str = "project.reveal";
 const DELETE_ACTION: &str = "project.delete";
-const CONVERT_TO_BINARY_ACTION: &str = "project.convert_to_binary";
-const CONVERT_TO_TEXT_ACTION: &str = "project.convert_to_text";
 
 fn open_context_menu(
     commands: &mut Commands,
@@ -1669,12 +1672,7 @@ fn open_context_menu(
         items.push((NEW_ASSET_ACTION, crate::new_asset::NEW_ASSET_LABEL));
         items.push((NEW_ANIM_GRAPH_ACTION, "New Animation Graph"));
         items.push((NEW_ANIM_FSM_ACTION, "New State Machine"));
-    }
-    if jackdaw_bsn::is_document_path(path) {
-        items.push(match jackdaw_bsn::is_binary_path(path) {
-            true => (CONVERT_TO_TEXT_ACTION, "Convert to Text"),
-            false => (CONVERT_TO_BINARY_ACTION, "Convert to Binary"),
-        });
+        items.push((NEW_CHARACTER_ACTION, "New Character"));
     }
     if !is_directory {
         items.push((DUPLICATE_ACTION, "Duplicate"));
@@ -1701,6 +1699,11 @@ fn on_context_action(
     if action == RENAME_ACTION {
         state.renaming = Some(target.path.clone());
         state.needs_refresh = true;
+    } else if action == NEW_CHARACTER_ACTION {
+        commands
+            .operator("animgraph.new_character")
+            .param("path", target.path.to_string_lossy().into_owned())
+            .call();
     } else if action == NEW_ANIM_GRAPH_ACTION || action == NEW_ANIM_FSM_ACTION {
         commands
             .operator("animgraph.new")

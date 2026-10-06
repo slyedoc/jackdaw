@@ -886,20 +886,6 @@ pub(crate) fn spawn_field_row(
     // `ZoneId` is a transparent string newtype. Render its inner string as a plain
     // text field rather than recursing into the tuple struct (which would show a
     // nested `0:` field). Edits commit through the standard string path.
-    #[cfg(feature = "multiplayer")]
-    if let Some(zone) = value.try_downcast_ref::<jackdaw_multiplayer::ZoneId>() {
-        spawn_editable_field(
-            commands,
-            parent,
-            name,
-            &zone.0,
-            field_path,
-            source_entity,
-            type_path,
-            depth,
-        );
-        return;
-    }
 
     let is_compound = matches!(
         value.reflect_ref(),
@@ -1412,22 +1398,6 @@ struct ColorFieldState {
 #[derive(Component)]
 struct ColorCommit(Box<dyn Fn(&mut World, [f32; 4], bool) + Send + Sync>);
 
-/// Optional gate on a color field root. When present and it returns `true`, the
-/// shared plane/slider observers drop the edit before touching `ColorFieldState`
-/// or the sub-widgets, so a read-only field never moves. Absent means always
-/// editable. Callers that need the read-only case (reflect fields skip remote
-/// proxy targets) attach this; the observers stay binding-agnostic.
-#[derive(Component)]
-struct ColorCommitSkip(Box<dyn Fn(&World) -> bool + Send + Sync>);
-
-/// True when a color field root carries a `ColorCommitSkip` that vetoes the
-/// edit. Runs against the read-only world before an observer mutates state.
-fn color_edit_skipped(world: &World, root: Entity) -> bool {
-    world
-        .get::<ColorCommitSkip>(root)
-        .is_some_and(|skip| skip.0(world))
-}
-
 /// Marks the inner text entry of a color field's hex input and links it to the
 /// field root. The hex commit observers self-filter on this marker so the
 /// generic string-field commit path never runs for the hex box.
@@ -1597,19 +1567,7 @@ fn spawn_color_field(
         }
     };
 
-    let root = spawn_color_picker(commands, parent, rgba, name, left_padding, commit);
-
-    // The plane/slider drag observers skip read-only remote proxy targets. Held
-    // as a `ColorCommitSkip` on the root so the shared observers never touch
-    // `FieldBinding`; the hex commit path is unaffected, matching the prior
-    // behavior where only the drag observers guarded on the proxy.
-    commands
-        .entity(root)
-        .insert(ColorCommitSkip(Box::new(move |world: &World| {
-            world
-                .get::<crate::remote::entity_browser::RemoteEntityProxy>(source_entity)
-                .is_some()
-        })));
+    spawn_color_picker(commands, parent, rgba, name, left_padding, commit);
 }
 
 /// Container framing the color field's hex `FeathersTextInput`. The inner text
@@ -1798,9 +1756,6 @@ pub(crate) fn on_color_plane_change(
     let value = event.value;
     let is_final = event.is_final;
     commands.queue(move |world: &mut World| {
-        if color_edit_skipped(world, root) {
-            return;
-        }
         if let Some(mut state) = world.get_mut::<ColorFieldState>(root) {
             state.rgba[0] = value.x;
             state.rgba[2] = value.y;
@@ -1834,9 +1789,6 @@ pub(crate) fn on_color_slider_change(
     let value = event.value;
     let is_final = event.is_final;
     commands.queue(move |world: &mut World| {
-        if color_edit_skipped(world, root) {
-            return;
-        }
         if let Some(mut state) = world.get_mut::<ColorFieldState>(root) {
             state.rgba[channel] = value;
         }
@@ -1858,15 +1810,6 @@ fn apply_color_with_undo(
     // Live edits need the color in canonical reflect form (a `Color`
     // enum like `{"LinearRgba": {..}}`), not the picker's raw sRGBA
     // array, so the game can deserialize the full component.
-    if *world.resource::<crate::pie_mirror::PieViewMode>() == crate::pie_mirror::PieViewMode::Live {
-        let srgba = Srgba::new(new_rgba[0], new_rgba[1], new_rgba[2], new_rgba[3]);
-        let canonical = {
-            let reg = registry.read();
-            color_to_canonical_json(Color::Srgba(srgba), &reg)
-        };
-        try_route_pie_live_field_edit(world, _entity, type_path, field_path, canonical);
-        return;
-    }
 
     // The canonical reflect JSON (`{"Srgba": {..}}`) deserializes into any
     // `Color`-typed field; the picker's raw sRGBA array does not.
@@ -2055,88 +1998,6 @@ fn spawn_editable_field(
     );
 }
 
-/// When the inspector is in PIE Live mode, apply a field edit to the selected
-/// preview entity immediately (so the viewport reflects the change) and stream
-/// a `SetComponent` to the focused running game instance. Returns `true` when
-/// handled as a live edit so the caller skips the authored `SetBsnField` path.
-///
-/// The preview entity IS the normal `Selection` entity in Live mode (the
-/// projection has already applied the live overlay to it). A reverse-lookup
-/// through `PieProjection.by_bits` finds which game-side bits to address.
-pub(crate) fn try_route_pie_live_field_edit(
-    world: &mut World,
-    source_entity: Entity,
-    type_path: &str,
-    field_path: &str,
-    field_value: serde_json::Value,
-) -> bool {
-    use crate::pie_mirror::PieViewMode;
-    use jackdaw_pie_protocol::ControlEvent;
-
-    if *world.resource::<PieViewMode>() != PieViewMode::Live {
-        return false;
-    }
-
-    // Find the game-entity bits that correspond to this preview entity.
-    let bits = crate::live_edits::live_bits_for_preview(
-        world.resource::<crate::pie_projection::PieProjection>(),
-        source_entity,
-    );
-    let Some(bits) = bits else {
-        // Not a projected live entity; fall through to the authored path.
-        return false;
-    };
-
-    // Read the full component value from the preview entity via reflection,
-    // then merge the edited field into it so the game receives a complete
-    // canonical component JSON.
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let mut full_value =
-        crate::live_edits::serialize_component_json(world, source_entity, type_path);
-
-    // Log the field as it lands in the merged component (post-normalization),
-    // not the raw inspector input; fall back to the input when the field
-    // cannot be extracted back out.
-    let field_value_for_log;
-    {
-        let reg = registry.read();
-        let raw = field_value.clone();
-        crate::component_json::set_field_in_component_json(
-            &mut full_value,
-            type_path,
-            field_path,
-            field_value,
-            &reg,
-        );
-        field_value_for_log = crate::component_json::get_field_in_component_json(
-            &full_value,
-            type_path,
-            field_path,
-            &reg,
-        )
-        .cloned()
-        .unwrap_or(raw);
-    }
-
-    crate::pie::send_control_to_focused(
-        world,
-        ControlEvent::SetComponent {
-            entity: bits,
-            type_path: type_path.to_string(),
-            value: full_value,
-        },
-    );
-    crate::live_edits::record_live_edit(
-        world,
-        source_entity,
-        bits,
-        type_path,
-        field_path,
-        field_value_for_log,
-    );
-    true
-}
-
 /// Serialize a `Color` to its canonical reflect JSON (e.g.
 /// `{"LinearRgba": {..}}`) so a live color edit round-trips through the
 /// game's full-component deserializer. Falls back to the raw sRGBA array
@@ -2157,14 +2018,11 @@ fn color_to_canonical_json(
 /// ([`crate::commands::field_edit_commit`]). Propagates to the current selection.
 fn apply_field_json_with_undo(
     world: &mut World,
-    entity: Entity,
+    _entity: Entity,
     type_path: &str,
     field_path: &str,
     new_json: serde_json::Value,
 ) {
-    if try_route_pie_live_field_edit(world, entity, type_path, field_path, new_json.clone()) {
-        return;
-    }
 
     crate::commands::field_edit_commit(
         world,
@@ -2581,7 +2439,6 @@ pub(crate) fn on_text_edit_commit(
     bindings: Query<&FieldBinding>,
     child_of_query: Query<&ChildOf>,
     mut commands: Commands,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
 ) {
     // Only the drag/typing-finished commit writes back.
     if !event.is_final {
@@ -2627,9 +2484,6 @@ pub(crate) fn on_text_edit_commit(
     };
 
     // Skip edits targeting remote proxy entities (read-only inspector)
-    if remote_proxies.contains(source_entity) {
-        return;
-    }
 
     let value_str = event.value.clone();
     commands.queue(move |world: &mut World| {
@@ -2648,21 +2502,12 @@ pub(crate) fn on_text_edit_commit(
 /// through the live-edit stream instead.
 fn apply_field_value_live(
     world: &mut World,
-    source_entity: Entity,
+    _source_entity: Entity,
     type_path: &str,
     field_path: &str,
     new_value_str: &str,
 ) {
     let new_json = parse_to_json_value(new_value_str);
-    if try_route_pie_live_field_edit(
-        world,
-        source_entity,
-        type_path,
-        field_path,
-        new_json.clone(),
-    ) {
-        return;
-    }
     crate::commands::field_edit_preview(world, type_path, field_path, &new_json);
 }
 
@@ -2677,16 +2522,12 @@ pub(crate) fn on_numeric_value_change_f64(
     event: On<ValueChange<f64>>,
     bindings: Query<&FieldBinding>,
     mut commands: Commands,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
 ) {
     let source = event.source;
     let Ok(binding) = bindings.get(source) else {
         return;
     };
     let target = binding.source_entity;
-    if remote_proxies.contains(target) {
-        return;
-    }
     let tp = binding.type_path.clone();
     let path = binding.field_path.clone();
     let value = event.value;
@@ -2715,16 +2556,12 @@ pub(crate) fn on_numeric_value_change_i64(
     event: On<ValueChange<i64>>,
     bindings: Query<&FieldBinding>,
     mut commands: Commands,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
 ) {
     let source = event.source;
     let Ok(binding) = bindings.get(source) else {
         return;
     };
     let target = binding.source_entity;
-    if remote_proxies.contains(target) {
-        return;
-    }
     let tp = binding.type_path.clone();
     let path = binding.field_path.clone();
     let value = event.value;
@@ -2750,7 +2587,6 @@ pub(crate) fn on_checkbox_commit(
     event: On<ValueChange<bool>>,
     bindings: Query<&FieldBinding>,
     mut commands: Commands,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
 ) {
     // This global observer sees `ValueChange<bool>` for every checkbox, so
     // the `FieldBinding` lookup self-filters to inspector fields.
@@ -2761,9 +2597,6 @@ pub(crate) fn on_checkbox_commit(
     let source = binding.source_entity;
 
     // Skip edits targeting remote proxy entities (read-only inspector)
-    if remote_proxies.contains(source) {
-        return;
-    }
     let tp = binding.type_path.clone();
     let path = binding.field_path.clone();
     let checked = event.value;
@@ -3461,12 +3294,8 @@ pub(super) fn apply_enum_variant_with_undo(
             .and_then(|enum_info| build_variant_default_json(enum_info, variant_name, &reg))
     };
     let new_json = registered
-        .or_else(|| schema_variant_json(world, type_path, field_path, variant_name))
         .unwrap_or_else(|| serde_json::Value::String(variant_name.to_string()));
 
-    if try_route_pie_live_field_edit(world, _entity, type_path, field_path, new_json.clone()) {
-        return;
-    }
 
     crate::commands::field_edit_commit(
         world,
@@ -3478,19 +3307,6 @@ pub(super) fn apply_enum_variant_with_undo(
     // No need to flag anything -- `refresh_enum_variants` detects the ECS
     // variant change and rebuilds the affected subtree automatically. Same
     // goes for undo/redo since the command framework mutates the ECS too.
-}
-
-/// The value a variant takes on a type the editor knows only as the project's
-/// schema, so a variant carrying fields is written with them rather than as a
-/// bare name.
-fn schema_variant_json(
-    world: &World,
-    type_path: &str,
-    field_path: &str,
-    variant_name: &str,
-) -> Option<serde_json::Value> {
-    let types = world.get_resource::<crate::project_types::ProjectTypes>()?;
-    crate::schema_values::variant_json(world, types, type_path, field_path, variant_name)
 }
 
 /// Walk from a component type through a dotted field path to find the enum `TypeInfo`
@@ -3822,11 +3638,6 @@ fn list_items_as_json(
 ) -> Option<Vec<serde_json::Value>> {
     use bevy::reflect::GetPath;
 
-    if let Some(items) =
-        crate::definition_assets::schema_list_items(world, source, type_path, field_path)
-    {
-        return Some(items);
-    }
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
     let registration = registry.get_with_type_path(type_path)?;
@@ -3853,11 +3664,6 @@ fn default_list_item(
 ) -> Option<serde_json::Value> {
     use bevy::reflect::{GetPath, TypeInfo, prelude::ReflectDefault};
 
-    if let Some(item) =
-        crate::definition_assets::schema_default_list_item(world, source, type_path, field_path)
-    {
-        return Some(item);
-    }
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
     let registration = registry.get_with_type_path(type_path)?;

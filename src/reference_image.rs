@@ -114,7 +114,7 @@ pub fn spawn_reference_image_in_world(world: &mut World, path: &str, position: V
         };
         let entity = spawn_reference_image(&mut commands, &path, position, &mut selection);
         system_state.apply(world);
-        crate::scene_io::register_entity_in_ast(world, entity);
+        crate::scene_io::adopt_entity(world, entity);
         entity
     });
 }

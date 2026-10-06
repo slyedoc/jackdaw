@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::image_capture::{ImageCapture, ImageCaptured};
 use bevy::camera::RenderTarget;
-use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
 use wgpu_types::{TextureFormat, TextureUsages};
@@ -66,6 +65,7 @@ pub fn spawn_capture_camera(
     image.texture_descriptor.usage |= TextureUsages::COPY_SRC;
     let target = world.resource_mut::<Assets<Image>>().add(image);
 
+    let layers = crate::scenes::scene_layers(world);
     let mut camera = world.spawn((
         crate::EditorEntity,
         Camera3d::default(),
@@ -76,7 +76,7 @@ pub fn spawn_capture_camera(
         RenderTarget::Image(target.into()),
         transform,
         projection,
-        RenderLayers::layer(0),
+        layers,
         PendingCapture {
             path,
             frames_left: SETTLE_FRAMES,

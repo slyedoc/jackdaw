@@ -98,12 +98,6 @@ impl SetWind {
             return;
         };
         node.insert(wind);
-        crate::commands::sync_component_to_ast(
-            world,
-            self.entity,
-            "jackdaw_scene_types::types::Wind",
-            &wind,
-        );
     }
 }
 
@@ -243,12 +237,6 @@ impl SetEnvironment {
             return;
         };
         node.insert(environment.clone());
-        crate::commands::sync_component_to_ast(
-            world,
-            self.entity,
-            "jackdaw_scene_types::environment::Environment",
-            environment,
-        );
     }
 }
 

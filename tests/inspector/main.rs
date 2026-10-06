@@ -7,7 +7,6 @@
 #[path = "../util/mod.rs"]
 mod util;
 
-mod asset_row;
 mod bindings_card;
 mod bindings_link;
 mod definition_card;
@@ -17,10 +16,7 @@ mod inspector_val;
 mod map_fields;
 mod material_row;
 mod new_asset_list;
-mod opened_definition_card;
-mod project_component_card;
 mod scene_data_cards;
-mod schema_definition_card;
 mod selection_switch;
 mod typed_entry;
 mod widget_cards;

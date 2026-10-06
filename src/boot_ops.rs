@@ -191,14 +191,14 @@ pub(crate) fn unique_named_entity<'a>(
 /// points at, which is the only label an instance that inherited nothing has.
 pub(crate) fn unique_labelled_entity<'a>(
     named: impl Iterator<Item = (Entity, &'a Name)>,
-    unnamed_instances: impl Iterator<Item = (Entity, &'a crate::prefab::IsA)>,
+    unnamed_instances: impl Iterator<Item = (Entity, &'a bevy::scene::SceneBase)>,
     wanted: &str,
 ) -> Option<Entity> {
     if let Some(entity) = unique_named_entity(named, wanted) {
         return Some(entity);
     }
     let mut matches = unnamed_instances
-        .filter(|(_, isa)| isa.source.file_stem().and_then(|stem| stem.to_str()) == Some(wanted))
+        .filter(|(_, base)| crate::bsn_files::asset_stem(&base.0) == wanted)
         .map(|(entity, _)| entity);
     match (matches.next(), matches.next()) {
         (Some(entity), None) => Some(entity),
@@ -217,10 +217,10 @@ fn entity_with_id(world: &World, id: i64) -> Option<Entity> {
 }
 
 fn entity_named(world: &mut World, wanted: &str) -> Option<Entity> {
-    let mut named = world.query_filtered::<(Entity, &Name), Without<crate::EditorEntity>>();
+    let mut named = world.query_filtered::<(Entity, &Name), With<crate::scene_io::SceneEntity>>();
     let mut instances = world.query_filtered::<
-        (Entity, &crate::prefab::IsA),
-        (Without<Name>, Without<crate::EditorEntity>),
+        (Entity, &bevy::scene::SceneBase),
+        (Without<Name>, With<crate::scene_io::SceneEntity>),
     >();
     unique_labelled_entity(named.iter(world), instances.iter(world), wanted)
 }
@@ -248,9 +248,6 @@ pub const SELECTION_FALLBACK_OPS: &[&str] = &[
     "clip.select",
     "component.add",
     "component.remove",
-    "component.revert_baseline",
-    "component.set",
-    "entity.set_transform",
     "field.set",
     "hierarchy.rename_begin",
     "material.override",
@@ -268,7 +265,6 @@ pub const SELECTION_FALLBACK_OPS: &[&str] = &[
 pub const OPTIONAL_ENTITY_PARAMS: &[(&str, &str)] = &[
     ("clip.track.enable", "track"),
     ("clip.track.interpolation", "track"),
-    ("entity.add.group", "parent"),
     ("entity.delete", "entity"),
     ("entity.snap_to_ground", "entity"),
     ("prefab.spawn_instance", "parent"),

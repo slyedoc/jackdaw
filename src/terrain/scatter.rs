@@ -1755,7 +1755,7 @@ fn spawn_group(world: &mut World, key: &str, terrain: Entity) -> Entity {
             ChildOf(terrain),
         ))
         .id();
-    crate::scene_io::register_entity_in_ast(world, entity);
+    crate::scene_io::adopt_entity(world, entity);
     entity
 }
 
@@ -1804,7 +1804,7 @@ fn spawn_instance(
     if let Some(overrides) = overrides {
         world.entity_mut(entity).insert(overrides);
     }
-    crate::scene_io::register_entity_in_ast(world, entity);
+    crate::scene_io::adopt_entity(world, entity);
     entity
 }
 
@@ -1906,7 +1906,6 @@ impl<T: Component<Mutability = bevy::ecs::component::Mutable> + Clone + Reflect 
         };
         self.previous = entity.get::<T>().cloned();
         entity.insert(self.value.clone());
-        crate::commands::sync_component_to_ast(world, self.entity, T::type_path(), &self.value);
     }
 
     fn undo(&mut self, world: &mut World) {
@@ -1914,17 +1913,10 @@ impl<T: Component<Mutability = bevy::ecs::component::Mutable> + Clone + Reflect 
             if let Ok(mut entity) = world.get_entity_mut(self.entity) {
                 entity.insert(previous.clone());
             }
-            crate::commands::sync_component_to_ast(world, self.entity, T::type_path(), &previous);
             return;
         }
         if let Ok(mut entity) = world.get_entity_mut(self.entity) {
             entity.remove::<T>();
-        }
-        let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>() else {
-            return;
-        };
-        if let Some(node) = ast.ast_for(self.entity) {
-            ast.remove_component_patch(node, T::type_path());
         }
     }
 

@@ -127,39 +127,16 @@ impl SceneSnapshot for BsnDocumentSnapshot {
             error!("Failed to clear tree rows: {err}");
         }
 
-        // Resolve prefab `IsA` references before spawning. The captured text
-        // stores inherited descendants sparsely (`PrefabEntityId` plus only
-        // diverged fields); the resolver materializes the inherited subtrees
-        // back so the respawn produces complete entities. Resolve the cache
-        // borrow before the spawn borrow.
-        // The captured text is borrowed unless the resolver rewrote it: it is
-        // the whole scene, and the loader below only reads it.
-        let resolved_text: std::borrow::Cow<'_, str> =
-            match world.get_resource::<crate::prefab::PrefabAstCache>() {
-                Some(_) => match jackdaw_bsn::parse_bsn_text(&self.text) {
-                    Ok(authored) => {
-                        let cache = world.resource::<crate::prefab::PrefabAstCache>();
-                        let get_prefab = |p: &std::path::Path| cache.get(p);
-                        match crate::prefab::resolver_bsn::resolve_scene(&authored, &get_prefab) {
-                            Ok(resolved) => jackdaw_bsn::emit_scene(&resolved).into(),
-                            Err(e) => {
-                                warn!("undo snapshot: resolver failed: {e}; spawning unresolved");
-                                (&self.text).into()
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        warn!("undo snapshot: parse failed: {e}; spawning raw text");
-                        (&self.text).into()
-                    }
-                },
-                None => (&self.text).into(),
-            };
-
         if let Err(err) = crate::scene_io::despawn_scene_entities(world) {
             error!("undo snapshot: despawn_scene_entities failed: {err}");
         }
-        if let Err(err) = jackdaw_bsn::load_bsn_scene(world, &resolved_text) {
+        let source = world
+            .resource::<crate::scene_io::SceneFilePath>()
+            .path
+            .clone()
+            .map(|path| crate::scene_io::asset_path_of(world, std::path::Path::new(&path)))
+            .unwrap_or_default();
+        if let Err(err) = crate::scene_io::spawn_bsn_text(world, &self.text, &source) {
             error!("undo snapshot failed to reload: {err}");
         }
 
@@ -321,12 +298,6 @@ mod tests {
             let mut brush = Brush::cuboid(1.0, 1.0, 1.0);
             brush.faces[0].material = handle.clone();
             let entity = app.world_mut().spawn((Name::new("Cube"), brush)).id();
-            jackdaw_bsn::create_entity_in_ast(app.world_mut(), entity, None);
-            jackdaw_bsn::sync_to_ast(
-                app.world_mut(),
-                entity,
-                std::any::TypeId::of::<jackdaw_scene_types::Brush>(),
-            );
 
             let text = crate::scene_io::emit_bsn_scene_with_inline_assets(
                 app.world_mut(),
@@ -386,12 +357,6 @@ mod tests {
 
         // Register the entity in the live document and sync its Brush patch the
         // same way an editor edit does (this is the path that drops the handle).
-        jackdaw_bsn::create_entity_in_ast(app.world_mut(), entity, None);
-        jackdaw_bsn::sync_to_ast(
-            app.world_mut(),
-            entity,
-            std::any::TypeId::of::<jackdaw_scene_types::Brush>(),
-        );
 
         // Capture the document (the code path undo/redo and save both use).
         let text = crate::scene_io::emit_bsn_scene_with_inline_assets(

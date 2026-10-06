@@ -450,7 +450,7 @@ impl ClipEventEdit {
                 ChildOf(row),
             ))
             .id();
-        crate::scene_io::register_entity_in_ast(world, event);
+        crate::scene_io::adopt_entity(world, event);
         self.event = Some(event);
     }
 

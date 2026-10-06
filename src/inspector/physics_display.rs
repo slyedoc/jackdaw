@@ -19,8 +19,8 @@ pub(crate) const AVIAN_COLLIDER_TYPE_PATH: &str = "jackdaw_avian_integration::Av
 /// never in the document and are rebuilt by avian on re-enable.
 pub(crate) struct DisablePhysics {
     entity: Entity,
-    /// Document patches that were removed, cloned for restore on undo.
-    removed_patches: Vec<jackdaw_bsn::BsnPatch>,
+    /// The physics components removed, for undo.
+    removed: Vec<(String, crate::commands::FieldValue)>,
 }
 
 /// Whether a type path names one of the physics components this command
@@ -33,9 +33,6 @@ fn is_physics_type_path(type_path: &str) -> bool {
 
 /// The physics component a running preview owns on `entity`, if it owns
 /// one of the three [`DisablePhysics`] takes off.
-///
-/// Matched by [`std::any::TypeId`] rather than by type path: the concrete
-/// `Collider` avian builds carries a path this module cannot spell.
 pub(crate) fn preview_owned_physics(world: &World, entity: Entity) -> Option<&'static str> {
     [
         (std::any::TypeId::of::<RigidBody>(), "RigidBody"),
@@ -47,82 +44,49 @@ pub(crate) fn preview_owned_physics(world: &World, entity: Entity) -> Option<&'s
     .map(|(_, name)| name)
 }
 
-/// The component type path carried by a document patch, if it is a
-/// component patch.
-fn patch_type_path(patch: &jackdaw_bsn::BsnPatch) -> Option<&str> {
-    match patch {
-        jackdaw_bsn::BsnPatch::Struct(data) => Some(&data.type_path),
-        jackdaw_bsn::BsnPatch::TupleStruct(data) => Some(&data.type_path),
-        jackdaw_bsn::BsnPatch::Type(tp) => Some(tp),
-        _ => None,
-    }
-}
-
 impl DisablePhysics {
     pub(crate) fn from_world(world: &World, entity: Entity) -> Self {
-        let mut removed_patches = Vec::new();
-        let ast = world.resource::<jackdaw_bsn::SceneBsnAst>();
-        if let Some(node) = ast.ast_for(entity)
-            && let Some(patches) = ast.get_patches(node)
-        {
-            for &pe in &patches.0 {
-                if let Some(patch) = ast.get_patch(pe)
-                    && patch_type_path(patch).is_some_and(is_physics_type_path)
-                {
-                    removed_patches.push(patch.clone());
+        let mut removed = Vec::new();
+        if let Ok(entity_ref) = world.get_entity(entity) {
+            let type_paths: Vec<String> = entity_ref
+                .archetype()
+                .components()
+                .iter()
+                .filter_map(|&id| world.components().get_info(id)?.type_id())
+                .filter_map(|type_id| {
+                    let registry = world.resource::<AppTypeRegistry>().read();
+                    registry
+                        .get(type_id)
+                        .map(|r| r.type_info().type_path().to_string())
+                })
+                .filter(|type_path| is_physics_type_path(type_path))
+                .collect();
+            for type_path in type_paths {
+                if let Some(value) = crate::commands::live_field(world, entity, &type_path, "") {
+                    removed.push((type_path, value));
                 }
             }
         }
-        Self {
-            entity,
-            removed_patches,
-        }
+        Self { entity, removed }
     }
 }
 
 impl EditorCommand for DisablePhysics {
     fn execute(&mut self, world: &mut World) {
-        let tracked = world.get::<jackdaw_bsn::AstNodeRef>(self.entity).is_some();
-        if tracked {
-            {
-                let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-                if let Some(node) = ast.ast_for(self.entity) {
-                    let physics_paths: Vec<String> = ast
-                        .component_type_paths(node)
-                        .into_iter()
-                        .filter(|tp| is_physics_type_path(tp))
-                        .collect();
-                    for type_path in physics_paths {
-                        ast.remove_component_patch(node, &type_path);
-                    }
-                }
-            }
-            crate::scene_io::resync_entity_from_ast(world, self.entity);
-        } else if let Ok(mut ec) = world.get_entity_mut(self.entity) {
+        if let Ok(mut ec) = world.get_entity_mut(self.entity) {
             ec.remove::<RigidBody>();
             ec.remove::<AvianCollider>();
             ec.remove::<Collider>();
         }
+        for (type_path, _) in &self.removed {
+            crate::commands::remove_component_from_ecs(world, self.entity, type_path);
+        }
     }
 
     fn undo(&mut self, world: &mut World) {
-        {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(self.entity) {
-                for patch in &self.removed_patches {
-                    if patch_type_path(patch).is_some_and(|type_path| {
-                        ast.find_patch_by_type_path(node, type_path).is_some()
-                    }) {
-                        continue;
-                    }
-                    let pe = ast.world.spawn(patch.clone()).id();
-                    if let Some(patches) = ast.get_patches_mut(node) {
-                        patches.0.push(pe);
-                    }
-                }
-            }
+        for (type_path, value) in &self.removed {
+            crate::commands::write_field(world, self.entity, type_path, "", value.as_ref());
         }
-        crate::scene_io::resync_entity_from_ast(world, self.entity);
         if let Ok(mut ec) = world.get_entity_mut(self.entity) {
             ec.insert(super::InspectorDirty);
         }
@@ -134,15 +98,7 @@ impl EditorCommand for DisablePhysics {
 }
 
 pub(crate) fn enable_physics(world: &mut World, entity: Entity) {
-    if world
-        .resource::<jackdaw_bsn::SceneBsnAst>()
-        .ast_for(entity)
-        .is_none()
-    {
-        warn!(
-            "enable_physics: entity {entity:?} is not tracked in the scene document; \
-             physics was not added."
-        );
+    if world.get_entity(entity).is_err() {
         return;
     }
 

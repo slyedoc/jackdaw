@@ -6,38 +6,12 @@ description = "Public API for Jackdaw editor extensions"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jbuehler23/jackdaw"
 
-[features]
-# The bevy feature set the editor, the SDK, and every extension
-# share so they agree on `TypeId` for the types they both touch.
-#
-# The bevy feature list must mirror what the jackdaw workspace activates
-# for its own bevy dependency: feature unification means a different set
-# produces a different bevy dylib and crate identity. Marketplace extensions
-# build against the SDK's pinned artifacts, so the editor and every loaded
-# extension import the same Bevy and Jackdaw runtime libraries.
-dynamic_linking = [
-    "dep:jackdaw_dylib",
-    "bevy/dynamic_linking",
-    # `bevy_feathers_core`, NOT `bevy_feathers`: the render half adds
-    # `UiMaterialPlugin<ColorPlaneMaterial>`, which loads a `Shader` asset that only
-    # `RenderPlugin` registers -- so it panics at startup on this branch. And because
-    # feature unification is per-build, naming the render half HERE turned it on for the
-    # whole editor even though the root manifest asks for the core half. This list has to
-    # stay in step with the root's bevy features for the dylib identity to match anyway.
-    "bevy/bevy_feathers_core",
-    "bevy/serialize",
-    "bevy/debug",
-    "bevy/bevy_remote",
-    "bevy/file_watcher",
-]
-
 [dependencies]
 bevy.workspace = true
 bevy_enhanced_input.workspace = true
 jackdaw_api_internal.workspace = true
 jackdaw_api_macros.workspace = true
 jackdaw_commands.workspace = true
-jackdaw_dylib = { workspace = true, optional = true }
 jackdaw_feathers.workspace = true
 jackdaw_scene_types.workspace = true
 jackdaw_panels.workspace = true

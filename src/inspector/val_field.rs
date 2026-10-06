@@ -369,22 +369,13 @@ fn spawn_val_cell(
 /// value mints one undo-backed document write.
 fn commit_val_to_field(
     world: &mut World,
-    source_entity: Entity,
+    _source_entity: Entity,
     type_path: &str,
     field_path: &str,
     value: Val,
     is_final: bool,
 ) {
     let json = val_to_json(value);
-    if crate::inspector::reflect_fields::try_route_pie_live_field_edit(
-        world,
-        source_entity,
-        type_path,
-        field_path,
-        json.clone(),
-    ) {
-        return;
-    }
     if is_final {
         crate::commands::field_edit_commit(
             world,
@@ -411,17 +402,6 @@ fn val_to_json(value: Val) -> serde_json::Value {
         Val::Em(v) => serde_json::json!({ "Em": v }),
         Val::Rem(v) => serde_json::json!({ "Rem": v }),
     }
-}
-
-/// True when a field targets a read-only remote proxy.
-fn val_edit_skipped(
-    root: Entity,
-    bindings: &Query<&ValFieldBinding>,
-    remote_proxies: &Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
-) -> bool {
-    bindings
-        .get(root)
-        .is_ok_and(|binding| remote_proxies.contains(binding.source_entity))
 }
 
 /// Push the field's magnitude, enabled state and unit onto its widgets.
@@ -489,8 +469,7 @@ fn commit_val_field(world: &mut World, root: Entity, is_final: bool) {
 pub(crate) fn on_val_number_change(
     event: On<ValueChange<f64>>,
     inputs: Query<&ValNumberInput>,
-    bindings: Query<&ValFieldBinding>,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
+    _bindings: Query<&ValFieldBinding>,
     mut commands: Commands,
 ) {
     let source = event.source;
@@ -498,9 +477,6 @@ pub(crate) fn on_val_number_change(
         return;
     };
     let root = input.root;
-    if val_edit_skipped(root, &bindings, &remote_proxies) {
-        return;
-    }
     let value = event.value;
     let is_final = event.is_final;
 
@@ -524,17 +500,13 @@ pub(crate) fn on_val_number_change(
 pub(crate) fn on_val_unit_change(
     event: On<ComboBoxChangeEvent>,
     selects: Query<&ValUnitSelect>,
-    bindings: Query<&ValFieldBinding>,
-    remote_proxies: Query<(), With<crate::remote::entity_browser::RemoteEntityProxy>>,
+    _bindings: Query<&ValFieldBinding>,
     mut commands: Commands,
 ) {
     let Ok(select) = selects.get(event.entity) else {
         return;
     };
     let root = select.root;
-    if val_edit_skipped(root, &bindings, &remote_proxies) {
-        return;
-    }
     let Some(unit) = VAL_UNITS.get(event.selected).copied() else {
         return;
     };

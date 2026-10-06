@@ -258,12 +258,6 @@ pub(super) fn commit_channels(world: &mut World, entity: Entity) {
     // Reconciling here is what zeroes a newly added channel at
     // `resolution^2` and carries a renamed one's values across.
     world.resource_mut::<TerrainDataStore>().entry_for(&terrain);
-    crate::commands::sync_component_to_ast(
-        world,
-        entity,
-        "jackdaw_scene_types::types::Terrain",
-        &terrain,
-    );
     if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(entity) {
         dirty.rebuild_all = true;
     }
@@ -405,12 +399,6 @@ impl RemoveTerrainChannel {
         {
             data.restore_channel(index, restored);
         }
-        crate::commands::sync_component_to_ast(
-            world,
-            self.entity,
-            "jackdaw_scene_types::types::Terrain",
-            &terrain,
-        );
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(self.entity) {
             dirty.rebuild_all = true;
         }

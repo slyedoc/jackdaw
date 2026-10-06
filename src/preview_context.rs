@@ -699,7 +699,7 @@ fn preview_needs_resync(
     subjects: Query<(), With<EditorEntity>>,
     changed: Query<(), Changed<Bindings>>,
     removed: RemovedComponents<Bindings>,
-    roots: Query<Entity, crate::prefab::AuthoredUiSceneRoot>,
+    roots: Query<Entity, crate::instances::AuthoredUiSceneRoot>,
 ) -> bool {
     if !session.on {
         return false;

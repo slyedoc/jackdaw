@@ -14,8 +14,6 @@ use crate::entity_ops::{
     EntityAddPrefabOp, EntityAddPyramidOp, EntityAddRectLightOp, EntityAddReflectionProbeOp,
     EntityAddSphereOp, EntityAddSpotLightOp, EntityAddTerrainOp, EntityAddWedgeOp,
 };
-#[cfg(feature = "multiplayer")]
-use crate::entity_ops::{EntityAddNetworkRoomOp, EntityAddSpawnPointOp, EntityAddZoneTransitionOp};
 
 /// Action prefix of an entry that creates a registered UI widget.
 pub const WIDGET_ACTION_PREFIX: &str = "widget:";
@@ -205,29 +203,6 @@ fn builtin(taxonomy: &mut CreationTaxonomy) {
         ),
     ]);
 
-    #[cfg(feature = "multiplayer")]
-    {
-        taxonomy
-            .groups
-            .push(group("multiplayer", "Multiplayer", -7));
-        taxonomy.entries.extend([
-            entry(
-                "multiplayer",
-                "Spawn Point",
-                op_action::<EntityAddSpawnPointOp>(),
-            ),
-            entry(
-                "multiplayer",
-                "Zone Transition",
-                op_action::<EntityAddZoneTransitionOp>(),
-            ),
-            entry(
-                "multiplayer",
-                "Network Room",
-                op_action::<EntityAddNetworkRoomOp>(),
-            ),
-        ]);
-    }
 }
 
 /// The registered UI widgets, as one child group of [`UI_GROUP`] per category.

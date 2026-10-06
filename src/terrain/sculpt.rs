@@ -173,7 +173,7 @@ impl EditorCommand for SetTerrainHeights {
 /// does when the pointer wanders past the window edge.
 pub(super) fn terrain_brush_hit(
     vp: &crate::viewport::ViewportCursor,
-    terrain_query: &Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrain_query: &Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     selection: &Selection,
     store: &TerrainDataStore,
 ) -> Option<(Entity, Vec2)> {
@@ -202,7 +202,7 @@ pub(super) fn terrain_brush_hit(
 fn update_terrain_brush_position(
     edit_mode: Res<TerrainEditMode>,
     vp: crate::viewport::ViewportCursor,
-    terrain_query: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrain_query: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     selection: Res<Selection>,
     store: Res<TerrainDataStore>,
     mut sculpt_state: ResMut<TerrainSculptState>,
@@ -398,7 +398,7 @@ fn draw_terrain_brush_gizmo(
     sculpt_state: Res<TerrainSculptState>,
     brush_settings: Res<TerrainBrushSettings>,
     edit_mode: Res<TerrainEditMode>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     store: Res<TerrainDataStore>,
     mut gizmos: Gizmos,
 ) {
@@ -665,7 +665,7 @@ mod pointer_tests {
 
     fn probe_brush_hit(
         vp: crate::viewport::ViewportCursor,
-        terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+        terrains: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
         selection: Res<Selection>,
         store: Res<TerrainDataStore>,
         mut probe: ResMut<BrushHitProbe>,

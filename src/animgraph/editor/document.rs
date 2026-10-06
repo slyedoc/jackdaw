@@ -1,35 +1,35 @@
-//! Graph and state machine documents: a `.animgraph.bsn` / `.fsm.bsn` open as a scene tab.
+//! The held graph or state machine as the canvas edits it.
 //!
-//! The document's entities are the source of truth. The canvas draws the graph that
-//! [`graph_from_document`] / [`fsm_from_document`] build from it, rebuilt whenever the document
-//! changes, and every canvas gesture is an undoable document edit: the inspector, undo, the
-//! dirty marker and Save are the scene machinery's.
+//! The held document's entities are the source of truth. [`track_graph_document`] rebuilds the
+//! graph ([`graph_from_world`] / [`fsm_from_world`]) whenever one of them changes and puts it in
+//! the asset store under the file's path, so every character playing it follows the edit. Every
+//! canvas gesture is an undoable component change on those entities. Links and transitions name
+//! nodes by entity, so a rename needs no follow-up.
 
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::sync::Arc;
 
 use bevy::{
+    ecs::{change_detection::Tick, entity_disabling::Disabled},
     prelude::*,
-    reflect::{TypePath, std_traits::ReflectDefault},
+    reflect::std_traits::ReflectDefault,
 };
 use bevy_animation_graph::core::{
     animation_graph::{
         AnimationGraph, SourcePin, TargetPin,
-        bsn::{
-            AnimGraph, Link, LinkFrom, LinkTo, Links, NodePosition, graph_from_document, node_id,
-        },
+        bsn::{AnimGraph, Link, LinkFrom, LinkTo, Links, NodePosition, graph_from_world, node_id},
     },
     state_machine::high_level::{
         StateMachine,
-        bsn::{AnimFsm, AnimState, AnimTransition, fsm_from_document, state_id},
+        bsn::{AnimFsm, AnimState, AnimTransition, fsm_from_world, state_id},
     },
 };
-use jackdaw_bsn::{BsnApplyAssets, SceneBsnAst};
 use uuid::Uuid;
 
+use super::super::held::{self, HeldGraph, HeldGraphNode};
 use super::{CanvasView, seed_fsm_layout, seed_layout};
-use crate::commands::{CommandHistory, EditorCommand, SpawnEntity, sync_component_to_ast};
+use crate::commands::{CommandGroup, CommandHistory, EditorCommand};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DocKind {
@@ -37,14 +37,13 @@ pub enum DocKind {
     Fsm,
 }
 
-/// The active document, when it is a graph or a state machine.
+/// The held document, as the canvas sees it.
 pub(super) struct GraphDocument {
     pub kind: DocKind,
     /// The root entity: `AnimGraph` / `AnimFsm`, and on a graph the outputs' `Links`.
     pub root: Entity,
     /// Node (or state) id to its entity and name.
     pub nodes: HashMap<Uuid, (Entity, String)>,
-    path: Option<PathBuf>,
     graph: Option<Handle<AnimationGraph>>,
     fsm: Option<Handle<StateMachine>>,
 }
@@ -52,103 +51,98 @@ pub(super) struct GraphDocument {
 #[derive(Resource, Default)]
 pub(super) struct ActiveGraphDoc(pub Option<GraphDocument>);
 
-fn doc_kind(ast: &SceneBsnAst, root: Entity) -> Option<DocKind> {
-    ast.component_type_paths(root).iter().find_map(|path| {
-        match path.rsplit("::").next().unwrap_or(path) {
-            "AnimGraph" => Some(DocKind::Graph),
-            "AnimFsm" => Some(DocKind::Fsm),
-            _ => None,
-        }
+fn doc_kind(world: &World, root: Entity) -> Option<DocKind> {
+    if world.get::<AnimGraph>(root).is_some() {
+        Some(DocKind::Graph)
+    } else if world.get::<AnimFsm>(root).is_some() {
+        Some(DocKind::Fsm)
+    } else {
+        None
+    }
+}
+
+/// The held document's entities in use: the root and its children (an undone node is detached).
+fn document_entities(world: &World, root: Entity) -> Vec<Entity> {
+    let mut entities = vec![root];
+    if let Some(children) = world.get::<Children>(root) {
+        entities.extend(children.iter());
+    }
+    entities
+}
+
+/// Whether any of `entities` changed a component (or lost one) since `since`.
+fn changed_since(world: &World, entities: &[Entity], since: Tick, now: Tick) -> bool {
+    entities.iter().any(|&entity| {
+        let Ok(entity) = world.get_entity(entity) else {
+            return true;
+        };
+        entity.archetype().components().iter().any(|&id| {
+            entity
+                .get_change_ticks_by_id(id)
+                .is_some_and(|ticks| ticks.is_changed(since, now))
+        })
     })
 }
 
-/// Follow the active document: rebuild its graph whenever it changes, and give the viewport
-/// to the canvas while one is open.
-pub(super) fn track_graph_document(
-    mut commands: Commands,
-    held: Res<super::super::held::HeldGraph>,
-    registry: Res<AppTypeRegistry>,
-    server: Res<AssetServer>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
-    mut fsms: ResMut<Assets<StateMachine>>,
-    mut doc: ResMut<ActiveGraphDoc>,
-    mut view: ResMut<CanvasView>,
-) {
-    let Some(ast) = held.ast() else {
-        // Swapped in for an edit, or nothing held.
-        if held.0.is_none() && doc.0.take().is_some() {
+/// Follow the held document: rebuild its graph whenever it changes.
+pub(super) fn track_graph_document(world: &mut World, mut last: Local<Option<(Entity, Tick)>>) {
+    let now = world.change_tick();
+    let Some(held) = world.resource::<HeldGraph>().0.as_ref().map(|doc| (doc.root, doc.asset_path.clone())) else {
+        *last = None;
+        if world.resource_mut::<ActiveGraphDoc>().0.take().is_some() {
+            let mut view = world.resource_mut::<CanvasView>();
             view.graph = None;
             view.fsm = None;
             view.dirty = true;
         }
         return;
     };
-    let held_doc = held.0.as_ref().expect("a held document");
-    let found = ast
-        .roots
-        .first()
-        .and_then(|&root| Some((root, doc_kind(ast, root)?, ast.ecs_for_ast(root)?)));
-    let Some((root_ast, kind, root)) = found else {
+    let (root, asset_path) = held;
+    let entities = document_entities(world, root);
+    let fresh = last.is_none_or(|(held_root, _)| held_root != root);
+    if !fresh {
+        let (_, since) = last.expect("checked above");
+        if !changed_since(world, &entities, since, now) {
+            return;
+        }
+    }
+    *last = Some((root, now));
+    let Some(kind) = doc_kind(world, root) else {
         return;
     };
-    let path = Some(held_doc.path.clone());
-    let fresh = doc
-        .0
-        .as_ref()
-        .is_none_or(|d| d.path != path || d.kind != kind || d.root != root);
 
     let mut nodes = HashMap::new();
-    for child in ast.get_children_ast(root_ast) {
-        let (Some(name), Some(entity)) = (ast.get_name(child), ast.ecs_for_ast(child)) else {
+    for &child in &entities[1..] {
+        let Some(name) = world.get::<Name>(child) else {
             continue;
         };
         let id = match kind {
-            DocKind::Graph => node_id(name).uuid(),
-            DocKind::Fsm => state_id(name).uuid(),
+            DocKind::Graph => node_id(name.as_str()).uuid(),
+            DocKind::Fsm => state_id(name.as_str()).uuid(),
         };
-        nodes.insert(id, (entity, name.to_string()));
+        nodes.insert(id, (child, name.as_str().to_string()));
     }
 
-    // A node renamed in the inspector: carry its links (and transitions) to the new name.
-    if !fresh && let Some(previous) = doc.0.as_ref() {
-        let renames: Vec<(String, String)> = previous
-            .nodes
-            .values()
-            .filter_map(|(entity, old)| {
-                let new = nodes.values().find(|(e, _)| e == entity)?.1.clone();
-                (new != *old).then(|| (old.clone(), new))
-            })
-            .collect();
-        if !renames.is_empty() {
-            commands.queue(move |world: &mut World| follow_renames(world, root, renames));
-        }
-    }
-
-    let assets = BsnApplyAssets {
-        server: &server,
-        local: None,
-    };
-    let registry = registry.read();
-    let previous = doc.0.take();
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let server = world.resource::<AssetServer>().clone();
+    let previous = world.resource_mut::<ActiveGraphDoc>().0.take();
     let mut next = GraphDocument {
         kind,
         root,
         nodes,
-        path,
         graph: previous.as_ref().and_then(|d| d.graph.clone()),
         fsm: previous.as_ref().and_then(|d| d.fsm.clone()),
     };
-    if fresh {
-        next.graph = None;
-        next.fsm = None;
-    }
     match kind {
-        DocKind::Graph => match graph_from_document(ast, root_ast, &registry, Some(&assets)) {
+        DocKind::Graph => match graph_from_world(world, root, &registry.read()) {
             Ok(graph) => {
                 // The asset characters load by this path: replacing it in place is what makes
                 // every character playing the graph follow the edit.
-                let handle = server.load::<AnimationGraph>(held_doc.asset_path.clone());
-                let _ = graphs.insert(handle.id(), graph.clone());
+                let handle = server.load::<AnimationGraph>(asset_path);
+                let _ = world
+                    .resource_mut::<Assets<AnimationGraph>>()
+                    .insert(handle.id(), graph.clone());
+                let mut view = world.resource_mut::<CanvasView>();
                 if fresh {
                     seed_layout(&mut view, &graph);
                 } else {
@@ -160,10 +154,13 @@ pub(super) fn track_graph_document(
             }
             Err(err) => warn!("animation graph document: {err}"),
         },
-        DocKind::Fsm => match fsm_from_document(ast, root_ast, &registry, Some(&assets)) {
+        DocKind::Fsm => match fsm_from_world(world, root) {
             Ok(fsm) => {
-                let handle = server.load::<StateMachine>(held_doc.asset_path.clone());
-                let _ = fsms.insert(handle.id(), fsm.clone());
+                let handle = server.load::<StateMachine>(asset_path);
+                let _ = world
+                    .resource_mut::<Assets<StateMachine>>()
+                    .insert(handle.id(), fsm.clone());
+                let mut view = world.resource_mut::<CanvasView>();
                 if fresh {
                     seed_fsm_layout(&mut view, &fsm);
                 } else {
@@ -178,11 +175,12 @@ pub(super) fn track_graph_document(
             Err(err) => warn!("state machine document: {err}"),
         },
     }
+    let mut view = world.resource_mut::<CanvasView>();
     view.clip = None;
     view.ragdoll = None;
     view.path = None;
     view.dirty = true;
-    doc.0 = Some(next);
+    world.resource_mut::<ActiveGraphDoc>().0 = Some(next);
 }
 
 /// Take the document's positions without moving the view.
@@ -197,42 +195,33 @@ fn refresh_positions(view: &mut CanvasView, graph: &AnimationGraph) {
 
 // ------------------------------------------------------------------ edits
 
-/// Undoable replace (or insert, or remove) of one component on a document entity, mirrored
-/// into the document.
-struct SetDocComponent<T: Component + Reflect + TypePath + Clone> {
+/// Undoable replace (or insert, or remove) of one component on a held entity.
+struct SetHeldComponent<T: Component + Clone> {
     entity: Entity,
     before: Option<T>,
     after: Option<T>,
     label: String,
 }
 
-impl<T: Component + Reflect + TypePath + Clone> SetDocComponent<T> {
+impl<T: Component + Clone> SetHeldComponent<T> {
     fn apply(&self, world: &mut World, value: &Option<T>) {
+        let Ok(mut entity) = world.get_entity_mut(self.entity) else {
+            return;
+        };
         match value {
             Some(value) => {
-                if let Ok(mut entity) = world.get_entity_mut(self.entity) {
-                    entity.insert(value.clone());
-                }
-                sync_component_to_ast(world, self.entity, T::type_path(), value);
+                entity.insert(value.clone());
             }
             None => {
-                if let Ok(mut entity) = world.get_entity_mut(self.entity) {
-                    entity.remove::<T>();
-                }
-                if let Some(mut ast) = world.get_resource_mut::<SceneBsnAst>()
-                    && let Some(node) = ast.ast_for(self.entity)
-                {
-                    ast.remove_component_patch(node, T::type_path());
-                }
+                entity.remove::<T>();
             }
         }
-        if let Ok(mut entity) = world.get_entity_mut(self.entity) {
-            entity.insert(crate::inspector::InspectorDirty);
-        }
+        entity.insert(crate::inspector::InspectorDirty);
+        held::mark_dirty(world);
     }
 }
 
-impl<T: Component + Reflect + TypePath + Clone> EditorCommand for SetDocComponent<T> {
+impl<T: Component + Clone> EditorCommand for SetHeldComponent<T> {
     fn execute(&mut self, world: &mut World) {
         let after = self.after.clone();
         self.apply(world, &after);
@@ -248,152 +237,180 @@ impl<T: Component + Reflect + TypePath + Clone> EditorCommand for SetDocComponen
     }
 }
 
-/// Rewrite every reference to a renamed node, folded into the rename's own undo entry so undo
-/// and redo move both together.
-fn follow_renames(world: &mut World, root: Entity, renames: Vec<(String, String)>) {
-    let renamed = |name: &str| {
-        renames
-            .iter()
-            .find(|(old, _)| old == name)
-            .map(|(_, new)| new.clone())
-    };
-    let mut entities = vec![root];
-    if let Some(children) = world.get::<Children>(root) {
-        entities.extend(children.iter());
-    }
-    let mut fixes: Vec<Box<dyn EditorCommand>> = Vec::new();
-    for entity in entities {
-        if let Some(links) = world.get::<Links>(entity).cloned() {
-            let mut after = links.clone();
-            for link in &mut after.0 {
-                match &mut link.1 {
-                    LinkFrom::Node(node, _) | LinkFrom::NodeTime(node) => {
-                        if let Some(new) = renamed(node) {
-                            *node = new;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            if after.0 != links.0 {
-                fixes.push(Box::new(SetDocComponent {
-                    entity,
-                    before: Some(links),
-                    after: Some(after),
-                    label: "Follow rename".into(),
-                }));
-            }
+/// A node put into, or taken out of, the document. Taking it out detaches and disables it rather
+/// than despawning it, so links and undo entries naming it stay valid.
+struct PlaceHeldNode {
+    entity: Entity,
+    root: Entity,
+    present: bool,
+    label: String,
+}
+
+impl PlaceHeldNode {
+    fn set(&self, world: &mut World, present: bool) {
+        let Ok(mut entity) = world.get_entity_mut(self.entity) else {
+            return;
+        };
+        if present {
+            entity.remove::<Disabled>().insert(ChildOf(self.root));
+        } else {
+            entity.remove::<ChildOf>().insert(Disabled);
         }
-        if let Some(t) = world.get::<AnimTransition>(entity).cloned() {
-            let mut after = t.clone();
-            if let Some(new) = renamed(&t.from) {
-                after.from = new;
-            }
-            if let Some(new) = renamed(&t.to) {
-                after.to = new;
-            }
-            if after.from != t.from || after.to != t.to {
-                fixes.push(Box::new(SetDocComponent {
-                    entity,
-                    before: Some(t),
-                    after: Some(after),
-                    label: "Follow rename".into(),
-                }));
-            }
-        }
-        if let Some(fsm) = world.get::<AnimFsm>(entity).cloned()
-            && let Some(new) = renamed(&fsm.start)
-        {
-            let mut after = fsm.clone();
-            after.start = new;
-            fixes.push(Box::new(SetDocComponent {
-                entity,
-                before: Some(fsm),
-                after: Some(after),
-                label: "Follow rename".into(),
-            }));
-        }
+        held::mark_dirty(world);
     }
-    if fixes.is_empty() {
-        return;
+}
+
+impl EditorCommand for PlaceHeldNode {
+    fn execute(&mut self, world: &mut World) {
+        self.set(world, self.present);
     }
-    let Some(path) = world
-        .resource::<super::super::held::HeldGraph>()
-        .0
-        .as_ref()
-        .map(|doc| doc.path.clone())
-    else {
-        return;
-    };
-    let mut fix: Box<dyn EditorCommand> = Box::new(super::super::held::HeldCommand {
-        path,
-        inner: Box::new(crate::commands::CommandGroup {
-            commands: fixes,
-            label: "Follow rename".into(),
-        }),
-    });
-    fix.execute(world);
-    let mut history = world.resource_mut::<CommandHistory>();
-    let mut commands: Vec<Box<dyn EditorCommand>> = history.undo_stack.pop().into_iter().collect();
-    commands.push(fix);
-    history.push_executed(Box::new(crate::commands::CommandGroup {
-        commands,
-        label: "Rename node".into(),
-    }));
+
+    fn undo(&mut self, world: &mut World) {
+        self.set(world, !self.present);
+    }
+
+    fn description(&self) -> &str {
+        &self.label
+    }
 }
 
 /// Run an edit on the held document, as one undo entry on the scene tab's history.
 fn run(world: &mut World, command: Box<dyn EditorCommand>) {
-    let Some(path) = world
-        .resource::<super::super::held::HeldGraph>()
-        .0
-        .as_ref()
-        .map(|doc| doc.path.clone())
-    else {
+    if world.resource::<HeldGraph>().0.is_none() {
         return;
-    };
+    }
     world.resource_scope(|world, mut history: Mut<CommandHistory>| {
-        history.execute(
-            Box::new(super::super::held::HeldCommand {
-                path,
-                inner: command,
-            }),
-            world,
-        );
+        history.execute(command, world);
     });
 }
 
-fn set_component<T: Component + Reflect + TypePath + Clone>(
+fn set_component<T: Component + Clone>(
     world: &mut World,
     entity: Entity,
     after: Option<T>,
     label: impl Into<String>,
 ) {
-    let before = world.get::<T>(entity).cloned();
-    run(
-        world,
-        Box::new(SetDocComponent {
-            entity,
-            before,
-            after,
-            label: label.into(),
-        }),
-    );
+    run(world, set_command(world, entity, after, label));
 }
 
-/// What the active document is, when it is a graph or a state machine.
+fn set_command<T: Component + Clone>(
+    world: &World,
+    entity: Entity,
+    after: Option<T>,
+    label: impl Into<String>,
+) -> Box<dyn EditorCommand> {
+    Box::new(SetHeldComponent {
+        entity,
+        before: world.get::<T>(entity).cloned(),
+        after,
+        label: label.into(),
+    })
+}
+
+/// A field edit from the inspector on a held node, as an undo entry. `false` when `entity` is
+/// not a held node.
+pub fn commit_field(
+    world: &mut World,
+    entity: Entity,
+    type_path: &str,
+    field_path: &str,
+    new_json: &serde_json::Value,
+) -> bool {
+    if !held::is_held(world, entity) {
+        return false;
+    }
+    let old_json = field_json(world, entity, type_path, field_path);
+    run(
+        world,
+        Box::new(SetHeldField {
+            entity,
+            type_path: type_path.to_string(),
+            field_path: field_path.to_string(),
+            before: old_json,
+            after: new_json.clone(),
+        }),
+    );
+    true
+}
+
+fn field_json(
+    world: &World,
+    entity: Entity,
+    type_path: &str,
+    field_path: &str,
+) -> Option<serde_json::Value> {
+    use bevy::reflect::GetPath;
+    let registry = world.resource::<AppTypeRegistry>().read();
+    let registration = registry.get_with_type_path(type_path)?;
+    let component = registration
+        .data::<ReflectComponent>()?
+        .reflect(world.get_entity(entity).ok()?)?;
+    let field = if field_path.is_empty() {
+        component.as_partial_reflect()
+    } else {
+        component.reflect_path(field_path).ok()?
+    };
+    crate::inspector::reflect_fields::reflect_to_json(field, &registry)
+}
+
+/// One field of one component on a held entity, set from JSON as the inspector writes it.
+struct SetHeldField {
+    entity: Entity,
+    type_path: String,
+    field_path: String,
+    before: Option<serde_json::Value>,
+    after: serde_json::Value,
+}
+
+impl SetHeldField {
+    fn apply(&self, world: &mut World, value: &serde_json::Value) {
+        if world.get_entity(self.entity).is_err() {
+            return;
+        }
+        crate::commands::apply_json_field_to_ecs(
+            world,
+            self.entity,
+            &self.type_path,
+            &self.field_path,
+            value,
+        );
+        world
+            .entity_mut(self.entity)
+            .insert(crate::inspector::InspectorDirty);
+        held::mark_dirty(world);
+    }
+}
+
+impl EditorCommand for SetHeldField {
+    fn execute(&mut self, world: &mut World) {
+        let after = self.after.clone();
+        self.apply(world, &after);
+    }
+
+    fn undo(&mut self, world: &mut World) {
+        if let Some(before) = self.before.clone() {
+            self.apply(world, &before);
+        }
+    }
+
+    fn description(&self) -> &str {
+        "Set field"
+    }
+}
+
+/// What the held document is, when one is open.
 pub fn active_kind(world: &World) -> Option<DocKind> {
     world
         .get_resource::<ActiveGraphDoc>()
         .and_then(|doc| doc.0.as_ref().map(|d| d.kind))
 }
 
-/// The graph the open graph document builds, when one is open.
+/// The graph the held graph document builds, when one is open.
 pub fn active_graph(world: &World) -> Option<Handle<AnimationGraph>> {
     with_doc(world, |doc| doc.graph.clone()).flatten()
 }
 
-/// The state machine the open state machine document builds, when one is open.
+/// The state machine the held state machine document builds, when one is open.
 pub fn active_fsm(world: &World) -> Option<Handle<StateMachine>> {
     with_doc(world, |doc| doc.fsm.clone()).flatten()
 }
@@ -425,6 +442,25 @@ pub fn clip_of_node(
     node.get_field::<Handle<bevy_animation_graph::core::animation_clip::GraphClip>>("clip")
         .filter(|handle| handle.path().is_some())
         .cloned()
+}
+
+/// The document a node points at, as an asset path: a state machine node's machine, a graph
+/// node's graph, a state's graph.
+pub fn document_of_node(world: &World, id: Uuid) -> Option<String> {
+    use bevy::reflect::structs::GetField;
+    use bevy_animation_graph::builtin_nodes::{fsm_node::FsmNode, graph_node::GraphNode};
+    let entity = node_entity(world, id)?;
+    if let Some(node) = world.get::<FsmNode>(entity) {
+        return node.fsm.path().map(|p| p.path().to_string_lossy().into_owned());
+    }
+    if let Some(node) = world.get::<GraphNode>(entity) {
+        return node
+            .get_field::<Handle<AnimationGraph>>("graph")?
+            .path()
+            .map(|p| p.path().to_string_lossy().into_owned());
+    }
+    let state = world.get::<AnimState>(entity)?;
+    state.graph.path().map(|p| p.path().to_string_lossy().into_owned())
 }
 
 pub fn select_node(world: &mut World, id: Uuid) {
@@ -464,12 +500,11 @@ pub fn commit_rail_position(world: &mut World, inputs: bool, at: Vec2) {
 }
 
 fn link_from(doc: &GraphDocument, source: &SourcePin) -> Option<LinkFrom> {
-    let name = |id: &bevy_animation_graph::core::animation_graph::NodeId| {
-        doc.nodes.get(&id.uuid()).map(|(_, name)| name.clone())
-    };
+    let entity =
+        |id: &bevy_animation_graph::core::animation_graph::NodeId| Some(doc.nodes.get(&id.uuid())?.0);
     Some(match source {
-        SourcePin::NodeData(id, pin) => LinkFrom::Node(name(id)?, pin.clone()),
-        SourcePin::NodeTime(id) => LinkFrom::NodeTime(name(id)?),
+        SourcePin::NodeData(id, pin) => LinkFrom::Node(entity(id)?, pin.clone()),
+        SourcePin::NodeTime(id) => LinkFrom::NodeTime(entity(id)?),
         SourcePin::InputData(pin) => LinkFrom::Input(pin.clone()),
         SourcePin::InputTime(pin) => LinkFrom::InputTime(pin.clone()),
     })
@@ -502,7 +537,10 @@ pub fn connect(world: &mut World, source: SourcePin, target: TargetPin) {
         return;
     };
     let ((entity, to), from, root) = found;
-    let mut links = world.get::<Links>(entity).cloned().unwrap_or_default();
+    let mut links = world
+        .get::<Links>(entity)
+        .cloned()
+        .unwrap_or(Links(Vec::new()));
     links.0.retain(|link| !same_input(&link.0, &to, entity == root));
     links.0.push(Link(to, from));
     set_component(world, entity, Some(links), "Connect");
@@ -580,21 +618,17 @@ pub fn add_state(world: &mut World, at: Vec2) {
 /// Add a direct transition between two states.
 pub fn add_transition(world: &mut World, from: Uuid, to: Uuid) {
     let Some(found) = with_doc(world, |doc| {
-        Some((
-            doc.root,
-            doc.nodes.get(&from)?.1.clone(),
-            doc.nodes.get(&to)?.1.clone(),
-        ))
+        Some((doc.root, doc.nodes.get(&from)?.clone(), doc.nodes.get(&to)?.clone()))
     })
     .flatten() else {
         return;
     };
-    let (root, from, to) = found;
-    let name = format!("{from} -> {to}");
+    let (root, (from, from_name), (to, to_name)) = found;
+    let name = format!("{from_name} -> {to_name}");
     spawn_child(world, root, name, "Add transition", move |world, entity| {
         world.entity_mut(entity).insert(AnimTransition {
-            from: from.clone(),
-            to: to.clone(),
+            from,
+            to,
             data: default(),
         });
     });
@@ -608,19 +642,103 @@ fn spawn_child(
     label: impl Into<String>,
     fill: impl Fn(&mut World, Entity) + Send + Sync + 'static,
 ) {
+    let fill: Arc<dyn Fn(&mut World, Entity) + Send + Sync> = Arc::new(fill);
+    let entity = world
+        .spawn((Name::new(name), HeldGraphNode, Disabled))
+        .id();
+    fill(world, entity);
     run(
         world,
-        Box::new(SpawnEntity {
-            spawned: None,
+        Box::new(PlaceHeldNode {
+            entity,
+            root,
+            present: true,
             label: label.into(),
-            spawn_fn: Box::new(move |world: &mut World| {
-                let entity = world.spawn((Name::new(name.clone()), ChildOf(root))).id();
-                fill(world, entity);
-                crate::scene_io::register_entity_in_ast(world, entity);
-                entity
-            }),
         }),
     );
+}
+
+/// Take a node out of the held document, with the links that read from it and the transitions
+/// that name it, as one undo entry. The start state stays: a machine needs one.
+pub fn delete_node(world: &mut World, entity: Entity) -> bool {
+    let Some(root) = world.resource::<HeldGraph>().root() else {
+        return false;
+    };
+    if entity == root || !held::is_held(world, entity) {
+        return false;
+    }
+    if world.get::<AnimFsm>(root).is_some_and(|fsm| fsm.start == entity) {
+        warn!("the start state cannot be deleted; make another state the start first");
+        return true;
+    }
+    let mut commands: Vec<Box<dyn EditorCommand>> = Vec::new();
+    for other in document_entities(world, root) {
+        if other == entity {
+            continue;
+        }
+        if let Some(links) = world.get::<Links>(other) {
+            let kept: Vec<Link> = links
+                .0
+                .iter()
+                .filter(|link| !matches!(&link.1, LinkFrom::Node(e, _) | LinkFrom::NodeTime(e) if *e == entity))
+                .cloned()
+                .collect();
+            if kept.len() != links.0.len() {
+                let after = (!kept.is_empty()).then_some(Links(kept));
+                commands.push(set_command(world, other, after, "Disconnect"));
+            }
+        }
+        if world
+            .get::<AnimTransition>(other)
+            .is_some_and(|t| t.from == entity || t.to == entity)
+        {
+            commands.push(Box::new(PlaceHeldNode {
+                entity: other,
+                root,
+                present: false,
+                label: "Delete transition".into(),
+            }));
+        }
+    }
+    commands.push(Box::new(PlaceHeldNode {
+        entity,
+        root,
+        present: false,
+        label: "Delete node".into(),
+    }));
+    crate::selection::clear_selection_in_world(world);
+    run(
+        world,
+        Box::new(CommandGroup {
+            commands,
+            label: "Delete node".into(),
+        }),
+    );
+    true
+}
+
+/// Rename a held node (or state): its links follow, since they name it by entity.
+pub fn rename(world: &mut World, entity: Entity, name: &str) -> bool {
+    if !held::is_held(world, entity) {
+        return false;
+    }
+    set_component(world, entity, Some(Name::new(name.to_string())), "Rename node");
+    true
+}
+
+/// Make `entity` the state machine's start state.
+pub fn set_start(world: &mut World, entity: Entity) {
+    let Some(root) = world.resource::<HeldGraph>().root() else {
+        return;
+    };
+    let Some(mut fsm) = world.get::<AnimFsm>(root).cloned() else {
+        return;
+    };
+    if fsm.start == entity {
+        return;
+    }
+    fsm.start = entity;
+    set_component(world, root, Some(fsm), "Set start state");
 }
 
 #[cfg(test)]

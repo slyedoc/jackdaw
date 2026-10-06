@@ -208,7 +208,6 @@ pub(crate) fn on_add_component_button_click(
     denylist: Res<PickerDenylist>,
     project_types: Res<crate::project_types::ProjectTypes>,
     type_metadata: Res<crate::type_metadata::TypeMetadata>,
-    doc: Res<jackdaw_bsn::SceneBsnAst>,
 ) {
     if add_buttons.get(event.entity).is_err() {
         return;
@@ -242,7 +241,7 @@ pub(crate) fn on_add_component_button_click(
 
     let registry = type_registry.read();
 
-    let mut searchable_components: Vec<ComponentInfo> = enumerate_pickable_components(
+    let searchable_components: Vec<ComponentInfo> = enumerate_pickable_components(
         &registry,
         &existing_types,
         &denylist,
@@ -260,33 +259,6 @@ pub(crate) fn on_add_component_button_click(
     })
     .collect();
 
-    // Project (schema-reported) components are not real ECS components in the
-    // editor, so they never appear in the registry pass above. They live as
-    // schema entries; add each one the target does not already carry in the
-    // scene document.
-    let authored: HashSet<String> = doc
-        .ast_for(target)
-        .map(|node| doc.component_type_paths(node).into_iter().collect())
-        .unwrap_or_default();
-    for schema in project_types.components() {
-        let chrome = type_metadata.resolve(&schema.type_path, &registry, &project_types);
-        if chrome.hidden
-            || jackdaw_bsn::type_paths_include(
-                authored.iter().map(String::as_str),
-                &schema.type_path,
-            )
-        {
-            continue;
-        }
-        searchable_components.push(ComponentInfo {
-            short_name: schema.short_name.clone(),
-            module_path: schema.module_path.clone(),
-            group: chrome.group(&schema.type_path),
-            authored_category: chrome.category.clone(),
-            description: chrome.description,
-            type_path_full: schema.type_path.clone(),
-        });
-    }
 
     let picker = PickerProps::new(spawn_item, on_select)
         .items(searchable_components)

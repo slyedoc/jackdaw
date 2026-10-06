@@ -10,7 +10,6 @@ pub(crate) mod component_tooltip;
 mod custom_props_display;
 mod definition_card;
 pub mod file_card;
-mod live_edit_dots;
 pub(crate) mod material_card_routing;
 mod material_display;
 pub(crate) mod material_row;
@@ -18,11 +17,7 @@ mod modifier_display;
 pub mod node_card;
 pub(crate) mod ops;
 pub(crate) mod physics_display;
-mod prefab_field_dots;
-pub(crate) mod prefab_menu;
-pub(crate) mod project_component_display;
 pub(crate) mod reflect_fields;
-pub(crate) mod schema_fields;
 pub(crate) mod type_metadata_pane;
 pub mod val_field;
 
@@ -99,7 +94,6 @@ impl Plugin for InspectorPlugin {
         app.register_type_data::<Name, ReflectDisplayable>()
             .add_plugins(component_tooltip::plugin)
             .add_plugins(file_card::plugin)
-            .add_plugins(prefab_menu::plugin)
             .add_plugins(type_metadata_pane::plugin)
             .add_observer(component_display::on_inspector_dirty)
             .add_observer(material_card_routing::on_refresh_inspector_card_body)
@@ -125,8 +119,6 @@ impl Plugin for InspectorPlugin {
             .add_observer(brush_display::on_brush_face_text_commit)
             .add_observer(on_name_field_commit)
             .add_observer(anim_diamond::on_diamond_click)
-            .init_resource::<live_edit_dots::LiveEditMenuTarget>()
-            .add_observer(live_edit_dots::on_live_edit_menu_action)
             .add_observer(on_category_strip_mount_added)
             .add_observer(add_header::on_add_header_mount_added)
             .add_observer(add_header::on_physics_chip_click)
@@ -163,16 +155,11 @@ impl Plugin for InspectorPlugin {
                         .after(category_strip::resolve_active_on_rebuild),
                     anim_diamond::decorate_animatable_fields,
                     anim_diamond::update_anim_diamond_highlights,
-                    prefab_field_dots::decorate_prefab_field_rows,
-                    prefab_field_dots::refresh_prefab_field_dots,
-                    live_edit_dots::refresh_live_edit_field_dots,
                     // After the three passes that spawn and remove the marks.
                     // Their spawns are deferred, so the gutter follows a new
                     // mark on the next pass rather than the same one.
                     jackdaw_feathers::field_row::reserve_decoration_gutters
-                        .after(anim_diamond::decorate_animatable_fields)
-                        .after(prefab_field_dots::decorate_prefab_field_rows)
-                        .after(live_edit_dots::refresh_live_edit_field_dots),
+                        .after(anim_diamond::decorate_animatable_fields),
                     refresh_name_field,
                     flag_inspector_dirty_on_archetype_change,
                     flag_inspector_dirty_on_modifier_stack_change,
@@ -303,18 +290,17 @@ fn on_name_field_commit(
     }
 
     commands.queue(move |world: &mut World| {
-        let old_value = if old_name.is_empty() {
-            None
-        } else {
-            Some(jackdaw_bsn::BsnValue::String(old_name))
-        };
-        let cmd = crate::commands::SetBsnField {
+        if crate::animgraph::document::rename(world, source_entity, &new_name) {
+            return;
+        }
+        let old_value: Option<crate::commands::FieldValue> =
+            (!old_name.is_empty()).then(|| Box::new(Name::new(old_name)) as _);
+        let cmd = crate::commands::SetField {
             entity: source_entity,
             type_path: crate::commands::NAME_TYPE_PATH.to_string(),
             field_path: String::new(),
             old_value,
-            new_value: jackdaw_bsn::BsnValue::String(new_name),
-            was_derived: false,
+            new_value: Box::new(Name::new(new_name)),
         };
         let mut cmd: Box<dyn jackdaw_commands::EditorCommand> = Box::new(cmd);
         cmd.execute(world);

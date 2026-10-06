@@ -6,7 +6,7 @@
 //! so editor chrome keeps its own state machines.
 
 use bevy::prelude::*;
-use jackdaw_bsn::AstNodeRef;
+use crate::scene_io::SceneEntity as AstNodeRef;
 use jackdaw_widgets_runtime::AuthoredWidget;
 
 pub use jackdaw_widgets_runtime::register_widget_defaults;

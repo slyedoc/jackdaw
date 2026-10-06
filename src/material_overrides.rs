@@ -11,9 +11,6 @@ use jackdaw_scene_types::{GltfSource, InstanceMaterialOverrides, MaterialOverrid
 use crate::commands::EditorCommand;
 use crate::selection::Selection;
 
-const MODEL_OVERRIDES_TYPE_PATH: &str = "jackdaw_scene_types::types::MaterialOverrides";
-const INSTANCE_OVERRIDES_TYPE_PATH: &str = "jackdaw_scene_types::types::InstanceMaterialOverrides";
-
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<MaterialOverrideOp>();
 }
@@ -74,13 +71,6 @@ enum OverrideLayer {
 }
 
 impl OverrideLayer {
-    fn type_path(self) -> &'static str {
-        match self {
-            Self::Model => MODEL_OVERRIDES_TYPE_PATH,
-            Self::Instance => INSTANCE_OVERRIDES_TYPE_PATH,
-        }
-    }
-
     fn read(self, world: &World, entity: Entity) -> Option<BTreeMap<String, String>> {
         match self {
             Self::Model => world
@@ -97,7 +87,7 @@ impl OverrideLayer {
 fn enclosing_instance(world: &World, entity: Entity) -> Option<Entity> {
     let mut at = Some(entity);
     while let Some(candidate) = at {
-        if world.get::<crate::prefab::IsA>(candidate).is_some() {
+        if world.get::<bevy::scene::SceneBase>(candidate).is_some() {
             return Some(candidate);
         }
         at = world.get::<ChildOf>(candidate).map(ChildOf::parent);
@@ -155,33 +145,16 @@ impl SetMaterialOverrides {
                 OverrideLayer::Model => node.remove::<MaterialOverrides>(),
                 OverrideLayer::Instance => node.remove::<InstanceMaterialOverrides>(),
             };
-            if let Some(mut ast) = world.get_resource_mut::<jackdaw_bsn::SceneBsnAst>()
-                && let Some(ast_node) = ast.ast_for(self.entity)
-            {
-                ast.remove_component_patch(ast_node, self.layer.type_path());
-            }
             return;
         };
         match self.layer {
             OverrideLayer::Model => {
                 let overrides = MaterialOverrides { materials };
                 node.insert(overrides.clone());
-                crate::commands::sync_component_to_ast(
-                    world,
-                    self.entity,
-                    MODEL_OVERRIDES_TYPE_PATH,
-                    &overrides,
-                );
             }
             OverrideLayer::Instance => {
                 let overrides = InstanceMaterialOverrides { materials };
                 node.insert(overrides.clone());
-                crate::commands::sync_component_to_ast(
-                    world,
-                    self.entity,
-                    INSTANCE_OVERRIDES_TYPE_PATH,
-                    &overrides,
-                );
             }
         }
     }

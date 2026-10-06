@@ -89,7 +89,7 @@ fn on_preview_strip_added(
 
 /// Marker for the editor-owned mirror camera.
 #[derive(Component)]
-struct CameraPreviewCamera;
+pub(crate) struct CameraPreviewCamera;
 
 fn setup_camera_preview(
     mut commands: Commands,

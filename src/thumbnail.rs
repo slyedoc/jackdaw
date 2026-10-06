@@ -41,11 +41,9 @@ use bevy::{
     gltf::GltfAssetLabel,
     image::{CompressedImageFormats, ImageSampler, ImageType},
     prelude::*,
-    reflect::TypePath,
     ui::UiGlobalTransform,
     world_serialization::{WorldAsset, WorldAssetRoot},
 };
-use jackdaw_bsn::{BsnPatch, SceneBsnAst, apply_component_patch, patch_type_path};
 use jackdaw_feathers::tokens;
 use path_slash::PathExt as _;
 
@@ -103,8 +101,6 @@ const VIEW_DIRECTION: Vec3 = Vec3::new(1.0, 0.75, 1.0);
 const MATERIAL_SPHERE_RADIUS: f32 = 1.0;
 
 /// How deep a prefab document is walked while its models are gathered.
-const MAX_PREFAB_DEPTH: usize = 64;
-
 pub(crate) fn plugin(app: &mut App) {
     // Registered here as well as in `viewport`/`material_preview` so this
     // module owns its own dependency rather than inheriting whichever
@@ -742,10 +738,19 @@ fn start_job(
             let document = path.to_path_buf();
             thumbnails.subject_result = None;
             commands.queue(move |world: &mut World| {
-                let built = build_prefab_subject(world, root, &document);
-                if let Some(mut thumbs) = world.get_resource_mut::<Thumbnails>() {
-                    thumbs.subject_result = Some(built);
-                }
+                let asset_path = crate::scene_io::asset_path_of(world, &document);
+                crate::instances::queue_instance(
+                    world,
+                    &asset_path,
+                    Transform::IDENTITY,
+                    Some(root),
+                    move |world, placed| {
+                        let built = placed.is_ok_and(|subject| dress_prefab_subject(world, subject));
+                        if let Some(mut thumbs) = world.get_resource_mut::<Thumbnails>() {
+                            thumbs.subject_result = Some(built);
+                        }
+                    },
+                );
             });
             Some(job(Some(root), Stage::Building))
         }
@@ -982,121 +987,28 @@ fn aim_camera(
     }
 }
 
-/// Spawn the models a prefab document names, under `root`. Returns whether it
-/// named any: a prefab that names none keeps its icon rather than being
-/// photographed as an empty frame.
-fn build_prefab_subject(world: &mut World, root: Entity, path: &Path) -> bool {
-    let assets_root = crate::prefab::save_load::source_root_of(world, path);
-    let Ok(document) = crate::prefab::save_load::read_prefab_ast(path, &assets_root) else {
-        return false;
-    };
-    let mut walk = PrefabWalk {
-        models: 0,
-        follow: true,
-    };
-    for node in document.roots.clone() {
-        spawn_prefab_node(world, &document, node, root, 0, &mut walk);
-    }
-    walk.models > 0
-}
-
-/// What one walk of a prefab document has found, and whether a node naming
-/// another prefab is still read.
-struct PrefabWalk {
-    models: usize,
-    follow: bool,
-}
-
-fn spawn_prefab_node(
-    world: &mut World,
-    document: &SceneBsnAst,
-    node: Entity,
-    parent: Entity,
-    depth: usize,
-    walk: &mut PrefabWalk,
-) {
-    if depth >= MAX_PREFAB_DEPTH {
-        return;
-    }
-    let patches: Vec<BsnPatch> = document
-        .get_patches(node)
-        .map(|patches| {
-            patches
-                .0
-                .iter()
-                .filter_map(|patch| document.get_patch(*patch).cloned())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let entity = world
-        .spawn((ChildOf(parent), Transform::IDENTITY, Visibility::Inherited))
-        .id();
-
-    let mut children = Vec::new();
-    let mut inherited = None;
-    for patch in &patches {
-        if let Some(list) = patch.related_entities() {
-            children.extend(list.iter().copied());
-            continue;
+/// Take the cameras and lights out of a placed file. Whether it holds a model: one that holds
+/// none keeps its icon rather than being photographed as an empty frame.
+fn dress_prefab_subject(world: &mut World, subject: Entity) -> bool {
+    let mut models = 0;
+    let mut stack = vec![subject];
+    while let Some(entity) = stack.pop() {
+        if let Some(children) = world.get::<Children>(entity) {
+            stack.extend(children.iter());
         }
-        let Some(type_path) = patch_type_path(patch) else {
-            continue;
-        };
-        if type_path == jackdaw_prefab::ISA_TYPE {
-            inherited = jackdaw_prefab::read_isa_source(document, node);
-            continue;
+        if world.get::<GltfSource>(entity).is_some() {
+            models += 1;
         }
-        if type_path == GltfSource::type_path() {
-            walk.models += 1;
-        } else if type_path != Transform::type_path() {
-            continue;
-        }
-        apply_component_patch(world, entity, patch);
+        world.entity_mut(entity).remove::<(
+            Camera,
+            Camera3d,
+            DirectionalLight,
+            PointLight,
+            SpotLight,
+            bevy::scene::SceneBase,
+        )>();
     }
-
-    if let Some(inherited) = inherited.filter(|_| walk.follow) {
-        spawn_inherited_prefab(world, &inherited, entity, depth + 1, walk);
-    }
-
-    for child in children {
-        spawn_prefab_node(world, document, child, entity, depth + 1, walk);
-    }
-}
-
-/// Spawn the models of the prefab a node inherits from, so a prefab built out
-/// of other prefabs is photographed with what they bring.
-///
-/// One level deep: the document that names this one is the picture's subject,
-/// and a chain of them is a scene rather than a tile.
-fn spawn_inherited_prefab(
-    world: &mut World,
-    source: &Path,
-    parent: Entity,
-    depth: usize,
-    walk: &mut PrefabWalk,
-) {
-    walk.follow = false;
-    let mut spawned = false;
-    if world.contains_resource::<crate::prefab::PrefabAstCache>() {
-        world.resource_scope(|world, cache: Mut<crate::prefab::PrefabAstCache>| {
-            if let Some(document) = cache.get(source) {
-                for node in document.roots.clone() {
-                    spawn_prefab_node(world, document, node, parent, depth, walk);
-                }
-                spawned = true;
-            }
-        });
-    }
-    let assets_root = crate::prefab::save_load::source_root_of(world, source);
-    if !spawned
-        && let Ok(document) = crate::prefab::save_load::read_prefab_ast(source, &assets_root)
-    {
-        for node in document.roots.clone() {
-            spawn_prefab_node(world, &document, node, parent, depth, walk);
-        }
-    }
-    walk.follow = true;
+    models > 0
 }
 
 /// Read the cached PNG for `path` at `mtime` back into an image asset, if

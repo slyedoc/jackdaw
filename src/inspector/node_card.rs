@@ -611,16 +611,6 @@ fn build_node_card(
 // Enum controls
 // ---------------------------------------------------------------------------
 
-/// The read-only entities every write path on the card has to check for.
-type RemoteProxies<'w, 's> =
-    Query<'w, 's, (), With<crate::remote::entity_browser::RemoteEntityProxy>>;
-
-/// True when an edit must be dropped: the row lost its binding, or it points
-/// at a read-only remote proxy.
-fn card_edit_skipped(target: Option<Entity>, remote_proxies: &RemoteProxies) -> bool {
-    target.is_none_or(|entity| remote_proxies.contains(entity))
-}
-
 /// One clickable segment of a segmented enum control.
 #[derive(Component)]
 pub struct NodeSegment {
@@ -737,13 +727,12 @@ fn commit_variant(
 fn on_segment_change(
     change: On<ValueChange<Entity>>,
     segments: Query<&NodeSegment>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let Ok(segment) = segments.get(change.value) else {
         return;
     };
-    if card_edit_skipped(Some(segment.source), &remote_proxies) {
+    if false {
         return;
     }
     commit_variant(&mut commands, segment.source, segment.field, segment.index);
@@ -752,13 +741,12 @@ fn on_segment_change(
 pub(crate) fn on_node_enum_change(
     event: On<ComboBoxChangeEvent>,
     combos: Query<&NodeEnumCombo>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let Ok(combo) = combos.get(event.entity) else {
         return;
     };
-    if card_edit_skipped(Some(combo.source), &remote_proxies) {
+    if false {
         return;
     }
     commit_variant(&mut commands, combo.source, combo.field, event.selected);
@@ -905,21 +893,12 @@ fn commit_optional_number(world: &mut World, root: Entity, is_final: bool) {
     let Some(state) = world.get::<NodeOptionalNumber>(root) else {
         return;
     };
-    let (source, field, value) = (state.source, state.field, state.value);
+    let (_source, field, value) = (state.source, state.field, state.value);
     let json = match value.and_then(|value| field.settle(value)) {
         Some(value) if field.integer => serde_json::json!(value.round() as i64),
         Some(value) => serde_json::json!(value),
         None => serde_json::Value::Null,
     };
-    if super::reflect_fields::try_route_pie_live_field_edit(
-        world,
-        source,
-        node_type_path(),
-        field.path,
-        json.clone(),
-    ) {
-        return;
-    }
     if is_final {
         crate::commands::field_edit_commit(
             world,
@@ -975,7 +954,6 @@ pub(crate) fn on_optional_number_change(
     event: On<ValueChange<f64>>,
     inputs: Query<&NodeOptionalInput>,
     rows: Query<&NodeOptionalNumber>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let source = event.source;
@@ -983,7 +961,7 @@ pub(crate) fn on_optional_number_change(
         return;
     };
     let root = input.0;
-    if card_edit_skipped(rows.get(root).ok().map(|row| row.source), &remote_proxies) {
+    if rows.get(root).ok().map(|row| row.source).is_none() {
         return;
     }
     let value = event.value;
@@ -1007,14 +985,13 @@ pub(crate) fn on_optional_number_mode_change(
     event: On<ComboBoxChangeEvent>,
     modes: Query<&NodeOptionalMode>,
     rows: Query<&NodeOptionalNumber>,
-    remote_proxies: RemoteProxies,
     mut commands: Commands,
 ) {
     let Ok(mode) = modes.get(event.entity) else {
         return;
     };
     let root = mode.0;
-    if card_edit_skipped(rows.get(root).ok().map(|row| row.source), &remote_proxies) {
+    if rows.get(root).ok().map(|row| row.source).is_none() {
         return;
     }
     let set = event.selected == 1;

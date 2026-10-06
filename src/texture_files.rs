@@ -309,13 +309,8 @@ pub(crate) fn asset_cycle_array_layer(
 /// mode) or to every face of every selected brush, expanding selected
 /// non-brush parents into their child brushes.
 ///
-/// The operator framework captures a scene-AST snapshot before and after this
-/// runs and pushes it onto `CommandHistory`, so there is no manual `SetBrush`
-/// push. The explicit `sync_brush_to_ast` queue at the end is what makes that
-/// work: the outer `save_history` runs immediately after this system returns
-/// and captures the after-snapshot from the AST, so the mutation has to land in
-/// the AST before that; `BrushPlugin`'s auto-sync fires next `Update`, which is
-/// too late here.
+/// The operator framework snapshots the scene before and after this runs and pushes that onto
+/// `CommandHistory`, so there is no manual `SetBrush` push.
 #[operator(
     id = "material.apply_texture",
     label = "Apply Texture",
@@ -406,8 +401,7 @@ pub fn apply_texture(
     commands.queue(move |world: &mut World| {
         for entity in to_sync {
             if let Some(brush) = world.get::<Brush>(entity) {
-                let brush = brush.clone();
-                crate::brush::sync_brush_to_ast(world, entity, &brush);
+                let _brush = brush.clone();
             }
         }
     });

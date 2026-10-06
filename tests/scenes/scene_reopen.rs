@@ -7,7 +7,7 @@
 use crate::util;
 
 use bevy::prelude::*;
-use jackdaw::migrate_dialog::request_open_with_conversion;
+use jackdaw::scenes::operators::scene_open_system as request_open_with_conversion;
 
 /// A one-entity scene whose only distinguishing mark is the entity's name.
 fn write_scene(dir: &std::path::Path, file: &str, name: &str) -> std::path::PathBuf {

@@ -144,13 +144,7 @@ pub(crate) fn commit_navmesh(
     if terrain.navmesh == before {
         return;
     }
-    let terrain = terrain.clone();
-    crate::commands::sync_component_to_ast(
-        world,
-        entity,
-        "jackdaw_scene_types::types::Terrain",
-        &terrain,
-    );
+    let _terrain = terrain.clone();
 }
 
 /// One tab's navmesh: what a bake produced, and any bake still producing one.
@@ -161,15 +155,6 @@ pub struct TabNavmesh {
     pub state: TerrainNavmeshState,
     running: Option<RunningBake>,
 }
-
-/// Whether a navmesh bake is running for the active tab.
-///
-/// The bake is a background task, so an operator that starts one returns
-/// before there is a navmesh.
-pub(crate) fn bake_in_flight(world: &World) -> bool {
-    world.contains_resource::<RunningBake>()
-}
-
 /// Moves the active tab's navmesh out of the world and onto its tab.
 pub(crate) fn take_from_world(world: &mut World) -> Option<TabNavmesh> {
     // The drawn overlay belongs to the bake going onto the tab, not to the
@@ -295,7 +280,7 @@ pub(crate) fn terrain_navmesh_bake(
     _: In<OperatorParameters>,
     mut commands: Commands,
     selection: Res<Selection>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
     scatter_assets: Option<Res<jackdaw_terrain::render::ScatterAssets>>,
@@ -439,7 +424,7 @@ pub(crate) struct SceneGeometry<'w, 's> {
             Option<&'static avian3d::prelude::RigidBody>,
             Option<&'static avian3d::prelude::Sensor>,
         ),
-        (Without<EditorEntity>, Without<TerrainSurface>),
+        (With<crate::scene_io::SceneEntity>, Without<TerrainSurface>),
     >,
     /// Colliders standing on their own, with no mesh to rasterize.
     ///
@@ -456,7 +441,7 @@ pub(crate) struct SceneGeometry<'w, 's> {
         (
             With<avian3d::prelude::Collider>,
             Without<AuroraMesh3d>,
-            Without<EditorEntity>,
+            With<crate::scene_io::SceneEntity>,
             // The ground reaches the bake through its heights rather than
             // through a mesh, so a collider on it is not a gap.
             Without<jackdaw_scene_types::Terrain>,
@@ -1226,7 +1211,7 @@ fn poll_running_bake(
     mut commands: Commands,
     mut running: ResMut<RunningBake>,
     mut state: ResMut<TerrainNavmeshState>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
 ) {
@@ -1287,7 +1272,7 @@ fn poll_running_bake(
 /// is asked again `STALENESS_INTERVAL` later.
 fn staleness_against_world(
     artifact: &NavmeshArtifact,
-    terrains: &Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: &Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     store: &TerrainDataStore,
     geometry: &SceneGeometry,
 ) -> Staleness {
@@ -1330,7 +1315,7 @@ const STALENESS_INTERVAL: f32 = 0.25;
 fn refresh_staleness(
     time: Res<Time>,
     mut since: Local<f32>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     geometry: SceneGeometry,
     store: Res<TerrainDataStore>,
     mut state: ResMut<TerrainNavmeshState>,
@@ -1385,7 +1370,7 @@ struct OverlayBuild {
 fn sync_navmesh_overlay(
     mut commands: Commands,
     state: Res<TerrainNavmeshState>,
-    terrains: Query<&jackdaw_scene_types::Terrain>,
+    terrains: Query<&jackdaw_scene_types::Terrain, With<crate::scene_io::SceneEntity>>,
     store: Res<TerrainDataStore>,
     mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
@@ -1676,7 +1661,7 @@ pub(crate) fn import_beside_scene(world: &mut World, scene_path: &str) {
 /// from an exclusive context.
 fn staleness_of_loaded_world(
     artifact: In<NavmeshArtifact>,
-    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrains: Query<(&jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     store: Res<TerrainDataStore>,
     geometry: SceneGeometry,
 ) -> Staleness {

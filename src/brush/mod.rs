@@ -345,13 +345,12 @@ impl EditorCommand for SetBrush {
         &self.label
     }
 
-    fn sync_after_external_execute(&self, world: &mut World) {
+    fn sync_after_external_execute(&self, _world: &mut World) {
         // Brush element drags (face / edge / vertex push, knife cut,
         // bridge, etc.) mutate the ECS `Brush` directly during the
         // operation. By the time the command reaches the history, the
         // ECS already holds `self.new`; the AST still needs syncing
         // so a later reload doesn't restore the pre-drag state.
-        sync_brush_to_ast(world, self.entity, &self.new);
     }
 }
 
@@ -365,7 +364,6 @@ fn apply_brush(world: &mut World, entity: Entity, target: &Brush) {
     if let Some(mut brush) = world.get_mut::<Brush>(entity) {
         *brush = target.clone();
     }
-    sync_brush_to_ast(world, entity, target);
     if world.get::<BrushHalfedge>(entity).is_some() && !target.topology.polygons.is_empty() {
         let halfedge = BrushHalfedge::from_topology(&target.topology);
         if let Ok(mut ec) = world.get_entity_mut(entity) {
@@ -377,89 +375,17 @@ fn apply_brush(world: &mut World, entity: Entity, target: &Brush) {
     }
 }
 
-/// Write a Brush component into the live scene document.
-pub fn sync_brush_to_ast(world: &mut World, entity: Entity, brush: &Brush) {
-    // `jackdaw_scene_types::types::Brush` is the canonical reflected type
-    // path (Brush lives directly in the crate's `types` module, not a
-    // `types::brush` submodule; getting this string wrong leaves the
-    // document with a `types::brush::Brush` key the loader skips with an
-    // `Unknown type` warning, silently losing the Brush on reload).
-    crate::commands::sync_component_to_ast(
-        world,
-        entity,
-        "jackdaw_scene_types::types::Brush",
-        brush,
-    );
-}
-
-/// Watch for any `Changed<Brush>` and mirror the new state into the
-/// scene AST. This lets callers that mutate `Brush` directly (and
-/// push `SetBrush` to history as already-executed via
-/// `push_executed`) skip a manual `sync_brush_to_ast` call; without
-/// this system, the modal draw-brush operator's `before_snapshot`
-/// would capture the pre-mutation AST and an undo across the draw
-/// would wipe the prior Brush edit (e.g. undoing a new brush would
-/// also strip a material that had been applied beforehand).
-///
-/// Cloning the Brush per change is cheap (a small `Vec<BrushFaceData>`),
-/// and in practice `Changed<Brush>` is near-empty every frame.
-fn sync_changed_brushes_to_ast(
-    changed: Query<(Entity, &Brush), Changed<Brush>>,
-    mut commands: Commands,
-) {
-    let entries: Vec<(Entity, Brush)> = changed.iter().map(|(e, b)| (e, b.clone())).collect();
-    if entries.is_empty() {
-        return;
-    }
-    commands.queue(move |world: &mut World| {
-        for (entity, brush) in entries {
-            sync_brush_to_ast(world, entity, &brush);
-        }
-    });
-}
-
-/// Mirror `ModifierStack` changes and removals into the scene AST, the same
-/// way [`sync_changed_brushes_to_ast`] does for `Brush`. The modifier
-/// operators insert the component directly (rather than through the
-/// component picker's AST-aware path), so without this the stack would be
-/// invisible to the inspector, uneditable through the reflected-field path,
-/// and dropped on save. `InspectorDirty` forces the card to appear the frame
-/// the stack is added or removed.
-fn sync_changed_modifier_stacks_to_ast(
-    changed: Query<
-        (Entity, &jackdaw_geometry::ModifierStack),
-        Changed<jackdaw_geometry::ModifierStack>,
-    >,
+/// `Changed` does not fire on removal, so flag the inspector when a modifier stack is removed:
+/// its card must disappear.
+fn flag_inspector_on_modifier_stack_removal(
     mut removed: RemovedComponents<jackdaw_geometry::ModifierStack>,
     mut commands: Commands,
 ) {
-    let type_path = <jackdaw_geometry::ModifierStack as bevy::reflect::TypePath>::type_path();
-    let entries: Vec<(Entity, jackdaw_geometry::ModifierStack)> =
-        changed.iter().map(|(e, s)| (e, s.clone())).collect();
-    let removed_entities: Vec<Entity> = removed.read().collect();
-    if entries.is_empty() && removed_entities.is_empty() {
-        return;
-    }
-    // `Changed` does not fire on removal, so flag the inspector here when a
-    // stack is removed (its card must disappear). Changed and added stacks are
-    // already flagged by the inspector-side system and the archetype watcher,
-    // so re-flagging them here would double the rebuild.
-    for &entity in &removed_entities {
+    for entity in removed.read() {
         if let Ok(mut ec) = commands.get_entity(entity) {
             ec.insert(crate::inspector::InspectorDirty);
         }
     }
-    commands.queue(move |world: &mut World| {
-        for (entity, stack) in entries {
-            crate::commands::sync_component_to_ast(world, entity, type_path, &stack);
-        }
-        for entity in removed_entities {
-            let mut ast = world.resource_mut::<jackdaw_bsn::SceneBsnAst>();
-            if let Some(node) = ast.ast_for(entity) {
-                ast.remove_component_patch(node, type_path);
-            }
-        }
-    });
 }
 
 pub struct BrushPlugin;
@@ -557,11 +483,7 @@ impl Plugin for BrushPlugin {
             )
             .add_systems(
                 Update,
-                sync_changed_brushes_to_ast.run_if(in_state(crate::AppState::Editor)),
-            )
-            .add_systems(
-                Update,
-                sync_changed_modifier_stacks_to_ast.run_if(in_state(crate::AppState::Editor)),
+                flag_inspector_on_modifier_stack_removal.run_if(in_state(crate::AppState::Editor)),
             )
             .add_systems(
                 Update,

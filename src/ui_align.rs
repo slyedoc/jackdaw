@@ -232,7 +232,7 @@ fn can_align(
     keybind_focus: crate::keybind_focus::KeybindFocus,
     active: ActiveModalQuery,
     selection: Res<Selection>,
-    ui_scenes: Query<(), crate::prefab::AuthoredUiSceneRoot>,
+    ui_scenes: Query<(), crate::instances::AuthoredUiSceneRoot>,
     nodes: Query<(), (With<Node>, Without<EditorEntity>)>,
 ) -> bool {
     if keybind_focus.keyboard_is_spoken_for() || active.is_modal_running() || ui_scenes.is_empty() {

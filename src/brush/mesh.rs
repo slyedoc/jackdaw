@@ -158,13 +158,12 @@ pub(crate) fn recenter_brush_origins(
     edge_drag: Res<super::EdgeDragState>,
     face_drag: Res<super::BrushDragState>,
     edit_gizmo_drag: Res<crate::gizmos::EditGizmoDragState>,
-    mut commands: Commands,
+    _commands: Commands,
 ) {
     if vertex_drag.active || edge_drag.active || face_drag.active || edit_gizmo_drag.active {
         return;
     }
-    let mut synced: Vec<(Entity, super::Brush, Transform)> = Vec::new();
-    for (entity, mut brush, mut transform, halfedge) in &mut brushes {
+    for (_entity, mut brush, mut transform, halfedge) in &mut brushes {
         // Prefer the live halfedge mesh when present (Vertex / Edge /
         // Face mode), since `brush.topology` may not yet reflect the
         // in-flight halfedge edits.
@@ -196,22 +195,7 @@ pub(crate) fn recenter_brush_origins(
         compensate_uv_offset_for_origin_shift(&mut brush.faces, center);
         let world_offset = transform.rotation * (center * transform.scale);
         transform.translation += world_offset;
-        synced.push((entity, brush.clone(), *transform));
     }
-    if synced.is_empty() {
-        return;
-    }
-    commands.queue(move |world: &mut World| {
-        for (entity, brush, transform) in synced {
-            super::sync_brush_to_ast(world, entity, &brush);
-            crate::commands::sync_component_to_ast::<Transform>(
-                world,
-                entity,
-                "bevy_transform::components::transform::Transform",
-                &transform,
-            );
-        }
-    });
 }
 
 /// `regenerate_brush_meshes` only reacts to change ticks, so removing a

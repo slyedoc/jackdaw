@@ -560,7 +560,7 @@ pub(crate) fn assets_for_row(world: &World, row: &AssetFieldRow) -> Vec<String> 
         return Vec::new();
     };
     use path_slash::PathExt as _;
-    jackdaw_bsn::walk_files_with_extensions(&assets, extensions)
+    crate::bsn_files::walk_files_with_extensions(&assets, extensions)
         .into_iter()
         .filter_map(|path| {
             Some(

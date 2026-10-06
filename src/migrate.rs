@@ -90,7 +90,7 @@ pub fn runtime_wiring_note() -> String {
          the `pie` feature is what lets the editor's Play button drive your\n\
          game: Play builds and runs your own binary, and the two talk over\n\
          a link that feature installs.",
-        version = jackdaw_project_build::BEVY_VERSION
+        version = crate::scene_io::stamp::BEVY_VERSION
     )
 }
 

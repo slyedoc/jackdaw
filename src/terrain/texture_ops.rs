@@ -176,7 +176,7 @@ fn slot_reference(
     registry: &MaterialRegistry,
     named: &str,
 ) -> Result<String, TerrainMaterialError> {
-    let name = jackdaw_bsn::asset_stem(named);
+    let name = crate::bsn_files::asset_stem(named);
     if let Some(entry) =
         index.and_then(|index| crate::material_assets::material_file_of(index, named))
     {

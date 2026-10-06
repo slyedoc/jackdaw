@@ -21,13 +21,10 @@ use jackdaw_widgets::collapsible::CollapsibleHeader;
 use crate::definition_assets::{AssetSaveOp, DefinitionAssetEdit};
 
 use super::component_display::{ComponentDisplaySpec, spawn_component_display};
-use super::schema_fields::{SchemaFieldContext, spawn_schema_fields};
 
-/// What a definition card puts in its body: a reflected value the editor can
-/// walk, or a value it has only the project's schema for.
+/// What a definition card puts in its body: a reflected value the editor can walk.
 enum CardBody {
     Reflected(Box<dyn Reflect>),
-    Schema(Box<jackdaw_schema::TypeSchema>, serde_json::Value),
 }
 
 /// Marks the card a definition puts up: it stands for a whole file, so no
@@ -75,36 +72,17 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
     let label = registered
         .as_ref()
         .map_or_else(|| kind.clone(), |definition| definition.label.clone());
-    let schema_backed = registered.is_some_and(|definition| definition.schema_backed());
-    let body = if schema_backed {
-        let Some(schema) = crate::definition_assets::definition_schema(world, &kind) else {
+    let body = match definition_snapshot(world, source, &type_path) {
+        Some(value) => CardBody::Reflected(value),
+        None => {
             bevy::log::warn_once!(
-                "this project reports no shape for {type_path}, which its {kind} files hold"
+                "the editor has no registration for {type_path}, which {kind} files hold"
             );
             return;
-        };
-        let Some(value) = crate::definition_assets::schema_definition_json(world, &kind, &path)
-        else {
-            bevy::log::warn_once!(
-                "no {kind} named '{name}' is loaded, so its {type_path} card is empty"
-            );
-            return;
-        };
-        CardBody::Schema(Box::new(schema), value)
-    } else {
-        match definition_snapshot(world, source, &type_path) {
-            Some(value) => CardBody::Reflected(value),
-            None => {
-                bevy::log::warn_once!(
-                    "the editor has no registration for {type_path}, which {kind} files hold"
-                );
-                return;
-            }
         }
     };
 
     let registry = world.resource::<AppTypeRegistry>().clone();
-    let server = world.get_resource::<AssetServer>().cloned();
     let icon_font = world.resource::<IconFont>().0.clone();
     let editor_font = world.resource::<EditorFont>().0.clone();
     let mut collapse_state =
@@ -126,8 +104,6 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
                 is_overridden: false,
                 is_derived: false,
                 removable: false,
-                prefab_ctx: None,
-                revert_through_prefab: false,
                 icon_font: &icon_font,
                 editor_font: &editor_font,
                 collapse_state: &collapse_state,
@@ -159,28 +135,6 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
                 &icon_font,
             );
             state.apply(world);
-        }
-        CardBody::Schema(schema, value) => {
-            let asset_types = super::schema_fields::asset_path_types(world);
-            world.resource_scope(|world, types: Mut<crate::project_types::ProjectTypes>| {
-                let mut state: SystemState<(Commands, Query<&Name>)> = SystemState::new(world);
-                let Ok((mut commands, names)) = state.get_mut(world) else {
-                    return;
-                };
-                let ctx = SchemaFieldContext {
-                    types: &types,
-                    source,
-                    type_path: &type_path,
-                    names: &names,
-                    registry: &registry,
-                    server: server.as_ref(),
-                    asset_types: &asset_types,
-                    editor_font: &editor_font,
-                    icon_font: &icon_font,
-                };
-                spawn_schema_fields(&mut commands, card.body, &ctx, &schema, &value, "", 0);
-                state.apply(world);
-            });
         }
     }
 

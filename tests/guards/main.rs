@@ -7,8 +7,5 @@
 #[path = "../util/mod.rs"]
 mod util;
 
-mod editor_remote;
 mod feathers_composition;
-mod remote_debug_smoke;
-mod scaffolded_component_flow;
 mod widget_purity;

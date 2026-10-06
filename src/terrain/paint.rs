@@ -543,7 +543,7 @@ pub(crate) fn terrain_tool_paint(
 fn update_paint_brush_position(
     edit_mode: Res<TerrainEditMode>,
     vp: crate::viewport::ViewportCursor,
-    terrain_query: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform)>,
+    terrain_query: Query<(Entity, &jackdaw_scene_types::Terrain, &GlobalTransform), With<crate::scene_io::SceneEntity>>,
     selection: Res<Selection>,
     store: Res<TerrainDataStore>,
     mut paint_state: ResMut<TerrainPaintState>,

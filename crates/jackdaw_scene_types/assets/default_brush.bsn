@@ -1,0 +1,9 @@
+#default_brush
+bevy_aurora::material::AuroraMaterial {
+    base_color: bevy_color::color::Color::Srgba(bevy_color::srgba::Srgba { red: 0.98, green: 0.8549, blue: 0.3686, alpha: 1.0 }),
+    base_color_texture: "embedded://jackdaw_scene_types/jd_grid.png",
+    uv_transform: glam::Affine2 {
+        matrix2: glam::Mat2 { x_axis: glam::Vec2 { x: 2.0, y: 0.0 }, y_axis: glam::Vec2 { x: 0.0, y: 2.0 } },
+        translation: glam::Vec2 { x: 0.0, y: 0.0 },
+    },
+}

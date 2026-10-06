@@ -23,14 +23,12 @@ impl crate::commands::EditorCommand for SetCustomProperties {
         if let Some(mut cp) = world.get_mut::<CustomProperties>(self.entity) {
             *cp = self.new_properties.clone();
         }
-        sync_custom_props_to_ast(world, self.entity, &self.new_properties);
     }
 
     fn undo(&mut self, world: &mut World) {
         if let Some(mut cp) = world.get_mut::<CustomProperties>(self.entity) {
             *cp = self.old_properties.clone();
         }
-        sync_custom_props_to_ast(world, self.entity, &self.old_properties);
     }
 
     fn description(&self) -> &str {
@@ -38,11 +36,3 @@ impl crate::commands::EditorCommand for SetCustomProperties {
     }
 }
 
-fn sync_custom_props_to_ast(world: &mut World, entity: Entity, props: &CustomProperties) {
-    crate::commands::sync_component_to_ast(
-        world,
-        entity,
-        "jackdaw_scene_types::types::custom_properties::CustomProperties",
-        props,
-    );
-}

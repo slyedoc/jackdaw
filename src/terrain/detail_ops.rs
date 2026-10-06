@@ -684,15 +684,9 @@ impl SetTerrainDetail {
         };
         let layers_left = detail.len();
         terrain.detail = detail;
-        let terrain = terrain.clone();
+        let _terrain = terrain.clone();
         let mut paint = world.resource_mut::<TerrainPaintState>();
         paint.detail_layer = paint.detail_layer.min(layers_left.saturating_sub(1));
-        crate::commands::sync_component_to_ast(
-            world,
-            self.entity,
-            "jackdaw_scene_types::types::Terrain",
-            &terrain,
-        );
     }
 }
 

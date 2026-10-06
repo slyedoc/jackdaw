@@ -3,10 +3,6 @@
 //! A file says which type it holds, so the editor finds a kind's files by
 //! reading them rather than by where they sit, and
 //! [`crate::asset_index::AssetIndex`] holds what every one of them loaded to. A
-//! type the editor has compiled in loads through [`jackdaw_bsn::load_bsn_assets`]
-//! and saves through [`jackdaw_bsn::serialize_assets_to_bsn`]; a type the open
-//! project reported in its schema is known no other way, so its files load as
-//! the patch they hold and save back through the same emitter. Either way a
 //! file holds only what the value changes from its default.
 //!
 //! Opening an asset puts it in the inspector: the open asset rides on an editor
@@ -21,7 +17,6 @@ use bevy::prelude::*;
 use bevy::reflect::{GetPath, ReflectRef, prelude::ReflectDefault};
 use jackdaw_api::prelude::{AssetKind, AssetKinds};
 use jackdaw_api_internal::operator::{report_to_caller, warn_caller};
-use jackdaw_bsn::{BsnPatch, BsnPatches, BsnStructData, BsnStructFields, CatalogAssetRef};
 use jackdaw_commands::CommandHistory;
 
 use crate::EditorEntity;
@@ -123,93 +118,25 @@ pub fn new_definition_dir(world: &World) -> Option<PathBuf> {
 /// Read one asset file into a value. A file that cannot be read or parsed, or
 /// that holds a value of another type, is reported and skipped.
 pub fn read_asset_file(world: &mut World, kind: &AssetKind, path: &Path) -> Option<AssetValue> {
-    let text = match jackdaw_bsn::read_document_text(path) {
-        Ok(text) => text,
-        Err(err) => {
-            warn!("Failed to read {}: {err}", path.display());
-            return None;
-        }
-    };
-    if kind.schema_backed() {
-        return read_schema_asset(kind, path, &text);
-    }
     let type_id = registered_type_id(world, &kind.type_path)?;
-    let entries = match jackdaw_bsn::load_bsn_assets(world, &text) {
-        Ok(entries) => entries,
-        Err(err) => {
-            warn!("Failed to parse {}: {err}", path.display());
-            return None;
-        }
-    };
-    let entry = entries.into_iter().next()?;
-    if entry.handle.type_id() != type_id {
+    let source = crate::scene_io::asset_path_of(world, path);
+    let handle = jackdaw_runtime::load_asset_file(world, path, &source)?;
+    if handle.type_id() != type_id {
         warn!("{} does not hold a {}", path.display(), kind.type_path);
         return None;
     }
-    Some(AssetValue::Handle(entry.handle))
-}
-
-/// Read a file whose type the editor knows only as schema: the patch it holds
-/// is the value.
-fn read_schema_asset(kind: &AssetKind, path: &Path, text: &str) -> Option<AssetValue> {
-    let ast = match jackdaw_bsn::parse_bsn_text(text) {
-        Ok(ast) => ast,
-        Err(err) => {
-            warn!("Failed to parse {}: {err}", path.display());
-            return None;
-        }
-    };
-    let data = ast
-        .roots
-        .iter()
-        .find_map(|&root| patch_of_root(&ast, root))
-        .unwrap_or_else(|| empty_patch(&kind.type_path));
-    if data.type_path != kind.type_path {
-        warn!(
-            "{} holds a {} where a {} was expected",
-            path.display(),
-            data.type_path,
-            kind.type_path
-        );
-        return None;
-    }
-    Some(AssetValue::Schema(Box::new(data)))
-}
-
-/// The struct patch a document root carries, with a bare type reading as a
-/// value that authors nothing.
-fn patch_of_root(ast: &jackdaw_bsn::SceneBsnAst, root: Entity) -> Option<BsnStructData> {
-    let patches = ast.get_patches(root)?;
-    patches
-        .0
-        .iter()
-        .find_map(|&patch| match ast.get_patch(patch) {
-            Some(BsnPatch::Struct(data)) => Some(data.clone()),
-            Some(BsnPatch::Type(type_path)) => Some(empty_patch(type_path)),
-            _ => None,
-        })
-}
-
-fn empty_patch(type_path: &str) -> BsnStructData {
-    BsnStructData {
-        type_path: type_path.to_string(),
-        fields: BsnStructFields::default(),
-    }
+    Some(AssetValue::Handle(handle))
 }
 
 /// The name the root of an existing file carries, so a save writes the file
 /// back under the name it already spells.
 fn root_name_of(text: &str) -> Option<String> {
-    let ast = jackdaw_bsn::parse_bsn_text(text).ok()?;
-    ast.roots.iter().find_map(|&root| {
-        ast.get_patches(root)?
-            .0
-            .iter()
-            .find_map(|&patch| match ast.get_patch(patch) {
-                Some(BsnPatch::Name(name)) => Some(name.clone()),
-                _ => None,
-            })
-    })
+    let document = bevy::bsn::BsnDocument::parse(text).ok()?;
+    let &root = document.roots.first()?;
+    match &document.node(root)?.kind {
+        bevy::bsn::BsnNodeKind::Entity { name, .. } => name.clone(),
+        _ => None,
+    }
 }
 
 /// Write one asset to the file it was opened from or created in, under the
@@ -221,8 +148,7 @@ pub fn write_asset_file(
     value: &AssetValue,
     path: &Path,
 ) -> std::io::Result<PathBuf> {
-    let path = &jackdaw_bsn::existing_form(path).unwrap_or_else(|| path.to_path_buf());
-    let existing = jackdaw_bsn::read_document_text(path).ok();
+    let existing = std::fs::read_to_string(path).ok();
     let name = existing
         .as_deref()
         .and_then(root_name_of)
@@ -239,28 +165,38 @@ pub fn write_asset_file(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let bytes = jackdaw_bsn::document_bytes(path, &text).map_err(std::io::Error::other)?;
-    crate::scene_io::save::write_atomic(path, &bytes)?;
+    crate::scene_io::save::write_atomic(path, text.as_bytes())?;
     Ok(path.to_path_buf())
 }
 
 /// The text one asset saves as: the stamp and the header naming its type, then
-/// an asset catalog entry for a compiled type or the patch it holds for a
-/// schema-backed one.
+/// its asset catalog entry.
 fn asset_text(world: &World, name: &str, value: &AssetValue) -> Option<String> {
-    let body = match value {
-        AssetValue::Handle(handle) => jackdaw_bsn::serialize_assets_to_bsn(
-            world,
-            &[CatalogAssetRef {
-                name: sanitize_definition_name(name),
-                type_id: handle.type_id(),
-                asset_id: handle.id(),
-            }],
-        ),
-        AssetValue::Schema(data) => {
-            emit_definition_patch(&sanitize_definition_name(name), (**data).clone())
+    let AssetValue::Handle(handle) = value else {
+        return None;
+    };
+    let registry = world.resource::<AppTypeRegistry>().clone();
+    let registry = registry.read();
+    let reflect_asset = registry.get_type_data::<ReflectAsset>(handle.type_id())?;
+    let asset = reflect_asset.get(world, handle.id())?;
+    let settings = bevy::bsn_asset::WriteSettings {
+        asset_paths: world
+            .get_resource::<jackdaw_runtime::JackdawCatalog>()
+            .map(|catalog| catalog.asset_paths().into_iter().collect())
+            .unwrap_or_default(),
+        ..default()
+    };
+    let body = match bevy::bsn_asset::write_asset_value_with(
+        world,
+        &sanitize_definition_name(name),
+        asset.as_partial_reflect(),
+        &settings,
+    ) {
+        Ok(document) => document.to_bsn_string(),
+        Err(err) => {
+            warn!("writing '{name}': {err}");
+            return None;
         }
-        AssetValue::Unloaded => return None,
     };
     if body.trim().is_empty() {
         return None;
@@ -281,29 +217,12 @@ fn asset_type_path(world: &World, value: &AssetValue) -> Option<String> {
                     .to_string(),
             )
         }
-        AssetValue::Schema(data) => Some(data.type_path.clone()),
         AssetValue::Unloaded => None,
     }
 }
 
-/// Emit one named patch as a document of its own.
-fn emit_definition_patch(name: &str, data: BsnStructData) -> String {
-    let mut ast = jackdaw_bsn::SceneBsnAst::default();
-    let name_patch = ast.world.spawn(BsnPatch::Name(name.to_string())).id();
-    let type_patch = ast.world.spawn(BsnPatch::Struct(data)).id();
-    let root = ast
-        .world
-        .spawn(BsnPatches(vec![name_patch, type_patch]))
-        .id();
-    ast.add_to_roots(root);
-    jackdaw_bsn::emit_scene(&ast)
-}
-
 /// A fresh default value of a registered kind.
 pub fn default_asset_value(world: &mut World, kind: &AssetKind) -> Option<AssetValue> {
-    if kind.schema_backed() {
-        return Some(AssetValue::Schema(Box::new(empty_patch(&kind.type_path))));
-    }
     let registry = world.resource::<AppTypeRegistry>().clone();
     let registry = registry.read();
     let registration = registry.get_with_type_path(&kind.type_path)?;
@@ -363,28 +282,6 @@ pub fn open_definition_value(world: &World) -> Option<AssetValue> {
     value_at(world, &open_definition_path(world)?)
 }
 
-/// The schema the project reported for a kind's type, when the editor knows
-/// the type no other way.
-pub fn definition_schema(world: &World, kind: &str) -> Option<jackdaw_schema::TypeSchema> {
-    let definition = definition_of_kind(world, kind)?;
-    world
-        .get_resource::<crate::project_types::ProjectTypes>()?
-        .asset(&definition.type_path)
-        .cloned()
-}
-
-/// The whole of a schema-backed asset as JSON: what its file authors, over
-/// what its type defaults to.
-pub fn schema_definition_json(world: &World, kind: &str, path: &Path) -> Option<serde_json::Value> {
-    let schema = definition_schema(world, kind)?;
-    let value = value_at(world, path)?;
-    let data = value.schema()?;
-    let types = world.get_resource::<crate::project_types::ProjectTypes>()?;
-    Some(crate::schema_values::value_json(
-        world, types, &schema, data,
-    ))
-}
-
 /// Whether this entity is editing an asset of `type_path`.
 fn edits_definition(world: &World, entity: Entity, type_path: &str) -> bool {
     world
@@ -431,14 +328,8 @@ fn definition_field_json(
     type_path: &str,
     field_path: &str,
 ) -> Option<serde_json::Value> {
-    let kind = world.get_resource::<AssetIndex>()?.get(path)?.kind.clone();
     match value_at(world, path)? {
         AssetValue::Handle(handle) => asset_field_json(world, &handle, type_path, field_path),
-        AssetValue::Schema(_) => {
-            let whole = schema_definition_json(world, &kind, path)?;
-            let steps = crate::schema_values::parse_path(field_path);
-            crate::schema_values::json_at(&whole, &steps).cloned()
-        }
         AssetValue::Unloaded => None,
     }
 }
@@ -486,7 +377,6 @@ fn write_field(
         AssetValue::Handle(handle) => {
             write_asset_field(world, &handle, type_path, field_path, json)
         }
-        AssetValue::Schema(_) => write_schema_field(world, path, field_path, json),
         AssetValue::Unloaded => false,
     };
     if written {
@@ -554,7 +444,10 @@ fn text_value_for_asset_field(
         value.reflect_path(field_path).ok()?
     };
     let type_id = field.get_represented_type_info()?.type_id();
-    let references = jackdaw_bsn::apply_reference_map(world);
+    let references = world
+        .get_resource::<jackdaw_runtime::JackdawCatalog>()
+        .map(jackdaw_runtime::JackdawCatalog::references)
+        .unwrap_or_default();
     if crate::typed_values::takes_asset_path(&registry, type_id) && !references.contains_key(text) {
         report_missing_asset(text);
     }
@@ -575,83 +468,6 @@ fn report_missing_asset(path: &str) {
     if !assets.join(file).exists() {
         warn!("{file} is not under this project's assets yet");
     }
-}
-
-/// Write one field of a value the editor knows only as schema. A field set
-/// back to what its type defaults to stops being authored at all, so the file
-/// keeps holding only what the asset changes.
-fn write_schema_field(
-    world: &mut World,
-    path: &Path,
-    field_path: &str,
-    json: &serde_json::Value,
-) -> bool {
-    let Some(kind) = world
-        .get_resource::<AssetIndex>()
-        .and_then(|index| index.get(path))
-        .map(|entry| entry.kind.clone())
-    else {
-        return false;
-    };
-    let Some(schema) = definition_schema(world, &kind) else {
-        warn!("this project reported no schema for its {kind} files");
-        return false;
-    };
-    let Some(mut data) = value_at(world, path)
-        .as_ref()
-        .and_then(AssetValue::schema)
-        .cloned()
-    else {
-        return false;
-    };
-    if world
-        .get_resource::<crate::project_types::ProjectTypes>()
-        .is_none()
-    {
-        return false;
-    }
-    let written = world.resource_scope(|world, types: Mut<crate::project_types::ProjectTypes>| {
-        let mut whole = crate::schema_values::value_json(world, &types, &schema, &data);
-        let steps = crate::schema_values::parse_path(field_path);
-        if steps.is_empty() {
-            whole = json.clone();
-        } else if !crate::schema_values::json_set(&mut whole, &steps, json.clone()) {
-            return false;
-        }
-        let touched: Vec<String> = match steps.first() {
-            None => schema
-                .fields
-                .iter()
-                .map(|field| field.name.clone())
-                .collect(),
-            Some(crate::schema_values::Step::Field(name)) => vec![name.clone()],
-            Some(crate::schema_values::Step::Index(_)) => return false,
-        };
-        for field_name in touched {
-            let Some(field) = schema.fields.iter().find(|field| field.name == field_name) else {
-                return false;
-            };
-            let Some(new) = whole.get(&field_name) else {
-                continue;
-            };
-            if crate::schema_values::default_field_json(&schema, &field_name).as_ref() == Some(new)
-            {
-                crate::schema_values::set_authored(&mut data, &schema, &field_name, None);
-                continue;
-            }
-            let Some(value) =
-                crate::schema_values::bsn_for_json(world, &types, &field.type_path, new)
-            else {
-                return false;
-            };
-            crate::schema_values::set_authored(&mut data, &schema, &field_name, Some(value));
-        }
-        true
-    });
-    if written && let Some(entry) = world.resource_mut::<AssetIndex>().get_mut(path) {
-        entry.value = AssetValue::Schema(Box::new(data));
-    }
-    written
 }
 
 /// The entity editing the file at this path, if one is open.
@@ -819,9 +635,7 @@ pub(crate) fn commit_definition_field(
         };
     };
     let old_json = take_baseline(world, type_path, field_path).unwrap_or(current);
-    let rebuilds_rows = field_rebuilds_rows(world, entity, type_path, field_path)
-        || (schema_row_follows_its_value(world, entity, field_path)
-            && names_an_indexed_file(world, &old_json) != names_an_indexed_file(world, new_json));
+    let rebuilds_rows = field_rebuilds_rows(world, entity, type_path, field_path);
     let command = SetDefinitionField {
         path,
         type_path: type_path.to_string(),
@@ -859,9 +673,7 @@ fn grown_list_edit(
     field_path: &str,
     new_json: &serde_json::Value,
 ) -> Option<(String, serde_json::Value, serde_json::Value)> {
-    use crate::schema_values::Step;
-
-    let steps = crate::schema_values::parse_path(field_path);
+    let steps = parse_path(field_path);
     let (last, leading) = steps.split_last()?;
     let index = match last {
         Step::Index(index) => *index,
@@ -877,10 +689,37 @@ fn grown_list_edit(
     Some((list_path, held, serde_json::Value::Array(items)))
 }
 
-/// Steps written back as the field path they walk.
-fn spell_path(steps: &[crate::schema_values::Step]) -> String {
-    use crate::schema_values::Step;
+/// One step of a field path: a named field or a list index.
+enum Step {
+    Field(String),
+    Index(usize),
+}
 
+/// `a.b[2].c` as its steps.
+fn parse_path(path: &str) -> Vec<Step> {
+    let mut steps = Vec::new();
+    for part in path.split('.').filter(|p| !p.is_empty()) {
+        let mut rest = part;
+        if let Some(open) = rest.find('[') {
+            if open > 0 {
+                steps.push(Step::Field(rest[..open].to_string()));
+            }
+            rest = &rest[open..];
+            while let Some(close) = rest.find(']') {
+                if let Ok(index) = rest[1..close].parse() {
+                    steps.push(Step::Index(index));
+                }
+                rest = &rest[close + 1..];
+            }
+        } else {
+            steps.push(Step::Field(rest.to_string()));
+        }
+    }
+    steps
+}
+
+/// Steps written back as the field path they walk.
+fn spell_path(steps: &[Step]) -> String {
     let mut path = String::new();
     for step in steps {
         match step {
@@ -1028,13 +867,6 @@ fn take_baseline(
 
 /// Whether the field holds a value whose shape decides the rows shown for it.
 fn field_rebuilds_rows(world: &World, entity: Entity, type_path: &str, field_path: &str) -> bool {
-    if let Some(kind) = world
-        .get::<DefinitionAssetEdit>(entity)
-        .filter(|edit| is_schema_backed(world, &edit.path))
-        .map(|edit| edit.kind.clone())
-    {
-        return schema_field_rebuilds_rows(world, &kind, field_path);
-    }
     let registry = world.resource::<AppTypeRegistry>().read();
     let Some(value) = definition_value(world, entity, type_path, &registry) else {
         return false;
@@ -1050,104 +882,6 @@ fn field_rebuilds_rows(world: &World, entity: Entity, type_path: &str, field_pat
             ReflectRef::Enum(_) | ReflectRef::List(_) | ReflectRef::Array(_)
         )
     })
-}
-
-/// Whether a field's row is an asset row only because of the path it holds: a
-/// plain string field whose type declares nothing about what it names.
-fn schema_row_follows_its_value(world: &World, entity: Entity, field_path: &str) -> bool {
-    use bevy::reflect::TypePath as _;
-
-    let Some(kind) = world
-        .get::<DefinitionAssetEdit>(entity)
-        .filter(|edit| is_schema_backed(world, &edit.path))
-        .map(|edit| edit.kind.clone())
-    else {
-        return false;
-    };
-    let Some(definition) = definition_of_kind(world, &kind) else {
-        return false;
-    };
-    let Some(types) = world.get_resource::<crate::project_types::ProjectTypes>() else {
-        return false;
-    };
-    let steps = crate::schema_values::parse_path(field_path);
-    let declares_nothing =
-        crate::schema_values::field_schema_at(types, &definition.type_path, &steps)
-            .is_some_and(|field| field.asset_type_path.is_empty());
-    declares_nothing
-        && crate::schema_values::field_type_path(types, &definition.type_path, &steps).as_deref()
-            == Some(String::type_path())
-}
-
-/// Whether a value is the path of a file the project holds, which is what
-/// turns a plain text row into an asset row and back.
-fn names_an_indexed_file(world: &World, value: &serde_json::Value) -> bool {
-    let Some(named) = value.as_str().filter(|named| !named.is_empty()) else {
-        return false;
-    };
-    world
-        .get_resource::<AssetIndex>()
-        .is_some_and(|index| index.get(Path::new(named)).is_some())
-}
-
-/// Whether the file at this path holds a value the editor knows only as the
-/// project's schema.
-fn is_schema_backed(world: &World, path: &Path) -> bool {
-    world
-        .get_resource::<AssetIndex>()
-        .and_then(|index| index.get(path))
-        .is_some_and(|entry| entry.value.schema().is_some())
-}
-
-/// The elements of a list field on a schema-backed asset, as the JSON a field
-/// edit takes. `None` when the entity is editing something else.
-pub(crate) fn schema_list_items(
-    world: &World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-) -> Option<Vec<serde_json::Value>> {
-    let edit = world.get::<DefinitionAssetEdit>(entity)?;
-    if edit.type_path != type_path || !is_schema_backed(world, &edit.path) {
-        return None;
-    }
-    let held = definition_field_json(world, &edit.path, type_path, field_path)?;
-    held.as_array().cloned()
-}
-
-/// A fresh element for a list field on a schema-backed asset, from what its
-/// item type defaults to.
-pub(crate) fn schema_default_list_item(
-    world: &World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-) -> Option<serde_json::Value> {
-    let edit = world.get::<DefinitionAssetEdit>(entity)?;
-    if edit.type_path != type_path || !is_schema_backed(world, &edit.path) {
-        return None;
-    }
-    let types = world.get_resource::<crate::project_types::ProjectTypes>()?;
-    let steps = crate::schema_values::parse_path(field_path);
-    let field_type = crate::schema_values::field_type_path(types, type_path, &steps)?;
-    let item_type = crate::schema_values::list_item_type_path(&field_type)?;
-    crate::schema_values::default_json(world, types, item_type)
-}
-
-/// Whether a schema-backed field decides which rows are shown for it.
-fn schema_field_rebuilds_rows(world: &World, kind: &str, field_path: &str) -> bool {
-    let Some(definition) = definition_of_kind(world, kind) else {
-        return false;
-    };
-    let Some(types) = world.get_resource::<crate::project_types::ProjectTypes>() else {
-        return false;
-    };
-    let steps = crate::schema_values::parse_path(field_path);
-    if steps.is_empty() {
-        return true;
-    }
-    crate::schema_values::field_type_path(types, &definition.type_path, &steps)
-        .is_some_and(|type_path| crate::schema_values::shapes_its_own_rows(types, &type_path))
 }
 
 // -- Opening, saving and creating -------------------------------------------
@@ -1334,7 +1068,7 @@ fn compiled_kinds() -> [AssetKind; 5] {
         AssetKind::compiled(
             PREFAB_KIND,
             "Prefab",
-            jackdaw_prefab::components::PREFAB_TYPE,
+            crate::asset_files::PREFAB_TYPE,
         )
         .with_icon(Icon::Package),
         AssetKind::compiled(
@@ -1480,7 +1214,7 @@ pub(crate) fn create_definition(
         .filter(|asked| asked.contains('.'))
         .map(|asked| dir.join(bsn_file_name(asked)));
     let file = file.or_else(|| named_file.clone());
-    let named_by_path = file.as_deref().map(jackdaw_bsn::path_stem);
+    let named_by_path = file.as_deref().map(crate::bsn_files::path_stem);
     let name = match named_by_path.or_else(|| asked_for.clone()) {
         Some(name) => sanitize_definition_name(&name),
         None => next_free_name(world, kind, &dir),
@@ -2032,7 +1766,7 @@ mod tests {
             (".torch.item.bsn", "torch"),
         ] {
             assert_eq!(
-                jackdaw_bsn::path_stem(Path::new(file)),
+                crate::bsn_files::path_stem(Path::new(file)),
                 expected,
                 "{file} names an asset"
             );

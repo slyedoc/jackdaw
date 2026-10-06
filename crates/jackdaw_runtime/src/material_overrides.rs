@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use bevy::gltf::GltfMaterialName;
 use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
-use jackdaw_bsn::BsnProjectAssets;
 use jackdaw_scene_types::{InstanceMaterialOverrides, MaterialOverrides, MaterialSlot};
 use jackdaw_surface::WornMaterial;
 
@@ -39,14 +38,12 @@ fn find_models_to_dress(
     overridden: Query<Entity, Overridden>,
     mut removed: RemovedComponents<MaterialOverrides>,
     mut removed_instance: RemovedComponents<InstanceMaterialOverrides>,
-    project: Option<Res<BsnProjectAssets>>,
     catalog: Option<Res<JackdawCatalog>>,
 ) {
     let mut subtrees: HashSet<Entity> = changed.iter().collect();
     subtrees.extend(removed.read());
     subtrees.extend(removed_instance.read());
-    let references_changed = project.is_some_and(|project| project.is_changed())
-        || catalog.is_some_and(|catalog| catalog.is_changed());
+    let references_changed = catalog.is_some_and(|catalog| catalog.is_changed());
     if references_changed {
         subtrees.extend(overridden.iter());
     }
@@ -64,16 +61,12 @@ fn find_models_to_dress(
     });
 }
 
-/// The material a reference names, through the editor's project references or the game's catalog.
+/// The material a reference names, through the catalog.
 pub fn material_of_reference(world: &World, reference: &str) -> Option<WornMaterial> {
     let handle = world
-        .get_resource::<BsnProjectAssets>()
-        .and_then(|project| project.0.get(reference).cloned())
-        .or_else(|| {
-            world
-                .get_resource::<JackdawCatalog>()
-                .and_then(|catalog| catalog.get(reference).cloned())
-        })?;
+        .get_resource::<JackdawCatalog>()?
+        .get(reference)
+        .cloned()?;
     WornMaterial::of_handle(handle)
 }
 
@@ -170,7 +163,6 @@ fn give_back(world: &mut World, part: Entity) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::platform::collections::HashMap;
     use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
     use jackdaw_surface::{LayeredSurfaceMaterial, WaterMaterial};
 
@@ -185,12 +177,9 @@ mod tests {
     }
 
     fn reference(app: &mut App, path: &str, handle: impl Into<bevy::asset::UntypedHandle>) {
-        let mut references = app
-            .world_mut()
-            .remove_resource::<BsnProjectAssets>()
-            .unwrap_or_else(|| BsnProjectAssets(HashMap::default()));
-        references.0.insert(path.to_string(), handle.into());
-        app.world_mut().insert_resource(references);
+        app.world_mut()
+            .get_resource_or_init::<JackdawCatalog>()
+            .insert(path.to_string(), handle.into());
     }
 
     fn model(app: &mut App, own: &Handle<AuroraMaterial>) -> (Entity, Entity, Entity) {

@@ -136,31 +136,6 @@ impl ProjectTypes {
     }
 }
 
-/// Tell the apply path which type paths are project components, so a document
-/// naming one loads as authored rather than as unknown types. Call after every
-/// [`ProjectTypes`] refresh.
-///
-/// Enums are carried separately, since an authored variant spells a path one
-/// segment longer than the schema lists.
-pub fn publish_document_only_types(world: &mut World) {
-    let (types, enums) = world
-        .get_resource::<ProjectTypes>()
-        .map(|project| {
-            let types = project
-                .components()
-                .map(|c| c.type_path.clone())
-                .collect::<bevy::platform::collections::HashSet<_>>();
-            let enums = project
-                .components()
-                .filter(|c| matches!(c.kind, jackdaw_schema::TypeKind::Enum))
-                .map(|c| c.type_path.clone())
-                .collect();
-            (types, enums)
-        })
-        .unwrap_or_default();
-    world.insert_resource(jackdaw_bsn::DocumentOnlyTypes::new(types, enums));
-}
-
 /// The set of type paths the editor already has real registrations
 /// for. A project type appearing here is handled by the normal
 /// real-component path, not the dynamic path.

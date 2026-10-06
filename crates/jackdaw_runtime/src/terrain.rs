@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use bevy::asset::LoadState;
 use bevy::prelude::*;
+use bevy::scene::ScenePatchInstance;
 use jackdaw_scene_types::Terrain;
 use jackdaw_terrain::render::{
     DetailDirty, DetailRenderPlugin, DetailSystems, ScatterDirty, ScatterRenderPlugin,
@@ -56,6 +57,7 @@ pub(crate) fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
+                attach_sidecars,
                 load_sidecars,
                 refresh_heightmaps,
                 resolve_material_slots,
@@ -63,7 +65,6 @@ pub(crate) fn plugin(app: &mut App) {
                 sync_surfaces,
             )
                 .chain()
-                .after(crate::spawn_loaded_scenes)
                 .before(ScatterSystems::Rebuild)
                 .before(DetailSystems::Rebuild),
         );
@@ -151,37 +152,31 @@ struct BuiltLevel(ClipmapLevel);
 #[derive(Resource)]
 struct UntexturedTerrain(Handle<AuroraMaterial>);
 
-/// Record the sidecar each freshly spawned terrain draws.
-///
-/// Called from the scene spawn, the only place the scene's directory is known:
-/// `data_path` is relative to it and the entity keeps no other trace of where
-/// it came from. A path that names nothing loadable is logged and the terrain
-/// draws flat.
-pub(crate) fn attach_sidecars(world: &mut World, spawned: &[Entity], parent_path: &Path) {
-    let terrains: Vec<(Entity, String)> = spawned
-        .iter()
-        .filter_map(|&entity| {
-            world
-                .get::<Terrain>(entity)
-                .filter(|terrain| !terrain.data_path.is_empty())
-                .map(|terrain| (entity, terrain.data_path.clone()))
-        })
-        .collect();
-    if terrains.is_empty() {
-        return;
-    }
-    let Some(root) = crate::assets_root(world) else {
-        warn!("no asset root found; terrain sidecars cannot be located");
+/// Record the sidecar each terrain draws: `data_path` is relative to the scene file the
+/// terrain was spawned from, else to the asset folder.
+fn attach_sidecars(
+    mut commands: Commands,
+    terrains: Query<(Entity, &Terrain), Changed<Terrain>>,
+    parents: Query<&ChildOf>,
+    instances: Query<&ScenePatchInstance>,
+    folder: Res<crate::AssetFolder>,
+) {
+    let Some(root) = folder.0.as_ref() else {
         return;
     };
-
-    let scene_dir = root.join(parent_path);
-    for (entity, data_path) in terrains {
-        match sidecar::resolve_path(&scene_dir, &data_path) {
+    for (entity, terrain) in &terrains {
+        if terrain.data_path.is_empty() {
+            continue;
+        }
+        let scene_dir = std::iter::once(entity)
+            .chain(parents.iter_ancestors(entity))
+            .find_map(|at| instances.get(at).ok()?.0.path()?.path().parent().map(Path::to_path_buf))
+            .unwrap_or_default();
+        match sidecar::resolve_path(&root.join(scene_dir), &terrain.data_path) {
             Ok(path) => {
-                world.entity_mut(entity).insert(TerrainSidecar(path));
+                commands.entity(entity).insert(TerrainSidecar(path));
             }
-            Err(err) => warn!("terrain data path {data_path:?} is unusable: {err}"),
+            Err(err) => warn!("terrain data path {:?} is unusable: {err}", terrain.data_path),
         }
     }
 }
@@ -193,10 +188,9 @@ fn load_sidecars(
         (Entity, &Terrain, Option<&TerrainSidecar>),
         (Without<TerrainDocument>, Without<TerrainUnreadable>),
     >,
-    catalog_path: Option<Res<crate::JackdawCatalogPath>>,
-    asset_folder: Option<Res<crate::AssetFolder>>,
+    asset_folder: Res<crate::AssetFolder>,
 ) {
-    let assets = crate::resolve_assets_root(catalog_path.as_deref(), asset_folder.as_deref());
+    let assets = asset_folder.0.clone();
     for (entity, terrain, sidecar_path) in &terrains {
         let data = match sidecar_path {
             Some(TerrainSidecar(path)) => match std::fs::read(path) {
@@ -267,7 +261,7 @@ fn document_of(data: RegionTerrainData, terrain: &Terrain) -> TerrainDocument {
 /// [`resolve_with`] decides what a resolved material means: which of its slots
 /// is albedo, and that a vacated or unfound reference keeps its texture id.
 fn catalog_material(catalog: &JackdawCatalog, reference: &str) -> Option<Handle<AuroraMaterial>> {
-    let name = jackdaw_bsn::asset_stem(reference);
+    let name = crate::bsn_files::asset_stem(reference);
     catalog
         .get(reference)
         .or_else(|| catalog.get(&format!("@{name}")))
@@ -799,7 +793,9 @@ mod tests {
         app.register_asset_reflect::<Image>();
         app.register_asset_reflect::<AuroraMaterial>();
         app.init_resource::<JackdawCatalog>();
-        crate::load_walked_assets(app.world_mut(), assets_root, None);
+        app.world_mut().insert_resource(crate::AssetFolder(Some(assets_root.to_path_buf())));
+        app.add_systems(Startup, crate::load_asset_files);
+        app.update();
         app
     }
 

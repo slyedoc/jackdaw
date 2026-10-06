@@ -375,7 +375,7 @@ fn record_guides(
 
 /// The open UI scene's root, or `None` when no UI scene is open. A
 /// malformed document holding several picks the lowest entity.
-fn guide_root(roots: &Query<Entity, crate::prefab::AuthoredUiSceneRoot>) -> Option<Entity> {
+fn guide_root(roots: &Query<Entity, crate::instances::AuthoredUiSceneRoot>) -> Option<Entity> {
     roots.iter().min()
 }
 
@@ -398,7 +398,7 @@ fn guide_root(roots: &Query<Entity, crate::prefab::AuthoredUiSceneRoot>) -> Opti
 )]
 pub(crate) fn canvas_guide_add(
     params: In<OperatorParameters>,
-    roots: Query<Entity, crate::prefab::AuthoredUiSceneRoot>,
+    roots: Query<Entity, crate::instances::AuthoredUiSceneRoot>,
     mut commands: Commands,
 ) -> OperatorResult {
     let Some((root, axis, position)) = guide_call(&params, &roots, "canvas.guide.add") else {
@@ -427,7 +427,7 @@ pub(crate) fn canvas_guide_add(
 )]
 pub(crate) fn canvas_guide_remove(
     params: In<OperatorParameters>,
-    roots: Query<Entity, crate::prefab::AuthoredUiSceneRoot>,
+    roots: Query<Entity, crate::instances::AuthoredUiSceneRoot>,
     mut commands: Commands,
 ) -> OperatorResult {
     let Some((root, axis, position)) = guide_call(&params, &roots, "canvas.guide.remove") else {
@@ -441,7 +441,7 @@ pub(crate) fn canvas_guide_remove(
 /// warned when the call names none of it.
 fn guide_call(
     params: &OperatorParameters,
-    roots: &Query<Entity, crate::prefab::AuthoredUiSceneRoot>,
+    roots: &Query<Entity, crate::instances::AuthoredUiSceneRoot>,
     id: &str,
 ) -> Option<(Entity, CanvasAxis, f32)> {
     let Some(axis) = params.as_str("axis").and_then(CanvasAxis::parse) else {

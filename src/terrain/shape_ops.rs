@@ -77,16 +77,10 @@ impl SetTerrainShape {
             return;
         };
         terrain.cell_size = cell_size;
-        let terrain = terrain.clone();
+        let _terrain = terrain.clone();
         if let Some(mut store) = world.get_resource_mut::<TerrainDataStore>() {
             store.set_cell_size(&self.data_path, cell_size);
         }
-        crate::commands::sync_component_to_ast(
-            world,
-            self.entity,
-            "jackdaw_scene_types::types::Terrain",
-            &terrain,
-        );
         if let Some(mut dirty) = world.get_mut::<TerrainDirtyChunks>(self.entity) {
             dirty.rebuild_all = true;
         }
@@ -211,7 +205,7 @@ mod tests {
                 },
             ))
             .id();
-        crate::scene_io::register_entity_in_ast(&mut world, entity);
+        crate::scene_io::adopt_entity(&mut world, entity);
         world.insert_resource(Selection {
             entities: vec![entity],
         });
