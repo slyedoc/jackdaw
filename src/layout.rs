@@ -401,6 +401,11 @@ pub(crate) fn toolbar() -> impl Scene {
             --
             // Grid-snap toggle; highlights while snapping is on.
             @toolbar_op_button(GridToggleSnapOp::ID, Icon::Magnet)
+            --
+            @toolbar_separator()
+            --
+            // Which gizmos draw: opens the overlays panel.
+            @overlays_button()
         ]
     }
 }
@@ -504,6 +509,19 @@ fn toolbar_op_button(op_id: &'static str, icon: Icon) -> impl Scene {
             @variant: {ButtonVariant::Plain}
         }
         ButtonOperatorCall::new(op_id)
+    }
+}
+
+/// The toolbar button that opens the overlays panel beneath it.
+fn overlays_button() -> impl Scene {
+    let glyph = String::from(Icon::Layers.unicode());
+    bsn! {
+        @FeathersToolButton {
+            @caption: bsn! { @icon_scene(glyph, TOOLBAR_ICON_PX) },
+            @variant: {ButtonVariant::Plain}
+        }
+        ButtonOperatorCall::new(crate::gizmo_overlays::ViewOverlaysMenuOp::ID)
+        crate::gizmo_overlays::OverlaysButton
     }
 }
 

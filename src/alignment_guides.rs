@@ -7,7 +7,7 @@ use crate::default_style;
 use crate::gizmos::GizmoDragState;
 use crate::modal_transform::{ModalOp, ModalTransformState, ViewportDragState};
 use crate::selection::Selected;
-use crate::viewport_overlays::{self, OverlaySettings};
+use crate::viewport_overlays;
 
 const ALIGN_THRESHOLD_FACTOR: f32 = 0.005;
 const SNAP_THRESHOLD_FACTOR: f32 = 0.003;
@@ -22,7 +22,7 @@ struct AlignCandidate {
 
 /// Custom gizmo group for alignment guide lines (thin, depth-biased).
 #[derive(Default, Reflect, GizmoConfigGroup)]
-struct AlignmentGuideGizmoGroup;
+pub struct AlignmentGuideGizmoGroup;
 
 pub struct AlignmentGuidesPlugin;
 
@@ -136,7 +136,7 @@ impl MeasurableGeometry<'_, '_> {
 /// Cache sorted unique vertex coordinates (per axis) for all non-selected entities at drag start.
 fn cache_reference_coords(
     mut state: ResMut<AlignmentGuideState>,
-    settings: Res<OverlaySettings>,
+    gizmo_store: Res<bevy::gizmos::config::GizmoConfigStore>,
     gizmo_drag: Res<GizmoDragState>,
     active_tool: Res<ActiveTool>,
     modal_state: Res<ModalTransformState>,
@@ -144,7 +144,7 @@ fn cache_reference_coords(
     non_selected: Query<(Entity, &GlobalTransform, Option<&BrushMeshCache>), Without<Selected>>,
     geometry: MeasurableGeometry,
 ) {
-    if !settings.show_alignment_guides {
+    if !guides_shown(&gizmo_store) {
         state.cache_valid = false;
         for coords in &mut state.reference_coords {
             coords.clear();
@@ -243,7 +243,7 @@ fn nearest_in_sorted(sorted: &[f32], target: f32) -> Option<(f32, f32)> {
 fn draw_alignment_guides(
     mut gizmos: Gizmos<AlignmentGuideGizmoGroup>,
     state: Res<AlignmentGuideState>,
-    settings: Res<OverlaySettings>,
+    gizmo_store: Res<bevy::gizmos::config::GizmoConfigStore>,
     gizmo_drag: Res<GizmoDragState>,
     active_tool: Res<ActiveTool>,
     modal_state: Res<ModalTransformState>,
@@ -255,7 +255,7 @@ fn draw_alignment_guides(
     mut selected_transforms: Query<&mut Transform, With<Selected>>,
     geometry: MeasurableGeometry,
 ) {
-    if !settings.show_alignment_guides {
+    if !guides_shown(&gizmo_store) {
         return;
     }
 
@@ -506,4 +506,11 @@ mod measurable_geometry_tests {
             "and moving the camera must not change what is offered"
         );
     }
+}
+
+/// The alignment-guides overlay: off means no guides and no snapping to them.
+fn guides_shown(store: &bevy::gizmos::config::GizmoConfigStore) -> bool {
+    store
+        .get_config::<AlignmentGuideGizmoGroup>()
+        .is_some_and(|(config, _)| config.enabled)
 }

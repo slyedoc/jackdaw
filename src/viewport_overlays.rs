@@ -30,7 +30,7 @@ struct ViewportAxisLabels {
 /// negative `depth_bias` so the markers read on top of geometry,
 /// separate from the transform gizmo's group.
 #[derive(Default, Reflect, GizmoConfigGroup)]
-struct EntityGizmoGroup;
+pub struct EntityGizmoGroup;
 
 pub struct ViewportOverlaysPlugin;
 
@@ -89,14 +89,6 @@ pub struct OverlaySettings {
     pub show_bounding_boxes: bool,
     pub show_coordinate_indicator: bool,
     pub bounding_box_mode: BoundingBoxMode,
-    pub show_face_grid: bool,
-    /// Whether all visible brushes should show a wireframe outline.
-    pub show_brush_wireframe: bool,
-    /// Whether all visible brushes should show an outline. The
-    /// current selection always shows an outline regardless of this
-    /// setting.
-    pub show_brush_outline: bool,
-    pub show_alignment_guides: bool,
 }
 
 impl Default for OverlaySettings {
@@ -105,10 +97,6 @@ impl Default for OverlaySettings {
             show_bounding_boxes: false,
             show_coordinate_indicator: true,
             bounding_box_mode: BoundingBoxMode::default(),
-            show_face_grid: false,
-            show_brush_wireframe: false,
-            show_brush_outline: true,
-            show_alignment_guides: true,
         }
     }
 }
@@ -135,6 +123,7 @@ fn draw_selection_bounding_boxes(
     let color = default_style::SELECTION_BBOX;
 
     for (entity, global_tf, maybe_brush_cache, inherited_vis) in &selected {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -456,7 +445,8 @@ fn draw_point_light_gizmo(
         With<crate::entity_ops::SceneLight>,
     >,
 ) {
-    for (_entity, light, tf, inherited_vis, selected) in &query {
+    for (entity, light, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -490,7 +480,7 @@ fn draw_spot_light_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (
+        (Entity, 
             &SpotLight,
             &GlobalTransform,
             &InheritedVisibility,
@@ -499,7 +489,8 @@ fn draw_spot_light_gizmo(
         With<crate::entity_ops::SceneLight>,
     >,
 ) {
-    for (light, tf, inherited_vis, selected) in &query {
+    for (entity, light, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -538,7 +529,7 @@ fn draw_rect_light_gizmo(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     settings: Res<OverlaySettings>,
     query: Query<
-        (
+        (Entity, 
             &RectLight,
             &GlobalTransform,
             &InheritedVisibility,
@@ -547,7 +538,8 @@ fn draw_rect_light_gizmo(
         With<crate::entity_ops::SceneLight>,
     >,
 ) {
-    for (light, tf, inherited_vis, selected) in &query {
+    for (entity, light, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -572,11 +564,12 @@ fn draw_dir_light_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
         (With<DirectionalLight>, With<crate::entity_ops::SceneLight>),
     >,
 ) {
-    for (tf, inherited_vis, selected) in &query {
+    for (entity, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -606,7 +599,7 @@ fn draw_camera_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (
+        (Entity, 
             &Projection,
             &GlobalTransform,
             &InheritedVisibility,
@@ -615,7 +608,8 @@ fn draw_camera_gizmo(
         With<crate::entity_ops::SceneCamera>,
     >,
 ) {
-    for (projection, tf, inherited_vis, selected) in &query {
+    for (entity, projection, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -684,6 +678,7 @@ fn draw_empty_entity_marker(
     // distance. Not the world AABB: nothing to compute one from.
     const SIZE: f32 = 0.5;
     for (entity, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -711,11 +706,12 @@ fn draw_animation_player_marker(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
         With<crate::entity_ops::SceneAnimationPlayer>,
     >,
 ) {
-    for (tf, inherited_vis, selected) in &query {
+    for (entity, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -751,11 +747,12 @@ fn draw_audio_source_marker(
     mut gizmos: Gizmos<EntityGizmoGroup>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
         With<crate::entity_ops::SceneAudioSource>,
     >,
 ) {
-    for (tf, inherited_vis, selected) in &query {
+    for (entity, tf, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -796,11 +793,12 @@ fn draw_fog_volume_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
         (With<FogVolume>, With<crate::entity_ops::SceneFogVolume>),
     >,
 ) {
-    for (global, inherited_vis, selected) in &query {
+    for (entity, global, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }
@@ -830,11 +828,12 @@ fn draw_reflection_probe_gizmo(
     settings: Res<OverlaySettings>,
     camera_query: Query<(&GlobalTransform, &Projection), With<MainViewportCamera>>,
     query: Query<
-        (&GlobalTransform, &InheritedVisibility, Has<Selected>),
+        (Entity, &GlobalTransform, &InheritedVisibility, Has<Selected>),
         With<crate::entity_ops::SceneReflectionProbe>,
     >,
 ) {
-    for (global, inherited_vis, selected) in &query {
+    for (entity, global, inherited_vis, selected) in &query {
+        gizmos.set_owner(Some(entity));
         if !inherited_vis.get() {
             continue;
         }

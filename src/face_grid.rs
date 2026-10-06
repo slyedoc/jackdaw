@@ -6,7 +6,6 @@ use crate::brush::{Brush, BrushEditMode, BrushMeshCache, EditMode};
 use crate::draw_brush::{CutPreviewFace, CutPreviewHidden, CutResultPreviewMesh};
 use crate::selection::Selected;
 use crate::snapping::SnapSettings;
-use crate::viewport_overlays::OverlaySettings;
 use crate::{JackdawDrawSystems, default_style};
 
 /// Gizmo group for face grid lines. Rendered slightly in front of geometry.
@@ -84,7 +83,6 @@ fn draw_brush_wireframe(
     mut wireframe_selected: Gizmos<BrushWireframeSelectedGizmoGroup>,
     mut outline_unselected: Gizmos<BrushOutlineUnselectedGizmoGroup>,
     mut outline_selected: Gizmos<BrushOutlineSelectedGizmoGroup>,
-    settings: Res<OverlaySettings>,
     edit_mode: Res<EditMode>,
     brushes: Query<
         (
@@ -106,6 +104,10 @@ fn draw_brush_wireframe(
         if !inherited_vis.get() {
             continue;
         }
+        wireframe_unselected.set_owner(Some(entity));
+        wireframe_selected.set_owner(Some(entity));
+        outline_unselected.set_owner(Some(entity));
+        outline_selected.set_owner(Some(entity));
 
         // In Clip mode, hide wireframe on selected default-material brushes so
         // the clip plane and cut preview are clearly visible.
@@ -163,16 +165,10 @@ fn draw_brush_wireframe(
                     if is_selected {
                         // selected brushes *always* draw their outlines
                         outline_selected.line(wa, wb, color);
-                        if settings.show_brush_wireframe {
-                            wireframe_selected.line(wa, wb, color);
-                        }
+                        wireframe_selected.line(wa, wb, color);
                     } else {
-                        if settings.show_brush_outline {
-                            outline_unselected.line(wa, wb, color);
-                        }
-                        if settings.show_brush_wireframe {
-                            wireframe_unselected.line(wa, wb, color);
-                        }
+                        outline_unselected.line(wa, wb, color);
+                        wireframe_unselected.line(wa, wb, color);
                     }
                 }
             }
@@ -183,7 +179,6 @@ fn draw_brush_wireframe(
 /// Draw grid lines on each face of all brushes (brighter on selected).
 fn draw_face_grids(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
-    settings: Res<OverlaySettings>,
     snap: Res<SnapSettings>,
     brushes: Query<
         (
@@ -199,7 +194,7 @@ fn draw_face_grids(
     parents: Query<&ChildOf>,
     selected_query: Query<(), With<Selected>>,
 ) {
-    if !settings.show_face_grid {
+    if !gizmos.config.enabled {
         return;
     }
 
@@ -209,6 +204,7 @@ fn draw_face_grids(
         if !inherited_vis.get() {
             continue;
         }
+        gizmos.set_owner(Some(entity));
         let parent_selected = parents
             .get(entity)
             .is_ok_and(|child_of| selected_query.contains(child_of.0));
@@ -316,10 +312,9 @@ fn draw_face_grids(
 /// Draw wireframe edges on cut-preview fragment faces.
 fn draw_cut_preview_edges(
     mut gizmos: Gizmos<BrushWireframeUnselectedGizmoGroup>,
-    settings: Res<OverlaySettings>,
     previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
 ) {
-    if !settings.show_brush_wireframe {
+    if !gizmos.config.enabled {
         return;
     }
 
@@ -344,11 +339,10 @@ fn draw_cut_preview_edges(
 /// Draw grid lines on cut-preview fragment faces.
 fn draw_cut_preview_grids(
     mut gizmos: Gizmos<FaceGridGizmoGroup>,
-    settings: Res<OverlaySettings>,
     snap: Res<SnapSettings>,
     previews: Query<&CutPreviewFace, With<CutResultPreviewMesh>>,
 ) {
-    if !settings.show_face_grid {
+    if !gizmos.config.enabled {
         return;
     }
 

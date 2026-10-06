@@ -65,7 +65,7 @@ const MAX_LINES_PER_AXIS: i32 = 512;
 /// Emits the grid as gizmo lines on the grid entity's local XZ plane, centred on the
 /// viewport camera so it reads as unbounded, with alpha falling off to `fadeout_distance`.
 fn draw_infinite_grid(
-    mut gizmos: Gizmos,
+    mut gizmos: Gizmos<GridGizmoGroup>,
     grids: Query<(&GlobalTransform, &InfiniteGridSettings), With<InfiniteGrid>>,
     camera: Query<&GlobalTransform, With<MainViewportCamera>>,
 ) {
@@ -141,6 +141,10 @@ fn draw_infinite_grid(
     }
 }
 
+/// The viewport grid's lines, so the overlays can turn them off on their own.
+#[derive(Default, Reflect, GizmoConfigGroup)]
+pub struct GridGizmoGroup;
+
 /// Registers the grid components and their draw system.
 pub struct InfiniteGridPlugin;
 
@@ -148,6 +152,7 @@ impl Plugin for InfiniteGridPlugin {
     fn build(&self, app: &mut App) {
         app.register_type::<InfiniteGrid>()
             .register_type::<InfiniteGridSettings>()
+            .init_gizmo_group::<GridGizmoGroup>()
             .add_systems(Update, draw_infinite_grid);
     }
 }

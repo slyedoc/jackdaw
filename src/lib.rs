@@ -38,6 +38,7 @@ pub mod edit_mode_ops;
 pub mod entity_ops;
 pub mod environment_ops;
 pub mod face_grid;
+pub mod gizmo_overlays;
 pub mod frame_work;
 pub mod gizmo_ops;
 pub mod gizmos;
@@ -462,6 +463,7 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(boot_ops::plugin)
         .add_plugins(fps_overlay::plugin)
         .add_plugins(perf_probe::plugin)
+        .add_plugins(gizmo_overlays::plugin)
         .add_systems(Update, view_ops::drive_dolly)
         .add_systems(Last, view_ops::track_pointer_focus)
         .add_plugins(jackdaw_avian_integration::PhysicsOverlaysPlugin::<

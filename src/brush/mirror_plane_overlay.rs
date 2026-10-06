@@ -134,6 +134,7 @@ fn draw_mirror_planes(
     mut gizmos: Gizmos<MirrorPlaneGizmoGroup>,
     brushes: Query<
         (
+            Entity,
             &Brush,
             &GlobalTransform,
             &ModifierStack,
@@ -142,10 +143,11 @@ fn draw_mirror_planes(
         With<Selected>,
     >,
 ) {
-    for (brush, global_tf, stack, inherited_vis) in &brushes {
+    for (entity, brush, global_tf, stack, inherited_vis) in &brushes {
         if !inherited_vis.get() {
             continue;
         }
+        gizmos.set_owner(Some(entity));
         let Some(mirror) = stack.first_enabled_mirror() else {
             continue;
         };
@@ -214,6 +216,7 @@ fn draw_mirror_plane_handles(
         if !inherited_vis.get() {
             continue;
         }
+        gizmos.set_owner(Some(entity));
         let Some(mirror) = stack.first_enabled_mirror() else {
             continue;
         };

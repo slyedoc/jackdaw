@@ -131,7 +131,6 @@ pub mod physics_colors {
 #[cfg(feature = "overlays")]
 #[derive(Resource, Clone, PartialEq, Default)]
 pub struct PhysicsOverlayConfig {
-    pub show_colliders: bool,
     pub show_hierarchy_arrows: bool,
 }
 
@@ -233,7 +232,6 @@ pub fn register_avian_types(app: &mut App) {
 #[cfg(feature = "overlays")]
 fn draw_collider_gizmos<S: Component>(
     mut gizmos: Gizmos<PhysicsGizmos>,
-    config: Res<PhysicsOverlayConfig>,
     colliders: Query<(
         Entity,
         &Collider,
@@ -245,7 +243,7 @@ fn draw_collider_gizmos<S: Component>(
     children_query: Query<&Children>,
     collider_check: Query<(), With<Collider>>,
 ) {
-    if !config.show_colliders {
+    if !gizmos.config.enabled {
         return;
     }
 
@@ -266,6 +264,7 @@ fn draw_collider_gizmos<S: Component>(
         if !vis.get() {
             continue;
         }
+        gizmos.set_owner(Some(entity));
 
         let is_highlighted = highlighted.contains(&entity);
         let color = match (sensor.is_some(), is_highlighted) {
@@ -295,6 +294,7 @@ fn draw_hierarchy_arrows<S: Component>(
     }
 
     for (body_entity, body_tf) in &selected_bodies {
+        gizmos.set_owner(Some(body_entity));
         let body_pos = body_tf.translation();
         let mut descendants = bevy::ecs::entity::EntityHashSet::default();
         collect_descendant_colliders(
