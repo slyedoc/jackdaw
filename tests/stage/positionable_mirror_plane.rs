@@ -47,7 +47,7 @@ fn select_for_operators(app: &mut App, entity: Entity) {
 
 #[test]
 fn plane_set_moves_the_mirror_offset_and_refolds() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
     let entity = spawn_half_cube(&mut app);

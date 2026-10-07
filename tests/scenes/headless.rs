@@ -7,7 +7,7 @@ use crate::util::OperatorResultExt as _;
 
 #[test]
 fn smoke_test_headless_update() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
 
     for _ in 0..10 {
@@ -17,7 +17,7 @@ fn smoke_test_headless_update() {
 
 #[test]
 fn can_run_extension() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     util::register_and_enable_extension::<SampleExtension>(&mut app);
     for _ in 0..10 {
         app.world_mut()
@@ -31,7 +31,7 @@ fn can_run_extension() {
 
 #[test]
 fn can_call_operator() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     util::register_and_enable_extension::<SampleExtension>(&mut app);
 
     let amount_of_panels = app
@@ -54,7 +54,7 @@ fn can_call_operator() {
 
 #[test]
 fn can_pass_params_to_operator() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     util::register_and_enable_extension::<SampleExtension>(&mut app);
     app.world_mut()
         .operator(SampleExtension::CHECK_PARAMS)
@@ -80,7 +80,7 @@ fn snapshot_notices_editor_state_changes() {
     use jackdaw_api_internal::snapshot::ActiveSnapshotter;
     use jackdaw_avian_integration::PhysicsOverlayConfig;
 
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 

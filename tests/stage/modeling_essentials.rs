@@ -77,7 +77,7 @@ fn spawn_straddle_cube(app: &mut App) -> Entity {
 
 #[test]
 fn mirrored_brush_cache_holds_both_halves_with_source_maps() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -106,7 +106,7 @@ fn mirrored_brush_cache_holds_both_halves_with_source_maps() {
 
 #[test]
 fn picking_remaps_to_authored_space() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -139,7 +139,7 @@ fn picking_remaps_to_authored_space() {
 
 #[test]
 fn removing_mirror_restores_authored_only_cache() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -162,7 +162,7 @@ fn removing_mirror_restores_authored_only_cache() {
 
 #[test]
 fn bisect_cut_geometry_is_not_editable() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -223,7 +223,7 @@ fn bisect_cut_geometry_is_not_editable() {
 
 #[test]
 fn non_bisecting_mirror_leaves_every_vert_editable() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -272,7 +272,7 @@ fn assert_available(app: &mut App, id: &'static str, expected: bool) {
 
 #[test]
 fn mirror_ops_gate_on_selection_and_component() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
     app.world_mut()
@@ -304,7 +304,7 @@ fn mirror_ops_gate_on_selection_and_component() {
 
 #[test]
 fn apply_bakes_mirror_into_authored_topology() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -344,7 +344,7 @@ fn apply_bakes_mirror_into_authored_topology() {
 
 #[test]
 fn symmetrize_x_bakes_authored_topology() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -400,7 +400,7 @@ fn chunk_materials(app: &mut App, entity: Entity) -> Vec<(bool, Handle<AuroraMat
 
 #[test]
 fn xray_overrides_every_chunk_and_restores_on_toggle_off() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -489,7 +489,7 @@ fn xray_overrides_every_chunk_and_restores_on_toggle_off() {
 fn symmetrize_x_bakes_prior_live_y_mirror() {
     // Symmetrize on a brush carrying a live mirror on a different axis bakes
     // that mirror first, keeping its geometry.
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -538,7 +538,7 @@ fn stack_of(app: &App, entity: Entity) -> &ModifierStack {
 
 #[test]
 fn modifier_add_mirror_matches_standalone_cache() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -566,7 +566,7 @@ fn modifier_add_mirror_matches_standalone_cache() {
 
 #[test]
 fn modifier_toggle_flips_flag() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -591,7 +591,7 @@ fn modifier_toggle_flips_flag() {
 
 #[test]
 fn modifier_move_reorders() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -634,7 +634,7 @@ fn modifier_move_reorders() {
 
 #[test]
 fn modifier_apply_bakes_and_removes_entry() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -665,7 +665,7 @@ fn modifier_apply_bakes_and_removes_entry() {
 
 #[test]
 fn modifier_remove_restores_base_cache() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -702,7 +702,7 @@ const REFERENCE_IMAGE_TYPE_PATH: &str = "jackdaw::reference_image::ReferenceImag
 fn reference_image_round_trips_through_scene_document() {
     use jackdaw::reference_image::ReferenceImage;
 
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -750,7 +750,7 @@ fn reference_image_round_trips_through_scene_document() {
 fn reference_image_maintenance_installs_placeholder_for_empty_path() {
     use jackdaw::reference_image::{ReferenceImage, maintain_reference_images};
 
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 
@@ -797,7 +797,7 @@ fn reference_image_maintenance_installs_placeholder_for_empty_path() {
 fn reference_image_opacity_change_updates_alpha_without_clobbering_scale() {
     use jackdaw::reference_image::{ReferenceImage, maintain_reference_images};
 
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
 

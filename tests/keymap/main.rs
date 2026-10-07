@@ -17,7 +17,7 @@ use bevy::prelude::App;
 /// A config directory of this test binary's own. The editor reads the user keymap
 /// from the config directory at startup, so without this the suite would read
 /// whoever is running it. The redirect is process-wide, so it belongs at the
-/// binary's root: every app either module builds goes through `headless_app`.
+/// binary's root: every app either module builds goes through `editor_app`.
 pub(crate) static CONFIG_DIR: std::sync::LazyLock<std::path::PathBuf> =
     std::sync::LazyLock::new(|| {
         let dir = std::env::temp_dir().join(format!("jackdaw_keymap_tests_{}", std::process::id()));
@@ -60,12 +60,12 @@ pub(crate) fn enter_editor(app: &mut App) {
 
 /// A headless editor that read an empty override file, whatever any other
 /// test is doing with that file meanwhile.
-pub(crate) fn headless_app() -> App {
+pub(crate) fn editor_app() -> util::TestApp {
     let guard = CONFIG_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     empty_config_dir();
-    let app = util::headless_app();
+    let app = util::editor_app();
     drop(guard);
     app
 }

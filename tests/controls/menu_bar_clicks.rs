@@ -53,7 +53,7 @@ fn run(app: &mut App, clause: &str) {
 
 /// An editor with a window big enough to hold a bar and a dropdown under
 /// it.
-fn menu_app() -> App {
+fn menu_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     {
         let mut windows = app

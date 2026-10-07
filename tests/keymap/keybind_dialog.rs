@@ -7,7 +7,7 @@ use jackdaw_api::prelude::*;
 use jackdaw_feathers::icons::Icon;
 
 /// An editor with the keybind dialog open and settled.
-fn dialog_app() -> App {
+fn dialog_app() -> crate::util::TestApp {
     let mut app = crate::util::editor_test_app();
     crate::enter_editor(&mut app);
     let result = app

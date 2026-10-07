@@ -363,6 +363,7 @@ pub enum EntityTemplate {
     Cone,
     Pyramid,
     FogVolume,
+    Environment,
     AnimationPlayer,
     AudioSource,
 }
@@ -386,6 +387,7 @@ impl EntityTemplate {
             Self::Cone => "Cone",
             Self::Pyramid => "Pyramid",
             Self::FogVolume => "Fog Volume",
+            Self::Environment => "Environment",
             Self::AnimationPlayer => "Animation Player",
             Self::AudioSource => "Audio Source",
         }
@@ -575,6 +577,15 @@ pub fn create_entity(
                 Name::new("Fog Volume"),
                 bevy::light::FogVolume::default(),
                 SceneFogVolume,
+                Transform::default(),
+                Visibility::default(),
+            ))
+            .id(),
+        // A nested environment: what goes under it renders apart, under its own sky.
+        EntityTemplate::Environment => commands
+            .spawn((
+                Name::new("Environment"),
+                bevy_aurora::environment::Environment,
                 Transform::default(),
                 Visibility::default(),
             ))
@@ -1814,6 +1825,7 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
         .register_operator::<EntityAddAnimationPlayerOp>()
         .register_operator::<EntityAddAudioSourceOp>()
         .register_operator::<EntityAddFogVolumeOp>()
+        .register_operator::<EntityAddEnvironmentOp>()
         .register_operator::<EntityAddReflectionProbeOp>()
         // Registered on core rather than on the UI Widgets extension, so it
         // reports an unknown widget name rather than disappearing with it.
@@ -2330,6 +2342,21 @@ pub(crate) fn entity_add_fog_volume(
 ) -> OperatorResult {
     commands.queue(|world: &mut World| {
         create_entity_in_world(world, EntityTemplate::FogVolume);
+    });
+    OperatorResult::Finished
+}
+
+#[operator(
+    id = "entity.add.environment",
+    label = "Environment",
+    description = "Add a nested environment: what goes under it renders apart, under its own sky, exposure and physics."
+)]
+pub(crate) fn entity_add_environment(
+    _: In<OperatorParameters>,
+    mut commands: Commands,
+) -> OperatorResult {
+    commands.queue(|world: &mut World| {
+        create_entity_in_world(world, EntityTemplate::Environment);
     });
     OperatorResult::Finished
 }

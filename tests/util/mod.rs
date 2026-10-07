@@ -1,60 +1,36 @@
 use std::borrow::Cow;
 
-use bevy::app::{PluginGroup, PluginGroupBuilder};
+use bevy::app::PluginGroup;
 use bevy::prelude::*;
 use jackdaw::prelude::*;
 use jackdaw_api_internal::lifecycle::{ExtensionAppExt as _, OperatorEntity, enable_extension};
 use jackdaw_api_internal::snapshot::{ActiveSnapshotter, SceneSnapshot};
 
-/// The aurora group the editor boots on, minus the device: the assets, types and loaders a
-/// scene can name (`Assets<AuroraMaterial>`, the surface-class registry, ...), and nothing that
-/// draws. No window or audio backend. With no GPU there is no transform readback, so bevy's
-/// own `TransformPlugin` fills `GlobalTransform` on the CPU.
-struct HeadlessAurora;
+/// An editor app on the whole stack, its renderer torn down in order when it goes out of scope:
+/// a test drops its app rather than exiting it, and a device destroyed with its resources still
+/// alive leaves the driver to fault at process exit.
+pub struct TestApp(pub App);
 
-impl PluginGroup for HeadlessAurora {
-    fn build(self) -> PluginGroupBuilder {
-        use bevy_aurora::{
-            animclip, assets, bsn, collision, material, mesh, render_texture, shader, skinning,
-            sky, sphere, surface_group, ui_render,
-        };
-        PluginGroupBuilder::start::<Self>()
-            // Before AssetPlugin: registers the `aurora://` source for the engine's own assets.
-            .add(assets::AuroraAssetSourcePlugin)
-            .add(bevy::log::LogPlugin::default())
-            .add(bevy::app::TaskPoolPlugin::default())
-            .add(bevy::diagnostic::FrameCountPlugin)
-            .add(bevy::time::TimePlugin)
-            .add(bevy::transform::TransformPlugin)
-            .add(bevy::diagnostic::DiagnosticsPlugin)
-            .add(bevy::input::InputPlugin)
-            .add(bevy::window::WindowPlugin {
-                close_when_requested: false,
-                ..default()
-            })
-            .add(bevy::a11y::AccessibilityPlugin)
-            .add(bevy::asset::AssetPlugin::default())
-            .add(bevy::scene::ScenePlugin)
-            .add(bevy::bsn_asset::BsnAssetPlugin)
-            .add(bevy::animation::AnimationPlugin)
-            .add(bevy::world_serialization::WorldSerializationPlugin)
-            // Aurora's asset, loader and reflection registrations only.
-            .add(shader::ShaderPlugin)
-            .add(material::MaterialPlugin)
-            .add(render_texture::RenderTexturePlugin)
-            .add(mesh::AuroraMeshPlugin)
-            .add(collision::CollisionPlugin)
-            .add(sphere::SpherePlugin)
-            .add(surface_group::SurfaceGroupPlugin)
-            .add(bsn::BsnPlugin)
-            .add(animclip::AnimClipPlugin)
-            .add(skinning::SkinTypesPlugin)
-            .add(sky::SkyPlugin)
-            .add(ui_render::UiTreePlugin)
+impl std::ops::Deref for TestApp {
+    type Target = App;
+    fn deref(&self) -> &App {
+        &self.0
     }
 }
 
-pub fn headless_app() -> App {
+impl std::ops::DerefMut for TestApp {
+    fn deref_mut(&mut self) -> &mut App {
+        &mut self.0
+    }
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        bevy_aurora::ray_render_plugin::shutdown_renderer(self.0.world_mut());
+    }
+}
+
+pub fn editor_app() -> TestApp {
     let mut app = ambient_app();
     add_editor_plugins(&mut app);
     app
@@ -66,43 +42,34 @@ pub fn headless_app() -> App {
 /// arrangement the editor meets when it loads one.
 #[expect(clippy::allow_attributes, reason = "shared across test binaries")]
 #[allow(dead_code, reason = "shared across test binaries")]
-pub fn ambient_app() -> App {
+pub fn ambient_app() -> TestApp {
     ambient_app_with(bevy::asset::AssetPlugin::default())
 }
 
 /// [`ambient_app`] reading assets from `assets`.
 #[expect(clippy::allow_attributes, reason = "shared across test binaries")]
 #[allow(dead_code, reason = "shared across test binaries")]
-pub fn ambient_app_at(assets: &std::path::Path) -> App {
+pub fn ambient_app_at(assets: &std::path::Path) -> TestApp {
     ambient_app_with(bevy::asset::AssetPlugin {
         file_path: assets.to_string_lossy().into_owned(),
         ..default()
     })
 }
 
-fn ambient_app_with(assets: bevy::asset::AssetPlugin) -> App {
+fn ambient_app_with(assets: bevy::asset::AssetPlugin) -> TestApp {
     let mut app = App::new();
-    // The two additions mirror `src/main.rs`: aurora carries no state machinery or gizmos.
+    // What `src/main.rs` adds to `AuroraDefaultPlugins`, without the OS window: the renderer
+    // runs windowless and the editor's viewports trace into their image targets.
     app.add_plugins(
-        HeadlessAurora
+        bevy_aurora::AuroraDefaultPlugins
             .build()
-            .set(assets)
+            .disable::<bevy::winit::WinitPlugin>()
             .add(bevy::state::app::StatesPlugin)
-            .add(bevy::gizmos::GizmoPlugin),
+            .add(bevy::gizmos::GizmoPlugin)
+            .set(assets),
     )
-    // Ambient plugins moved to the binary entry point (matches
-    // the launcher's `src/main.rs` and the static template's
-    // `editor.rs.template`). Mirror that here so the editor's
-    // internal `debug_assert!`s for `PhysicsSchedulePlugin` and
-    // `EnhancedInputPlugin` find what they expect.
-    // The headless set is not AuroraDefaultPlugins, which brings physics and
-    // animation graphs to the editor; add them as it does.
-    .add_plugins((
-        avian3d::prelude::PhysicsPlugins::default(),
-        bevy_animation_graph::AnimationGraphPlugin::default(),
-        bevy_enhanced_input::prelude::EnhancedInputPlugin,
-    ));
-    app
+    .add_plugins(bevy_enhanced_input::prelude::EnhancedInputPlugin);
+    TestApp(app)
 }
 
 /// The editor itself, over an app that already carries the ambient
@@ -113,7 +80,7 @@ pub fn add_editor_plugins(app: &mut App) {
     app.add_plugins(JackdawEditorPlugins::default());
 }
 
-/// Like [`headless_app`] but also runs the startup pass and ticks one
+/// Like [`editor_app`] but also runs the startup pass and ticks one
 /// frame so every built-in extension is registered, enabled, and its
 /// operators populated in the `OperatorIndex`. Most operator integration
 /// tests should start here.
@@ -122,8 +89,8 @@ pub fn add_editor_plugins(app: &mut App) {
     dead_code,
     reason = "shared across test binaries; not every test exercises this path."
 )]
-pub fn editor_test_app() -> App {
-    let mut app = headless_app();
+pub fn editor_test_app() -> TestApp {
+    let mut app = editor_app();
     app.finish();
     // First tick runs Startup + extension auto-enable so every
     // built-in's operator entities are spawned.

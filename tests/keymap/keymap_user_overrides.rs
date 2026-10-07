@@ -9,7 +9,7 @@ use jackdaw_api_internal::keymap::{
 };
 use jackdaw_api_internal::lifecycle::{OperatorAction, OperatorEntity};
 
-use crate::{CONFIG_DIR, CONFIG_LOCK, empty_config_dir, headless_app};
+use crate::{CONFIG_DIR, CONFIG_LOCK, editor_app, empty_config_dir};
 
 fn row(operator: &str, key: &str) -> PresetBinding {
     PresetBinding {
@@ -32,7 +32,7 @@ const REBOUND: &str = "history.undo";
 
 #[test]
 fn an_override_replaces_every_default_row_of_that_operator() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -60,7 +60,7 @@ fn an_override_replaces_every_default_row_of_that_operator() {
 
 #[test]
 fn an_override_leaves_every_other_operator_alone() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -87,7 +87,7 @@ fn an_override_leaves_every_other_operator_alone() {
 
 #[test]
 fn an_empty_user_keymap_resolves_to_the_shipped_keymap() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -96,7 +96,7 @@ fn an_empty_user_keymap_resolves_to_the_shipped_keymap() {
 
 #[test]
 fn a_row_naming_an_absent_operator_is_skipped_without_dropping_the_rest() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -126,7 +126,7 @@ fn a_row_naming_an_absent_operator_is_skipped_without_dropping_the_rest() {
 fn reapplying_a_resolved_keymap_is_idempotent() {
     use jackdaw_api_internal::keymap::PresetSpawnedBinding;
 
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -163,7 +163,7 @@ fn applying_a_rebind_leaves_exactly_one_binding_on_the_new_chord() {
     use bevy_enhanced_input::prelude::{Binding, ModKeys};
     use jackdaw_api_internal::keymap::PresetSpawnedBinding;
 
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -238,7 +238,7 @@ fn an_absent_bindings_field_parses_as_an_empty_keymap() {
 /// operators that deliberately have none, so a new one has to be classified.
 #[test]
 fn every_operator_is_bound_or_listed_as_unbound() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -296,7 +296,7 @@ fn every_operator_is_bound_or_listed_as_unbound() {
 /// unbound while the keymap says otherwise.
 #[test]
 fn no_listed_unbound_operator_actually_holds_a_chord() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -323,7 +323,7 @@ fn no_listed_unbound_operator_actually_holds_a_chord() {
 /// input action at all is derived, so the entry says nothing.
 #[test]
 fn no_listed_unbound_operator_is_already_exempt_without_an_action() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let world = app.world_mut();
@@ -348,7 +348,7 @@ fn no_listed_unbound_operator_is_already_exempt_without_an_action() {
 /// the editor can do is unreachable from the keybind interface.
 #[test]
 fn the_dialog_seeds_one_row_per_operator() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
 
@@ -372,7 +372,7 @@ fn the_dialog_seeds_one_row_per_operator() {
 /// not editable, so the chord is visible even though the dialog cannot change it.
 #[test]
 fn a_raw_bound_operator_is_listed_as_fixed() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -396,7 +396,7 @@ fn a_raw_bound_operator_is_listed_as_fixed() {
 /// the keymap the dialog was showing.
 #[test]
 fn saving_a_rebind_reproduces_the_keymap_after_a_reload() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
 
@@ -437,7 +437,7 @@ fn saving_a_rebind_reproduces_the_keymap_after_a_reload() {
 /// entirely, rather than pinning it to whatever the defaults are today.
 #[test]
 fn resetting_a_rebound_row_leaves_nothing_in_the_file() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
 
@@ -461,7 +461,7 @@ fn resetting_a_rebound_row_leaves_nothing_in_the_file() {
 /// dialog says so instead of offering a rebind the applier would refuse.
 #[test]
 fn a_menu_only_operator_is_listed_but_not_offered_a_chord() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -504,7 +504,7 @@ fn a_menu_only_operator_is_listed_but_not_offered_a_chord() {
 /// by the operator's own name would scatter them and repeat the heading.
 #[test]
 fn the_fixed_rows_are_one_run_of_the_list() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -560,7 +560,7 @@ fn a_saved_rebind_comes_back_off_disk_and_applies() {
     let _ = std::fs::remove_file(&path);
     drop(guard);
 
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -600,7 +600,7 @@ fn load_user_keymap_now() -> UserKeymap {
 /// their availability arbitrates, and the row says which rows those are.
 #[test]
 fn a_shipped_co_fire_marks_its_rows_and_stays_out_of_the_paragraph() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -640,7 +640,7 @@ fn a_shipped_co_fire_marks_its_rows_and_stays_out_of_the_paragraph() {
 /// it is named in full, in the words the rows next to it use.
 #[test]
 fn a_conflict_this_session_made_is_named_in_the_paragraph() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let mut pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -666,7 +666,7 @@ fn a_conflict_this_session_made_is_named_in_the_paragraph() {
 /// replace turned each into one chord the first time it was touched.
 #[test]
 fn an_added_chord_survives_a_save_and_a_reload() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let defaults = classic(&mut app);
@@ -712,7 +712,7 @@ fn an_added_chord_survives_a_save_and_a_reload() {
 /// changed.
 #[test]
 fn a_rebind_keeps_the_phase_the_command_fires_on() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let mut pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());
@@ -750,7 +750,7 @@ fn a_rebind_keeps_the_phase_the_command_fires_on() {
 /// actions of their own, and the dialog lists all four on the draw-brush row.
 #[test]
 fn the_draw_brush_row_lists_the_chords_that_reach_it() {
-    let mut app = headless_app();
+    let mut app = editor_app();
     app.finish();
     app.update();
     let pending = jackdaw::keybind_settings::pending_from_world(app.world_mut());

@@ -49,7 +49,7 @@ fn the_terrain(app: &mut App) -> (Entity, jackdaw_scene_types::Terrain) {
 }
 
 /// A generated terrain, selected, with its sidecar in the store.
-fn terrain_app() -> App {
+fn terrain_app() -> crate::util::TestApp {
     let mut app = util::editor_test_app();
     dispatch(&mut app, "scene.new");
     app.update();

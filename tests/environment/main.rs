@@ -24,7 +24,7 @@ fn settle(app: &mut App) {
 }
 
 /// An editor with a project of its own and a scene of `document` open.
-fn editor_on(document: &str) -> (App, tempfile::TempDir, PathBuf) {
+fn editor_on(document: &str) -> (util::TestApp, tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
         fixture_dir().join("jackdaw.toml"),
@@ -221,4 +221,42 @@ fn the_environment_selects_into_the_inspector_with_its_settings() {
             "the inspector shows a {card} card; it shows {texts:?}",
         );
     }
+}
+
+#[test]
+fn an_environment_added_from_the_menu_nests_in_the_scene_and_saves_with_it() {
+    let (mut app, _tmp, scene) = editor_on(TWO_ROOTS);
+    app.world_mut()
+        .operator("entity.add.environment")
+        .call()
+        .expect("the operator dispatched");
+    settle(&mut app);
+    let nested = named(&mut app, "Environment");
+    let tab = environment(&app);
+    assert_ne!(nested, tab, "a new entity, not the tab's own environment");
+    assert!(app.world().get::<Environment>(nested).is_some());
+    assert!(
+        app.world()
+            .get::<avian3d::environment::PhysicsEnvironment>(nested)
+            .is_some(),
+        "with its physics environment",
+    );
+    assert_eq!(
+        app.world().get::<ChildOf>(nested).map(ChildOf::parent),
+        Some(tab),
+        "inside the scene's own environment",
+    );
+    let bits = app
+        .world()
+        .resource::<bevy_aurora::environment::RenderEnvironments>();
+    assert!(bits.bit(nested).is_some(), "it renders in a bit of its own");
+    assert_ne!(bits.bit(nested), bits.bit(tab));
+
+    assert!(jackdaw::scene_io::save_scene(app.world_mut()));
+    let text = std::fs::read_to_string(&scene).expect("saved");
+    let (_, children) = text.split_once("Children").expect(&text);
+    assert!(
+        children.contains("bevy_aurora::environment::Environment"),
+        "saved as one of the scene's entities:\n{text}"
+    );
 }

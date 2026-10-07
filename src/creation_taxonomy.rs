@@ -10,9 +10,10 @@ use crate::entity_ops::EntityAddCameraRigOp;
 use crate::entity_ops::{
     EntityAddAnimationPlayerOp, EntityAddAudioSourceOp, EntityAddCameraOp, EntityAddConeOp,
     EntityAddCubeOp, EntityAddCylinderOp, EntityAddDirectionalLightOp, EntityAddEmptyOp,
-    EntityAddFogVolumeOp, EntityAddImageOp, EntityAddPlaneOp, EntityAddPointLightOp,
-    EntityAddPrefabOp, EntityAddPyramidOp, EntityAddRectLightOp, EntityAddReflectionProbeOp,
-    EntityAddSphereOp, EntityAddSpotLightOp, EntityAddTerrainOp, EntityAddWedgeOp,
+    EntityAddEnvironmentOp, EntityAddFogVolumeOp, EntityAddImageOp, EntityAddPlaneOp,
+    EntityAddPointLightOp, EntityAddPrefabOp, EntityAddPyramidOp, EntityAddRectLightOp,
+    EntityAddReflectionProbeOp, EntityAddSphereOp, EntityAddSpotLightOp, EntityAddTerrainOp,
+    EntityAddWedgeOp,
 };
 
 /// Action prefix of an entry that creates a registered UI widget.
@@ -190,6 +191,11 @@ fn builtin(taxonomy: &mut CreationTaxonomy) {
             "audio_animation",
             "Animation Player",
             op_action::<EntityAddAnimationPlayerOp>(),
+        ),
+        entry(
+            "environment",
+            "Environment",
+            op_action::<EntityAddEnvironmentOp>(),
         ),
         entry(
             "environment",

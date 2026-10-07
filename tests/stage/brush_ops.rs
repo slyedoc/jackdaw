@@ -22,7 +22,7 @@ fn spawn_cuboid_brush(app: &mut App, offset: Vec3) -> Entity {
 
 fn with_headless_brush_env<F: FnOnce(&mut App)>(f: F) {
     use bevy::input_focus::InputFocus;
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.finish();
     app.update();
     // The headless app starts with `InputFocus = Some(placeholder)`, which the

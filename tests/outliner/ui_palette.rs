@@ -1023,7 +1023,7 @@ fn a_bound_slider_settles_when_it_also_self_updates() {
         touches.0 += sliders.iter().count();
     }
 
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     app.add_plugins(jackdaw_bind::JackdawBindPlugin);
     app.finish();
     app.update();

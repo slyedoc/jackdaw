@@ -36,7 +36,7 @@ fn with<C: Component>(world: &mut World, root: Entity) -> Vec<Entity> {
 }
 
 /// An inline picker with its content built.
-fn app_with_picker(color: [f32; 4]) -> (App, Entity) {
+fn app_with_picker(color: [f32; 4]) -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     let picker = app
         .world_mut()

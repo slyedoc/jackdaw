@@ -27,7 +27,7 @@ fn descendants(world: &mut World, root: Entity) -> Vec<Entity> {
 }
 
 /// A combobox with its list open, and the rows it opened.
-fn open_list(selected: usize) -> (App, Entity, Entity, Vec<Entity>) {
+fn open_list(selected: usize) -> (util::TestApp, Entity, Entity, Vec<Entity>) {
     let mut app = util::editor_test_app();
     let combobox = app
         .world_mut()

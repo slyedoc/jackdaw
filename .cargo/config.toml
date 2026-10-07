@@ -72,3 +72,8 @@ incremental = false
 
 [alias]
 xtask = "run --quiet --package xtask --manifest-path xtask/Cargo.toml --"
+
+[env]
+# Every editor test brings up the whole renderer (a Vulkan device, an NGX session), and those do
+# not share a process: tests run one at a time.
+RUST_TEST_THREADS = "1"

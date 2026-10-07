@@ -21,7 +21,7 @@ fn integration_test_one(_: In<OperatorParameters>) -> OperatorResult {
 }
 
 fn run_test<T: Operator + Send + Sync>() {
-    let mut app = util::headless_app();
+    let mut app = util::editor_app();
     util::register_and_enable_extension::<IntegrationTestsExtension<T>>(&mut app);
     app.world_mut()
         .operator(ID)

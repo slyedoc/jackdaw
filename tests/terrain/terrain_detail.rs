@@ -55,7 +55,7 @@ fn the_terrain(app: &mut App) -> (Entity, jackdaw_scene_types::Terrain) {
 }
 
 /// A generated terrain, selected, with its sidecar in the store.
-fn terrain_app() -> App {
+fn terrain_app() -> crate::util::TestApp {
     let mut app = util::editor_test_app();
     dispatch(&mut app, "scene.new");
     app.update();
@@ -73,7 +73,7 @@ fn terrain_app() -> App {
 
 /// A generated terrain that already carries one grass layer, projected into
 /// what the renderer seeds from.
-fn layered_app() -> App {
+fn layered_app() -> crate::util::TestApp {
     let mut app = terrain_app();
     add_layer(&mut app, None);
     project_detail(&mut app);

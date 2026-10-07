@@ -166,7 +166,7 @@ fn author_and_save(stage: &std::path::Path) -> PathBuf {
     scene_path
 }
 
-fn reopen(scene_path: &std::path::Path) -> App {
+fn reopen(scene_path: &std::path::Path) -> crate::util::TestApp {
     let mut app = util::editor_test_app();
     dispatch(&mut app, "scene.new");
     app.update();

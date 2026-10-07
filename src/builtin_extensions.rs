@@ -481,6 +481,10 @@ fn scene_kind_icons() -> Vec<(String, Icon)> {
 fn world_kind_icons() -> Vec<(String, Icon)> {
     use bevy::reflect::TypePath;
     vec![
+        (
+            bevy_aurora::environment::Environment::type_path().to_string(),
+            Icon::CloudSun,
+        ),
         (Camera::type_path().to_string(), Icon::Video),
         (DirectionalLight::type_path().to_string(), Icon::Sun),
         (PointLight::type_path().to_string(), Icon::Lightbulb),
