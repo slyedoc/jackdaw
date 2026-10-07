@@ -39,7 +39,10 @@ pub(crate) fn plugin(app: &mut App) {
 }
 
 /// Hold every character's player to the play/pause state, including ones armed since.
-fn apply_playback(playback: Res<RigPlayback>, mut players: Query<&mut AnimationGraphPlayer>) {
+fn apply_playback(
+    playback: Res<RigPlayback>,
+    mut players: Query<&mut AnimationGraphPlayer, Without<super::editor::scrub::Scrubbing>>,
+) {
     for mut player in &mut players {
         if player.is_paused() != playback.paused {
             if playback.paused {

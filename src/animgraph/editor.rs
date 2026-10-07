@@ -44,6 +44,7 @@ use std::any::TypeId;
 use std::path::PathBuf;
 
 pub mod document;
+pub(crate) mod scrub;
 
 use document::ActiveGraphDoc;
 
@@ -205,6 +206,7 @@ pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Selected>();
     app.init_resource::<Wiring>();
     app.init_resource::<TimelineCursor>();
+    scrub::plugin(app);
     // A `Handle<A>` field otherwise recurses as the enum it is -- a Strong/Uuid picker over an
     // Arc. The inspector ships the widget but registers it for no asset type, because it has
     // no list of an app's; these four are the ones a node body can hold.
@@ -2205,11 +2207,8 @@ mod tests {
 
 // ------------------------------------------------------------------ timeline
 
-/// Where the scrub cursor sits, in seconds.
-///
-/// A clip has no player here — `AnimationSource` is Graph, Pose or None, with no clip variant —
-/// so this is a cursor you place rather than a playhead that follows something. For authoring
-/// event times that is the right way round anyway.
+/// Where the scrub cursor sits, in seconds. A character in the scene is posed at it while the
+/// timeline is open ([`scrub`]).
 #[derive(Resource, Default)]
 struct TimelineCursor(f32);
 
@@ -2300,6 +2299,26 @@ fn draw_timeline(
         t += step;
     }
 
+    // The ruler is the scrub strip: press or drag it to move the cursor.
+    children.push(
+        commands
+            .spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(LABEL_W),
+                    right: Val::Px(0.0),
+                    top: Val::Px(view.pan.y),
+                    height: Val::Px(RULER_H),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.14, 0.15, 0.18, 0.6)),
+                scrub::ScrubRuler,
+            ))
+            .observe(scrub::ruler_press)
+            .observe(scrub::ruler_drag)
+            .id(),
+    );
+
     // Which clip this is, and the way back when it was opened from a graph.
     if let Some(path) = &view.path {
         children.push(
@@ -2311,7 +2330,9 @@ fn draw_timeline(
                         top: Val::Px(6.0),
                         ..default()
                     },
-                    Text::new(format!("{path}   Ctrl+S: save   Esc: back to the graph")),
+                    Text::new(format!(
+                        "{path}   drag ruler: scrub   Space: play   Left/Right: frame   E: add event   Del: remove   Ctrl+S: save   Esc: back"
+                    )),
                     ThemedText,
                     TextFont {
                         font_size: FontSize::Px(11.0),
@@ -2417,6 +2438,7 @@ fn draw_timeline(
                 },
                 BackgroundColor(Color::srgba(0.95, 0.85, 0.35, 0.95)),
                 Pickable::IGNORE,
+                scrub::CursorLine,
             ))
             .id(),
     );
