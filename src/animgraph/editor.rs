@@ -23,6 +23,7 @@ use bevy::{
 };
 use bevy_animation_graph::core::{
     animation_clip::{GraphClip, loader::GraphClipSerial},
+    bone_mask_asset::BoneMaskAsset,
     animation_graph::{AnimationGraph, NodeId, SourcePin, TargetPin},
     animation_graph_player::AnimationGraphPlayer,
     animation_node::AnimationNode,
@@ -44,6 +45,8 @@ use std::any::TypeId;
 use std::path::PathBuf;
 
 pub mod document;
+pub(crate) mod characters;
+pub(crate) mod mask;
 pub(crate) mod scrub;
 
 use document::ActiveGraphDoc;
@@ -64,6 +67,7 @@ enum Kind {
     Skeleton,
     StateMachine,
     Ragdoll,
+    Mask,
 }
 
 impl Kind {
@@ -79,6 +83,8 @@ impl Kind {
             Some(Self::StateMachine)
         } else if name.ends_with(".rag.ron") {
             Some(Self::Ragdoll)
+        } else if name.ends_with(".mask.ron") {
+            Some(Self::Mask)
         } else {
             None
         }
@@ -91,6 +97,7 @@ impl Kind {
             Self::Skeleton => "skeleton",
             Self::StateMachine => "fsm",
             Self::Ragdoll => "ragdoll",
+            Self::Mask => "mask",
         }
     }
 
@@ -101,6 +108,7 @@ impl Kind {
             Self::Skeleton => TypeId::of::<Skeleton>(),
             Self::StateMachine => TypeId::of::<StateMachine>(),
             Self::Ragdoll => TypeId::of::<Ragdoll>(),
+            Self::Mask => TypeId::of::<BoneMaskAsset>(),
         }
     }
 }
@@ -207,6 +215,8 @@ pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<Wiring>();
     app.init_resource::<TimelineCursor>();
     scrub::plugin(app);
+    mask::plugin(app);
+    characters::plugin(app);
     // A `Handle<A>` field otherwise recurses as the enum it is -- a Strong/Uuid picker over an
     // Arc. The inspector ships the widget but registers it for no asset type, because it has
     // no list of an app's; these four are the ones a node body can hold.
@@ -249,6 +259,7 @@ pub(crate) fn plugin(app: &mut App) {
 /// `/` separators, which is what the asset server wants on every platform.
 fn scan_library(
     root: Res<AnimGraphRoot>,
+    mut characters: ResMut<characters::Characters>,
     mut library: ResMut<Library>,
     mut expanded: ResMut<Expanded>,
     mut view: ResMut<CanvasView>,
@@ -285,6 +296,7 @@ fn scan_library(
         }
     }
     library.entries.sort_by(|a, b| a.path.cmp(&b.path));
+    characters::index(&root, &library, &mut characters);
     let entries = library.entries.clone();
     for entry in entries {
         library.root.insert(entry);
@@ -381,7 +393,9 @@ fn show_held_header(
     mut texts: Query<&mut Text, With<HeldHeader>>,
 ) {
     let shown = match (&view.path, held.0.as_ref()) {
-        (Some(clip), _) if view.clip.is_some() || view.ragdoll.is_some() => clip.clone(),
+        (Some(clip), _) if view.clip.is_some() || view.ragdoll.is_some() || view.mask.is_some() => {
+            clip.clone()
+        }
         (_, Some(doc)) => format!(
             "{}{}",
             doc.asset_path,
@@ -643,6 +657,7 @@ fn rebuild_browser(
     mut commands: Commands,
     mut dirty: ResMut<BrowserDirty>,
     library: Res<Library>,
+    characters: Res<characters::Characters>,
     expanded: Res<Expanded>,
     browser: Single<(Entity, Option<&Children>), With<Browser>>,
 ) {
@@ -657,7 +672,7 @@ fn rebuild_browser(
         }
     }
     let mut rows = Vec::new();
-    spawn_dir(&mut commands, &library.root, "", 0, &expanded.0, &mut rows);
+    characters::spawn_pane(&mut commands, &characters, &library, &expanded.0, &mut rows);
     attach(&mut commands, browser, None, rows);
 }
 
@@ -762,33 +777,39 @@ fn spawn_dir(
                       assets: Res<AssetServer>,
                       root: Res<AnimGraphRoot>,
                       mut commands: Commands| {
-                    // Graphs and state machines are documents: they open as a tab.
-                    if matches!(entry.kind, Kind::Graph | Kind::StateMachine) {
-                        let Some(file) = root.0.as_ref().map(|r| r.join(&entry.path)) else {
-                            return;
-                        };
-                        commands.queue(move |world: &mut World| super::open_graph(world, &file));
-                        return;
-                    }
-                    // Typed load per kind so the right loader runs; the binding itself is
-                    // untyped, keyed on the asset id.
-                    let handle: UntypedHandle = match entry.kind {
-                        Kind::Clip => assets.load::<GraphClip>(&entry.path).untyped(),
-                        Kind::Skeleton => assets.load::<Skeleton>(&entry.path).untyped(),
-                        Kind::Ragdoll => assets.load::<Ragdoll>(&entry.path).untyped(),
-                        Kind::Graph | Kind::StateMachine => return,
-                    };
-                    commands.insert_resource(Opening {
-                        handle,
-                        kind: entry.kind,
-                        path: entry.path.clone(),
-                        bound: false,
-                    });
+                    open_entry(&entry, &assets, &root, &mut commands);
                 },
             )
             .id();
         rows.push(row);
     }
+}
+
+/// Open a library file in its editor: graphs and state machines as a tab's canvas, clips,
+/// skeletons, ragdolls and masks once they load (see [`bind_when_loaded`]).
+fn open_entry(entry: &Entry, assets: &AssetServer, root: &AnimGraphRoot, commands: &mut Commands) {
+    if matches!(entry.kind, Kind::Graph | Kind::StateMachine) {
+        let Some(file) = root.0.as_ref().map(|r| r.join(&entry.path)) else {
+            return;
+        };
+        commands.queue(move |world: &mut World| super::open_graph(world, &file));
+        return;
+    }
+    // Typed load per kind so the right loader runs; the binding itself is untyped, keyed on
+    // the asset id.
+    let handle: UntypedHandle = match entry.kind {
+        Kind::Clip => assets.load::<GraphClip>(&entry.path).untyped(),
+        Kind::Skeleton => assets.load::<Skeleton>(&entry.path).untyped(),
+        Kind::Ragdoll => assets.load::<Ragdoll>(&entry.path).untyped(),
+        Kind::Mask => assets.load::<BoneMaskAsset>(&entry.path).untyped(),
+        Kind::Graph | Kind::StateMachine => return,
+    };
+    commands.insert_resource(Opening {
+        handle,
+        kind: entry.kind,
+        path: entry.path.clone(),
+        bound: false,
+    });
 }
 
 /// An asset is only inspectable once it has finished loading, so binding waits for it.
@@ -819,6 +840,7 @@ fn bind_when_loaded(
         view.graph = None;
         view.fsm = None;
         view.ragdoll = None;
+        view.mask = None;
         view.clip = Some(handle);
         view.path = Some(opening.path.clone());
         // A timeline scrolls in TIME, so pan starts at the left edge rather than inset, and
@@ -831,7 +853,17 @@ fn bind_when_loaded(
         view.graph = None;
         view.fsm = None;
         view.clip = None;
+        view.mask = None;
         view.ragdoll = Some(opening.handle.clone().typed::<Ragdoll>());
+        view.path = Some(opening.path.clone());
+        view.dirty = true;
+    }
+    if opening.kind == Kind::Mask {
+        view.graph = None;
+        view.fsm = None;
+        view.clip = None;
+        view.ragdoll = None;
+        view.mask = Some(opening.handle.clone().typed::<BoneMaskAsset>());
         view.path = Some(opening.path.clone());
         view.dirty = true;
     }
@@ -878,6 +910,8 @@ struct CanvasView {
     /// The ragdoll open instead. This one has no canvas — it is drawn as 3D gizmos on the
     /// preview rig, because a body offset and a collider shape only mean anything in space.
     ragdoll: Option<Handle<Ragdoll>>,
+    /// The bone mask open instead: a bone tree on the canvas, weights on the preview rig.
+    mask: Option<Handle<BoneMaskAsset>>,
     /// Asset-relative path of the open asset, which is where a save writes.
     path: Option<String>,
     /// The project's assets directory that `path` is relative to.
@@ -902,6 +936,7 @@ impl Default for CanvasView {
             fsm: None,
             clip: None,
             ragdoll: None,
+            mask: None,
             path: None,
             root: PathBuf::new(),
             positions: std::collections::HashMap::new(),
@@ -1172,6 +1207,8 @@ fn draw_canvas(
     fsms: Res<Assets<StateMachine>>,
     clips: Res<Assets<GraphClip>>,
     ragdolls: Res<Assets<Ragdoll>>,
+    masks: Res<Assets<BoneMaskAsset>>,
+    skeletons: Res<Assets<Skeleton>>,
     cursor: Res<TimelineCursor>,
     canvas: Single<(Entity, Option<&Children>), With<Canvas>>,
     curves: Query<(), With<LinkCurve>>,
@@ -1188,6 +1225,10 @@ fn draw_canvas(
     }
     if view.ragdoll.is_some() {
         draw_ragdoll_list(&mut commands, &mut view, &ragdolls, *canvas);
+        return;
+    }
+    if view.mask.is_some() {
+        mask::draw_mask_tree(&mut commands, &mut view, &masks, &skeletons, *canvas);
         return;
     }
     let built = match (&view.graph, &view.fsm) {
@@ -2127,13 +2168,16 @@ fn save_graph(
     view: Res<CanvasView>,
     clips: Res<Assets<GraphClip>>,
     ragdolls: Res<Assets<Ragdoll>>,
+    masks: Res<Assets<BoneMaskAsset>>,
 ) {
     if !keys.just_pressed(KeyCode::KeyS)
         || !(keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight))
     {
         return;
     }
-    if view.clip.is_some() || view.ragdoll.is_some() {
+    if view.mask.is_some() {
+        mask::write_mask(&view, &masks);
+    } else if view.clip.is_some() || view.ragdoll.is_some() {
         write_graph(&view, &clips, &ragdolls);
     } else {
         commands.queue(|world: &mut World| {

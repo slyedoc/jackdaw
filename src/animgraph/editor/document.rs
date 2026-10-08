@@ -183,6 +183,7 @@ pub(super) fn track_graph_document(world: &mut World, mut last: Local<Option<(En
     let mut view = world.resource_mut::<CanvasView>();
     view.clip = None;
     view.ragdoll = None;
+    view.mask = None;
     view.path = None;
     view.dirty = true;
     world.resource_mut::<ActiveGraphDoc>().0 = Some(next);

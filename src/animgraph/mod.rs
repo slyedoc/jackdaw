@@ -498,8 +498,22 @@ fn create_character(world: &mut World, folder: &std::path::Path) -> Option<std::
         warn!("animgraph: the project has no rig (a `.skn.ron` beside its `.bsn`)");
         return None;
     };
+    create_character_from(world, folder, &rig, &skeleton, "character")
+}
+
+/// A character on `rig` (asset path of its `.bsn`, with `skeleton` its `.skn.ron`): the
+/// character file and a starter graph, named `<stem>_N` in `folder`.
+pub(crate) fn create_character_from(
+    world: &mut World,
+    folder: &std::path::Path,
+    rig: &str,
+    skeleton: &str,
+    stem: &str,
+) -> Option<std::path::PathBuf> {
+    let assets = world.resource::<AnimGraphRoot>().0.clone()?;
+    std::fs::create_dir_all(folder).ok()?;
     let name = (1..1000)
-        .map(|n| format!("character_{n}"))
+        .map(|n| format!("{stem}_{n}"))
         .find(|name| !folder.join(format!("{name}.bsn")).exists())?;
     let relative = |path: &std::path::Path| {
         path.strip_prefix(&assets)
@@ -508,7 +522,7 @@ fn create_character(world: &mut World, folder: &std::path::Path) -> Option<std::
             .replace('\\', "/")
     };
     let graph_file = folder.join(format!("{name}.animgraph.bsn"));
-    let idle = find_idle_clip(&assets);
+    let idle = find_idle_clip(&assets, skeleton);
     let starter = match idle.as_deref() {
         Some(clip) => Starter::LoopClip(clip),
         None => Starter::Empty,
@@ -548,6 +562,11 @@ bevy_ecs::hierarchy::Children [
 
 /// The project's rig: a `.skn.ron` with its `.bsn` beside it (a Mannequin first), as asset paths.
 fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
+    find_rigs(assets).into_iter().next()
+}
+
+/// Every rig in the project: a `.bsn` with a `.skn.ron` beside it, as asset paths.
+pub(crate) fn find_rigs(assets: &std::path::Path) -> Vec<(String, String)> {
     let mut rigs: Vec<(String, String)> =
         crate::bsn_files::walk_files_with_extensions(assets, &["skn.ron"])
             .into_iter()
@@ -568,13 +587,19 @@ fn find_rig(assets: &std::path::Path) -> Option<(String, String)> {
                 })
             })
             .collect();
-    rigs.sort_by_key(|(rig, _)| !rig.contains("Mannequin"));
-    rigs.into_iter().next()
+    rigs.sort_by_key(|(rig, _)| (!rig.contains("Mannequin"), rig.clone()));
+    rigs
 }
 
 /// An idle clip to start a character on, as an asset path.
-fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
-    let clips = crate::bsn_files::walk_files_with_extensions(assets, &["anim.ron"]);
+/// An idle clip baked against `skeleton`, as an asset path (WoW names it `stand`).
+fn find_idle_clip(assets: &std::path::Path, skeleton: &str) -> Option<String> {
+    let needle = format!("\"{skeleton}\"");
+    let clips: Vec<std::path::PathBuf> =
+        crate::bsn_files::walk_files_with_extensions(assets, &["anim.ron"])
+            .into_iter()
+            .filter(|p| std::fs::read_to_string(p).is_ok_and(|text| text.contains(&needle)))
+            .collect();
     let stem = |p: &std::path::PathBuf| {
         p.file_name()
             .map(|n| {
@@ -591,6 +616,7 @@ fn find_idle_clip(assets: &std::path::Path) -> Option<String> {
     let contains = |want: &str| clips.iter().find(|p| stem(p).contains(want));
     exact("idle_loop")
         .or_else(|| exact("idle"))
+        .or_else(|| exact("stand"))
         .or_else(|| starts("idle"))
         .or_else(|| contains("idle"))
         .map(|p| {
