@@ -246,7 +246,7 @@ fn anchor_popovers(
                 .id(),
             None => anchor.entity,
         };
-        commands.entity(entity).insert(ChildOf(parent));
+        commands.entity(entity).try_insert(ChildOf(parent));
     }
 }
 

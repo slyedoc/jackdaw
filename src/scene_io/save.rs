@@ -79,6 +79,18 @@ pub fn save_scene(world: &mut World) -> bool {
 
 /// Save the active scene, distinguishing an opened Save As dialog from
 /// an outright failure. See [`SaveOutcome`].
+/// The Game tab is the running world: its edits are live and never written.
+fn refuse_game_save(world: &mut World) -> bool {
+    let game = world
+        .get_resource::<crate::scenes::Scenes>()
+        .and_then(|scenes| scenes.tabs.get(scenes.active))
+        .is_some_and(crate::scenes::SceneTab::is_game);
+    if game {
+        crate::status_bar::notify_error(world, "The game tab is not saved".to_string());
+    }
+    game
+}
+
 pub fn save_scene_with_outcome(world: &mut World) -> SaveOutcome {
     // The active scene tab is the source of truth for which file to
     // save to. Re-sync the global `SceneFilePath` from it so a stale
@@ -86,6 +98,9 @@ pub fn save_scene_with_outcome(world: &mut World) -> SaveOutcome {
     // wrong file. Untitled tabs (no path) fall through to Save As.
     // A refused tab keeps its path in front of an empty world, so without
     // this check the save would write that empty world over the file.
+    if refuse_game_save(world) {
+        return SaveOutcome::Failed;
+    }
     if let Some(reason) = active_tab_refusal(world) {
         error!(
             "Cannot save this tab: its scene was not loaded ({reason}). \
@@ -159,6 +174,9 @@ pub fn retarget_active_scene(world: &mut World, path: &str) {
 }
 
 pub fn save_scene_as(world: &mut World) {
+    if refuse_game_save(world) {
+        return;
+    }
     // Save As performs the same write, so a refused tab is refused here too.
     if let Some(reason) = active_tab_refusal(world) {
         error!(
@@ -460,7 +478,7 @@ fn active_tab_is_root_file(world: &World) -> bool {
     world
         .get_resource::<crate::scenes::Scenes>()
         .and_then(|scenes| scenes.tabs.get(scenes.active))
-        .is_some_and(|tab| tab.kind == crate::scenes::TabKind::Prefab)
+        .is_some_and(|tab| tab.root_file)
 }
 
 /// The open scene as `.bsn` text. A tab holding a root-entity file writes that entity; a scene

@@ -289,7 +289,7 @@ fn tag_field_rows(
         if let Ok(mut node) = nodes.get_mut(row) {
             node.position_type = PositionType::Relative;
         }
-        commands.entity(row).insert(InspectorFieldRow {
+        commands.entity(row).try_insert(InspectorFieldRow {
             source_entity: *entity,
             type_path,
             field_path: field_path(&field.path).to_string(),

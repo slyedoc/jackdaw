@@ -1,6 +1,5 @@
 use bevy::picking::pointer::PointerButton;
 use bevy::prelude::*;
-use bevy::ui::interaction_states::Pressed;
 use jackdaw_feathers::tokens;
 
 use crate::reconcile::LeafBinding;
@@ -110,27 +109,26 @@ pub fn spawn_icon_sidebar_world(
 }
 
 pub fn handle_sidebar_icon_clicks(
-    icon_query: Query<(&DockSidebarIcon, &ChildOf), Added<Pressed>>,
+    click: On<PointerClick>,
+    icon_query: Query<(&DockSidebarIcon, &ChildOf)>,
     parent_query: Query<&ChildOf>,
     bindings: Query<&LeafBinding>,
     mut tree: ResMut<DockTree>,
 ) {
-    for (icon, icon_parent) in icon_query.iter() {
-        // Walk: icon -> icon_group -> sidebar -> area
-        let icon_group = icon_parent.parent();
-        let Ok(group_parent) = parent_query.get(icon_group) else {
-            continue;
-        };
-        let sidebar = group_parent.parent();
-        let Ok(sidebar_parent) = parent_query.get(sidebar) else {
-            continue;
-        };
-        let area_entity = sidebar_parent.parent();
-
-        let Ok(binding) = bindings.get(area_entity) else {
-            continue;
-        };
-
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok((icon, icon_parent)) = icon_query.get(click.event_target()) else {
+        return;
+    };
+    // Walk: icon -> icon_group -> sidebar -> area
+    let Ok(group_parent) = parent_query.get(icon_parent.parent()) else {
+        return;
+    };
+    let Ok(sidebar_parent) = parent_query.get(group_parent.parent()) else {
+        return;
+    };
+    if let Ok(binding) = bindings.get(sidebar_parent.parent()) {
         tree.set_active(binding.0, icon.tab_id);
     }
 }

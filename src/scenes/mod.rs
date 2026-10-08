@@ -1,5 +1,6 @@
-//! Multi-scene editor state. Owns the tab list; every tab's entities live under its own
-//! physics/render world, and only the active tab's carry `SceneEntity`.
+//! Multi-scene editor state. Owns the tab list; every document tab's entities live under its own
+//! physics/render world, and only the active tab's carry `SceneEntity`. An editor embedded in a
+//! game ([`HostGame`]) also has the Game tab first: the running world itself, never saved.
 
 pub mod confirm_dialog;
 pub mod external_watch;
@@ -9,7 +10,7 @@ pub mod ui;
 
 use std::path::PathBuf;
 
-use bevy::{camera::visibility::RenderLayers, prelude::*};
+use bevy::{camera::visibility::RenderLayers, gizmos::config::GizmoConfigStore, prelude::*};
 use bevy_aurora::environment::RenderEnvironments;
 
 use crate::commands::CommandHistory;
@@ -24,6 +25,7 @@ impl Plugin for ScenesPlugin {
         app.init_resource::<Scenes>();
         app.init_resource::<confirm_dialog::PendingTabClose>();
         app.init_resource::<confirm_dialog::PendingQuit>();
+        app.add_systems(OnEnter(crate::AppState::Editor), add_game_tab);
         app.add_systems(
             Update,
             (
@@ -84,7 +86,35 @@ pub struct Scenes {
     pub active: usize,
 }
 
-/// What an editor view of the open scene renders: the editor's world and the active tab's.
+/// The app the editor is embedded in: its running world is the Game tab. Insert before the
+/// editor is entered.
+#[derive(Resource, Clone, Debug)]
+pub struct HostGame {
+    /// The Game tab's label.
+    pub name: String,
+}
+
+impl Default for HostGame {
+    fn default() -> Self {
+        Self {
+            name: "Game".into(),
+        }
+    }
+}
+
+/// The Game tab goes first, in front, when the editor comes up over a game.
+fn add_game_tab(host: Option<Res<HostGame>>, mut scenes: ResMut<Scenes>) {
+    let Some(host) = host else {
+        return;
+    };
+    if scenes.tabs.iter().any(SceneTab::is_game) {
+        return;
+    }
+    scenes.tabs.insert(0, SceneTab::game(&host.name));
+    scenes.active = 0;
+}
+
+/// What an editor view of the open scene renders: the active tab's world alone.
 pub fn scene_layers(world: &World) -> RenderLayers {
     tab_layers(
         world.get_resource::<RenderEnvironments>(),
@@ -97,15 +127,18 @@ fn tab_layers(
     tab_environment: Option<Entity>,
 ) -> RenderLayers {
     match tab_environment.and_then(|tab| worlds?.bit(tab)) {
-        Some(bit) if bit > 0 => RenderLayers::from_layers(&[0, bit as usize]),
-        _ => RenderLayers::layer(0),
+        Some(bit) => RenderLayers::layer(bit as usize),
+        None => RenderLayers::layer(0),
     }
 }
 
-/// Viewport cameras see the active tab's world.
+/// Viewport cameras see the active tab's world, and so do the gizmos drawn into it. Hidden, the
+/// editor gives the gizmos back to the game.
 fn follow_tab_world(
     worlds: Option<Res<RenderEnvironments>>,
     scenes: Res<Scenes>,
+    shown: Option<Res<crate::EditorShown>>,
+    state: Option<Res<State<crate::AppState>>>,
     cameras: Query<
         (Entity, Option<&RenderLayers>),
         Or<(
@@ -113,6 +146,7 @@ fn follow_tab_world(
             With<crate::camera_preview::CameraPreviewCamera>,
         )>,
     >,
+    gizmos: Option<ResMut<GizmoConfigStore>>,
     mut commands: Commands,
 ) {
     let tab_environment = scenes
@@ -123,6 +157,19 @@ fn follow_tab_world(
     for (camera, current) in &cameras {
         if current != Some(&layers) {
             commands.entity(camera).insert(layers.clone());
+        }
+    }
+    let up = shown.is_some_and(|shown| shown.0)
+        && state.is_some_and(|state| *state.get() == crate::AppState::Editor);
+    let gizmo_layers = if up { layers } else { RenderLayers::layer(0) };
+    if let Some(mut store) = gizmos {
+        let differs = store
+            .iter()
+            .any(|(_, config, _)| config.render_layers != gizmo_layers);
+        if differs {
+            for (_, config, _) in store.iter_mut() {
+                config.render_layers = gizmo_layers.clone();
+            }
         }
     }
 }
@@ -148,11 +195,13 @@ impl Scenes {
     }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabKind {
+    /// A `.bsn` file, or one not saved yet.
     #[default]
-    Scene,
-    Prefab,
+    Document,
+    /// The host game's running world: edited live, never saved, never closed.
+    Game,
 }
 
 /// Where a tab's entities are.
@@ -172,6 +221,9 @@ pub struct SceneTab {
     pub display_name: String,
     pub dirty: bool,
     pub kind: TabKind,
+    /// The file's root is its one entity (a tree, a character), not a scene of top-level
+    /// entities; a save writes it back that way.
+    pub root_file: bool,
     pub content: TabContent,
     /// The tab's environment, its 3D roots' parent; spawned on first activation.
     pub environment: Option<Entity>,
@@ -220,12 +272,27 @@ impl SceneTab {
         self.refusal.is_some()
     }
 
+    pub fn is_game(&self) -> bool {
+        self.kind == TabKind::Game
+    }
+
+    /// The host game's tab, in front.
+    pub fn game(name: &str) -> Self {
+        Self {
+            display_name: name.to_string(),
+            kind: TabKind::Game,
+            content: TabContent::Live,
+            ..Self::new_untitled(0)
+        }
+    }
+
     pub fn new_untitled(n: u32) -> Self {
         Self {
             path: None,
             display_name: format!("untitled-{n}"),
             dirty: false,
-            kind: TabKind::Scene,
+            kind: TabKind::Document,
+            root_file: false,
             content: TabContent::default(),
             environment: None,
             view_state: ViewState::with_default_camera(),
@@ -252,13 +319,18 @@ pub fn persist_tabs_to_project_config(
         return;
     };
 
-    let last_open_tabs: Vec<String> = scenes
+    let saved: Vec<(usize, String)> = scenes
         .tabs
         .iter()
-        .filter_map(|t| t.path.as_ref())
-        .filter_map(|p| project_root.to_relative(p).to_str().map(str::to_owned))
+        .enumerate()
+        .filter_map(|(index, t)| Some((index, t.path.as_ref()?)))
+        .filter_map(|(index, p)| Some((index, project_root.to_relative(p).to_str()?.to_owned())))
         .collect();
-    let last_active_tab = scenes.active;
+    let last_active_tab = saved
+        .iter()
+        .position(|(index, _)| *index == scenes.active)
+        .unwrap_or(0);
+    let last_open_tabs: Vec<String> = saved.into_iter().map(|(_, path)| path).collect();
 
     let cfg = &mut project_root.config;
     if cfg.last_open_tabs == last_open_tabs && cfg.last_active_tab == last_active_tab {
@@ -288,7 +360,9 @@ pub fn mark_active_dirty_on_history_growth(
     let active = scenes.active;
     let current_depth = history.undo_stack.len();
     let tab = scenes.bypass_change_detection().tabs.get_mut(active);
-    let Some(tab) = tab else { return };
+    let Some(tab) = tab.filter(|tab| !tab.is_game()) else {
+        return;
+    };
     let recorded = tab.history_depth_at_last_check;
     let needs_dirty_flip = current_depth > recorded && !tab.dirty;
     let needs_depth_update = current_depth != recorded;

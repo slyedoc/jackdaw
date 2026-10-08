@@ -125,7 +125,7 @@ pub fn rebuild_scene_tab_strip(
             &path_display,
             tab.dirty,
             idx == active,
-            tab.kind.clone(),
+            tab.kind,
             editor_font_handle.clone(),
             icon_font_handle.clone(),
         );
@@ -267,14 +267,10 @@ fn spawn_scene_tab(
         ChildOf(tab_entity),
     ));
 
-    // Tab icon: Package when the whole tab is a prefab document, File
-    // otherwise. Constraint: only the entire-scene-is-a-prefab case
-    // gets the Package glyph; instances nested inside a regular scene
-    // do not change the tab icon.
     if let Some(handle) = icon_font.clone() {
         let glyph = match kind {
-            crate::scenes::TabKind::Prefab => Icon::Package,
-            crate::scenes::TabKind::Scene => Icon::File,
+            crate::scenes::TabKind::Game => Icon::Gamepad2,
+            crate::scenes::TabKind::Document => Icon::File,
         };
         commands.spawn((
             Text::new(String::from(glyph.unicode())),
@@ -342,6 +338,10 @@ fn spawn_scene_tab(
         ChildOf(tab_entity),
     ));
 
+    // The Game tab never closes.
+    if kind == crate::scenes::TabKind::Game {
+        return;
+    }
     // Close button slot. Always reserves its 14x14 layout space so
     // hovering doesn't reflow the rest of the tab; the X glyph inside
     // is alpha-toggled by `show_scene_tab_close_on_hover`.

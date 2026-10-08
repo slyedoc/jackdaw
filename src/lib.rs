@@ -637,8 +637,6 @@ impl Plugin for EditorCorePlugin {
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(jackdaw_api_internal::load_active_keymap_preset())
         .init_resource::<project_types::ProjectTypes>()
-        .init_resource::<layout::ActiveDocument>()
-        .init_resource::<layout::SceneViewPreset>()
         .init_resource::<asset_catalog::AssetCatalog>()
         .init_resource::<jackdaw_runtime::JackdawCatalog>()
         .init_resource::<MenuBarDirty>()
@@ -669,8 +667,6 @@ impl Plugin for EditorCorePlugin {
             (
                 send_scroll_events,
                 layout::update_grid_size_label,
-                layout::update_active_document_display,
-                layout::update_tab_strip_highlights,
                 auto_hide_internal_entities,
                 register_animation_entities_in_ast,
                 drop_imported_clip_entities.after(register_animation_entities_in_ast),
@@ -682,7 +678,6 @@ impl Plugin for EditorCorePlugin {
         )
         .add_systems(Update, keybind_focus::disable_keyboard_input_when_typing)
         .add_observer(layout::update_toolbar_button_variants)
-        .add_observer(on_workspace_changed)
         .add_observer(on_scroll)
         .add_observer(handle_menu_action)
         .add_observer(on_create_clip_for_selection)
@@ -3170,15 +3165,6 @@ fn build_animation_tree() -> jackdaw_panels::tree::DockTree {
     }));
     tree.root = Some(root);
     tree
-}
-
-fn on_workspace_changed(
-    _trigger: On<jackdaw_panels::WorkspaceChanged>,
-    mut active: ResMut<layout::ActiveDocument>,
-) {
-    // Every workspace hosts the single Scene document; panels differ only
-    // by their dock tree.
-    active.kind = layout::TabKind::Scene;
 }
 
 #[derive(Resource, Default)]

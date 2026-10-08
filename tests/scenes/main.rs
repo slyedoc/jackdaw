@@ -11,6 +11,7 @@ mod animation_graph_document;
 mod asset_ingest;
 mod bsn_round_trip;
 mod external_reload;
+mod game_tab;
 mod headless;
 mod integration;
 mod native_dialogs;

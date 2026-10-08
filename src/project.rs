@@ -400,9 +400,14 @@ pub(crate) fn open_pending_tabs(world: &mut World) {
         let pending = world
             .remove_resource::<PendingTabOpens>()
             .expect("checked above");
-        let tabs = world.resource::<crate::scenes::Scenes>().tabs.len();
-        if tabs > 0 {
-            crate::scenes::swap::swap_active_tab(world, pending.active.min(tabs - 1));
+        let scenes = world.resource::<crate::scenes::Scenes>();
+        let game = scenes.tabs.iter().position(crate::scenes::SceneTab::is_game);
+        let documents: Vec<usize> = (0..scenes.tabs.len())
+            .filter(|&index| Some(index) != game)
+            .collect();
+        let target = game.or_else(|| documents.get(pending.active.min(documents.len().max(1) - 1)).copied());
+        if let Some(target) = target {
+            crate::scenes::swap::swap_active_tab(world, target);
         }
         crate::status_bar::finish_phase(world, TAB_OPEN_PHASE);
         return;

@@ -95,7 +95,9 @@ pub fn activate_tab(world: &mut World, target: usize) {
     crate::terrain::navmesh_bake::install_in_world(world, navmesh);
 
     let mut refusal = None;
+    let game = world.resource::<Scenes>().tabs[target].is_game();
     match content {
+        _ if game => {}
         TabContent::Parked => {
             if let Some(tab_environment) = crate::scene_io::scene_environment(world) {
                 crate::scene_io::set_tab_open(world, tab_environment, true);

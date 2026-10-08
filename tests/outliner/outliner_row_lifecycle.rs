@@ -233,3 +233,34 @@ fn the_keyboard_walk_resumes_on_the_row_that_was_closed() {
         "the walk resumes on the row that was closed"
     );
 }
+
+/// Opening a node with thousands of children builds one page of rows and a
+/// "+ N more" row, not a row per child in one frame.
+#[test]
+fn opening_a_huge_branch_builds_one_page_of_rows() {
+    let mut app = util::editor_test_app();
+    app.world_mut().insert_resource(HierarchyShowAll(true));
+    let panel = app
+        .world_mut()
+        .spawn((HierarchyTreeContainer, Node::default(), Visibility::Inherited))
+        .id();
+    app.update();
+    let world = app.world_mut();
+    let tile = world.spawn((Name::new("Tile"), Node::default())).id();
+    jackdaw::scene_io::adopt_entity(world, tile);
+    for i in 0..500 {
+        let child = world
+            .spawn((Name::new(format!("Doodad {i:03}")), Node::default(), ChildOf(tile)))
+            .id();
+        jackdaw::scene_io::adopt_entity(world, child);
+    }
+    app.update();
+
+    expand(&mut app, panel, tile);
+    assert_eq!(child_row_names(app.world(), panel, tile).len(), 200);
+    let mut texts = app.world_mut().query::<&Text>();
+    assert!(
+        texts.iter(app.world()).any(|text| text.0 == "+ 300 more"),
+        "the rest wait behind a more row"
+    );
+}

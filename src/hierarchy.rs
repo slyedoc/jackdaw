@@ -46,30 +46,10 @@ use jackdaw_scene_types::{Brush, UiSceneRoot};
 #[derive(Resource, Default)]
 struct PendingPrefabDefaultName(String);
 
-/// Distinguishes between "save subtree as new prefab file" and
-/// "save instance + its overrides as a variant of the current prefab".
-#[derive(Default, Clone, Copy)]
-pub enum PrefabSaveMode {
-    /// Save the selected entities as a new prefab file; the source
-    /// becomes an `IsA` instance in the current scene. Source tab is
-    /// unchanged.
-    #[default]
-    Prefab,
-    /// Save the entire active scene tab as a prefab file. The tab
-    /// itself converts to a Prefab tab (`TabKind::Prefab`,
-    /// `TabContent::Prefab(path)`, Package icon, Ctrl+S goes through
-    /// the prefab save branch).
-    Scene,
-    /// Save the current instance + its overrides as a variant of the
-    /// underlying prefab.
-    Variant,
-}
-
-/// Tracks which entities to package when the prefab save dialog is confirmed.
+/// The entities the extract dialog writes to a file of their own.
 #[derive(Resource, Default)]
 pub struct PendingPrefabSave {
     pub roots: Vec<Entity>,
-    pub mode: PrefabSaveMode,
 }
 
 /// Marker for the prefab name text input inside the dialog.
@@ -1457,10 +1437,9 @@ fn on_tree_node_expanded(
             cat_a.cmp(cat_b).then_with(|| name_a.cmp(name_b))
         });
 
-        // Spawn tree rows
-        for (child_entity, _name, _category) in child_data {
-            spawn_single_tree_row(world, child_entity, container);
-        }
+        // Spawn the first page of rows; the rest wait behind a "more" row.
+        let rows: Vec<Entity> = child_data.into_iter().map(|(child, ..)| child).collect();
+        spawn_row_page(world, container, rows);
         if let Ok(mut row) = world.get_entity_mut(tree_row_entity) {
             row.insert(RowsBuiltOnExpand);
         }
@@ -1470,6 +1449,55 @@ fn on_tree_node_expanded(
             sync_outliner_row_order(world, Some(source));
         }
     });
+}
+
+/// Rows an expansion builds at once. A node with tens of thousands of children (a terrain tile's
+/// doodads) would otherwise spawn a row, its label and its buttons for every one in one frame.
+const ROW_PAGE: usize = 200;
+
+/// The rows an expansion has not built yet, on the "+ N more" row that builds the next page.
+#[derive(Component)]
+struct MoreRows {
+    container: Entity,
+    rest: Vec<Entity>,
+}
+
+/// Spawn the first [`ROW_PAGE`] of `rows` under `container`, and a "+ N more" row for the rest.
+fn spawn_row_page(world: &mut World, container: Entity, mut rows: Vec<Entity>) {
+    let rest = rows.split_off(rows.len().min(ROW_PAGE));
+    for child in rows {
+        spawn_single_tree_row(world, child, container);
+    }
+    if rest.is_empty() {
+        return;
+    }
+    let label = format!("+ {} more", rest.len());
+    world
+        .spawn((
+            Node {
+                padding: UiRect::axes(px(tokens::SPACING_MD), px(tokens::SPACING_XS)),
+                ..Default::default()
+            },
+            Text::new(label),
+            TextFont {
+                font_size: tokens::TEXT_SIZE_SM,
+                ..Default::default()
+            },
+            TextColor(tokens::TEXT_SECONDARY),
+            MoreRows { container, rest },
+            ChildOf(container),
+        ))
+        .observe(|click: On<PointerClick>, mut commands: Commands| {
+            let more = click.event_target();
+            commands.queue(move |world: &mut World| {
+                let Some(MoreRows { container, rest }) = world.entity_mut(more).take::<MoreRows>()
+                else {
+                    return;
+                };
+                world.entity_mut(more).despawn();
+                spawn_row_page(world, container, rest);
+            });
+        });
 }
 
 /// Marks a row whose child rows were built by opening it, and which may
@@ -2150,11 +2178,7 @@ pub(crate) fn hierarchy_open_context_menu(
         ),
         (
             "hierarchy.save_prefab".into(),
-            "Save Selection as File...".into(),
-        ),
-        (
-            "hierarchy.save_scene_as_prefab".into(),
-            "Save Scene as File...".into(),
+            "Extract to File...".into(),
         ),
         ("hierarchy.add_cube".into(), "Add Child Cube".into()),
         ("hierarchy.add_sphere".into(), "Add Child Sphere".into()),
@@ -2167,20 +2191,6 @@ pub(crate) fn hierarchy_open_context_menu(
     if q_isa.get(target).is_ok() {
         owned_items.insert(
             0,
-            (
-                "hierarchy.prefab.revert_all".into(),
-                "Revert to Base".into(),
-            ),
-        );
-        owned_items.insert(
-            1,
-            (
-                "hierarchy.prefab.save_as_variant".into(),
-                "Save as Variant...".into(),
-            ),
-        );
-        owned_items.insert(
-            2,
             (
                 "hierarchy.prefab.unbundle_instance".into(),
                 "Unbundle Instance".into(),
@@ -2312,59 +2322,10 @@ fn on_context_menu_action(
                     .and_then(|e| world.get::<Name>(*e).map(|n| n.as_str().to_string()))
                     .unwrap_or_else(|| "prefab".to_string());
                 world.resource_mut::<PendingPrefabSave>().roots = roots;
-                world.resource_mut::<PendingPrefabSave>().mode = PrefabSaveMode::Prefab;
                 world.resource_mut::<PendingPrefabDefaultName>().0 = default_name;
             });
             commands.trigger(jackdaw_feathers::dialog::OpenDialogEvent::new(
-                "Save as Prefab",
-                "Save",
-            ));
-        }
-        "hierarchy.save_scene_as_prefab" => {
-            commands.queue(move |world: &mut World| {
-                let scenes = world.resource::<crate::scenes::Scenes>();
-                let active = scenes.active;
-                let default_name = scenes
-                    .tabs
-                    .get(active)
-                    .map(|t| t.display_name.trim().to_string())
-                    .filter(|s| !s.is_empty() && !s.starts_with("untitled"))
-                    .unwrap_or_else(|| "prefab".to_string());
-
-                world.resource_mut::<PendingPrefabSave>().roots = Vec::new();
-                world.resource_mut::<PendingPrefabSave>().mode = PrefabSaveMode::Scene;
-                world.resource_mut::<PendingPrefabDefaultName>().0 = default_name;
-            });
-            commands.trigger(jackdaw_feathers::dialog::OpenDialogEvent::new(
-                "Save Scene as Prefab",
-                "Save",
-            ));
-        }
-        "hierarchy.prefab.revert_all" => {
-            let Some(target) = target_entity else {
-                return;
-            };
-            commands.queue(move |world: &mut World| {
-                if let Err(err) = crate::instances::revert_instance(world, target) {
-                    warn!("revert: {err}");
-                }
-            });
-        }
-        "hierarchy.prefab.save_as_variant" => {
-            let Some(target) = target_entity else {
-                return;
-            };
-            commands.queue(move |world: &mut World| {
-                let default_name = world
-                    .get::<Name>(target)
-                    .map(|n| format!("{}_variant", n.as_str()))
-                    .unwrap_or_else(|| "variant".to_string());
-                world.resource_mut::<PendingPrefabSave>().roots = vec![target];
-                world.resource_mut::<PendingPrefabSave>().mode = PrefabSaveMode::Variant;
-                world.resource_mut::<PendingPrefabDefaultName>().0 = default_name;
-            });
-            commands.trigger(jackdaw_feathers::dialog::OpenDialogEvent::new(
-                "Save as Variant",
+                "Extract to File",
                 "Save",
             ));
         }
@@ -2654,9 +2615,7 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<EntityReparentOp>()
         .register_operator::<RenameBeginOp>()
         .register_operator::<HierarchyOpenContextMenuOp>()
-        .register_operator::<PrefabSaveAsPrefabOp>()
-        .register_operator::<PrefabSaveSceneAsPrefabOp>()
-        .register_operator::<PrefabSaveAsVariantOp>();
+        .register_operator::<PrefabSaveAsPrefabOp>();
     let ext = ctx.id();
     // Deferred: condition is not bare Press::default() (mouse button + Press).
     ctx.spawn((
@@ -2990,10 +2949,7 @@ fn populate_prefab_dialog(
     slots: Query<Entity, With<DialogChildrenSlot>>,
     existing_inputs: Query<(), With<PrefabNameInput>>,
 ) {
-    // `Scene` mode targets the whole active tab, so an empty
-    // `pending.roots` is meaningful there. Every other mode needs at
-    // least one pending root to display the dialog for.
-    if pending.roots.is_empty() && !matches!(pending.mode, PrefabSaveMode::Scene) {
+    if pending.roots.is_empty() {
         return;
     }
     // Idempotent: once the input exists, subsequent ticks bail here.
@@ -3024,10 +2980,7 @@ fn on_prefab_dialog_action(
     pending: Res<PendingPrefabSave>,
     name_inputs: Query<&TextEditValue, With<PrefabNameInput>>,
 ) {
-    // `Scene` mode operates on the active tab's whole AST, so an empty
-    // `pending.roots` is expected. Every other mode needs at least one
-    // pending root to package.
-    if pending.roots.is_empty() && !matches!(pending.mode, PrefabSaveMode::Scene) {
+    if pending.roots.is_empty() {
         return;
     }
     let name = name_inputs
@@ -3039,13 +2992,8 @@ fn on_prefab_dialog_action(
         warn!("save prefab cancelled: name is empty");
         return;
     }
-    let op_id = match pending.mode {
-        PrefabSaveMode::Prefab => PrefabSaveAsPrefabOp::ID,
-        PrefabSaveMode::Scene => PrefabSaveSceneAsPrefabOp::ID,
-        PrefabSaveMode::Variant => PrefabSaveAsVariantOp::ID,
-    };
     commands
-        .operator(op_id)
+        .operator(PrefabSaveAsPrefabOp::ID)
         .settings(CallOperatorSettings {
             creates_history_entry: true,
             ..default()
@@ -3090,89 +3038,7 @@ pub fn prefab_save_as_prefab(
         if let Err(err) = crate::instances::save_as_instance(world, &roots, &target) {
             crate::status_bar::notify_error(world, format!("{}: {err}", target.display()));
         }
-        let mut pending = world.resource_mut::<PendingPrefabSave>();
-        pending.roots.clear();
-        pending.mode = PrefabSaveMode::Prefab;
-    });
-    OperatorResult::Finished
-}
-
-/// Save the entire active scene tab as a prefab file and convert
-/// the tab itself into a prefab tab. The active tab's
-/// `TabContent` switches to `Prefab(path)`, `TabKind` becomes
-/// `Prefab`, and Ctrl+S routes through the prefab save branch from
-/// that point on.
-#[operator(
-    id = "prefab.save_scene_as_prefab",
-    label = "Save Scene as Prefab",
-    description = "Write the active scene tab out as a new prefab file and convert the tab into a prefab tab.",
-    allows_undo = true,
-    params(name(String, doc = "File name (without extension)."))
-)]
-pub fn prefab_save_scene_as_prefab(
-    params: In<OperatorParameters>,
-    mut commands: Commands,
-) -> OperatorResult {
-    let name = params
-        .as_str("name")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| {
-            warn!("prefab.save_scene_as_prefab: no name provided; defaulting to 'prefab'");
-            "prefab".to_string()
-        });
-
-    commands.queue(move |world: &mut World| {
-        let target = match world.get_resource::<crate::project::ProjectRoot>() {
-            Some(root) => root.root.join("assets/prefabs").join(format!("{name}.bsn")),
-            None => std::path::PathBuf::from(format!("{name}.bsn")),
-        };
-        crate::scene_io::retarget_active_scene(world, &target.to_string_lossy());
-        if let Err(err) = crate::scene_io::save_scene_inner(world) {
-            crate::status_bar::notify_error(world, format!("{}: {err}", target.display()));
-        }
-        let mut pending = world.resource_mut::<PendingPrefabSave>();
-        pending.roots.clear();
-        pending.mode = PrefabSaveMode::Prefab;
-    });
-    OperatorResult::Finished
-}
-
-/// Save the first entity in `PendingPrefabSave` as a variant prefab
-/// file at `assets/prefabs/<name>.jsn`. The new prefab carries both
-/// `Prefab` and `IsA` (pointing at the original prefab) plus any
-/// instance overrides.
-#[operator(
-    id = "prefab.save_as_variant",
-    label = "Save as Variant",
-    description = "Write the pending instance out as a variant prefab.",
-    allows_undo = true,
-    params(name(String, doc = "File name (without extension)."))
-)]
-pub fn prefab_save_as_variant(
-    params: In<OperatorParameters>,
-    mut commands: Commands,
-) -> OperatorResult {
-    let Some(name) = params.as_str("name").map(str::to_string) else {
-        warn!("prefab.save_as_variant: missing `name` param");
-        return OperatorResult::Cancelled;
-    };
-    commands.queue(move |world: &mut World| {
-        let root = world.resource::<PendingPrefabSave>().roots.first().copied();
-        let Some(root) = root else {
-            warn!("prefab.save_as_variant: no pending root");
-            return;
-        };
-        let target = match world.get_resource::<crate::project::ProjectRoot>() {
-            Some(p) => p.root.join("assets/prefabs").join(format!("{name}.bsn")),
-            None => std::path::PathBuf::from(format!("{name}.bsn")),
-        };
-        if let Err(err) = crate::instances::save_as_variant(world, root, &target) {
-            crate::status_bar::notify_error(world, format!("{}: {err}", target.display()));
-        }
-        let mut pending = world.resource_mut::<PendingPrefabSave>();
-        pending.roots.clear();
-        pending.mode = PrefabSaveMode::Prefab;
+        world.resource_mut::<PendingPrefabSave>().roots.clear();
     });
     OperatorResult::Finished
 }

@@ -409,7 +409,7 @@ fn refresh_changed_instances(world: &mut World) {
         if is_inherited(world, instance) {
             continue;
         }
-        match revert_instance(world, instance) {
+        match respawn_instance(world, instance) {
             Ok(fresh) => {
                 world.entity_mut(fresh).insert(SeenGeneration(generation));
             }
@@ -476,25 +476,8 @@ pub fn save_as_instance(
     Ok(instance)
 }
 
-/// Write an instance as a file of its own: the same base, with this instance's changes.
-pub fn save_as_variant(world: &mut World, instance: Entity, file: &Path) -> Result<(), String> {
-    let settings = crate::scene_io::write_settings(world);
-    let placed = world
-        .get::<Transform>(instance)
-        .copied()
-        .unwrap_or_default();
-    world.entity_mut(instance).insert(Transform::IDENTITY);
-    let text = bevy::bsn_asset::write_scene_text(world, instance, &settings);
-    world.entity_mut(instance).insert(placed);
-    let text = text.map_err(|err| err.to_string())?;
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir).map_err(|err| err.to_string())?;
-    }
-    std::fs::write(file, crate::scene_io::stamp::with_stamp(&text)).map_err(|err| err.to_string())
-}
-
-/// Throw away an instance's changes: spawn its base afresh in its place.
-pub fn revert_instance(world: &mut World, instance: Entity) -> Result<Entity, String> {
+/// Spawn an instance's base afresh in its place, keeping its placement and name.
+fn respawn_instance(world: &mut World, instance: Entity) -> Result<Entity, String> {
     let base = base_of(world, instance).ok_or("not an instance")?;
     let location = crate::commands::HierarchyLocation::from_world(world, instance);
     let placed = world

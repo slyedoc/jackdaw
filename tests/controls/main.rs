@@ -9,6 +9,7 @@ mod util;
 
 mod button_operator_dispatch;
 mod context_menus;
+mod dock_tabs;
 mod lists_and_scroll;
 mod menu_bar_clicks;
 mod popovers;

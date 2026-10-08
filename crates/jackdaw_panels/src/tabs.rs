@@ -23,7 +23,8 @@ pub struct DockTabPlugin;
 
 impl Plugin for DockTabPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (handle_dock_tab_clicks, show_close_on_hover));
+        app.add_systems(Update, show_close_on_hover)
+            .add_observer(handle_dock_tab_clicks);
     }
 }
 
@@ -207,6 +208,7 @@ fn spawn_tab(
             },
             BackgroundColor(tab_bg),
             BorderColor::all(border_color),
+            Hovered::default(),
             ChildOf(tab_row),
         ))
         .id();
@@ -262,27 +264,26 @@ fn spawn_tab(
 pub struct DockTabCloseIcon;
 
 fn handle_dock_tab_clicks(
-    tab_query: Query<(&DockTab, &ChildOf), Added<Pressed>>,
+    click: On<PointerClick>,
+    tab_query: Query<(&DockTab, &ChildOf)>,
     parent_query: Query<&ChildOf>,
     bindings: Query<&LeafBinding>,
     mut tree: ResMut<DockTree>,
 ) {
-    for (tab, tab_child_of) in tab_query.iter() {
-        // Walk: tab -> tab_row -> tab_bar -> area
-        let tab_row = tab_child_of.parent();
-        let Ok(row_parent) = parent_query.get(tab_row) else {
-            continue;
-        };
-        let tab_bar = row_parent.parent();
-        let Ok(bar_parent) = parent_query.get(tab_bar) else {
-            continue;
-        };
-        let area_entity = bar_parent.parent();
-
-        let Ok(binding) = bindings.get(area_entity) else {
-            continue;
-        };
-
+    if click.button != PointerButton::Primary {
+        return;
+    }
+    let Ok((tab, tab_child_of)) = tab_query.get(click.event_target()) else {
+        return;
+    };
+    // Walk: tab -> tab_row -> tab_bar -> area
+    let Ok(row_parent) = parent_query.get(tab_child_of.parent()) else {
+        return;
+    };
+    let Ok(bar_parent) = parent_query.get(row_parent.parent()) else {
+        return;
+    };
+    if let Ok(binding) = bindings.get(bar_parent.parent()) {
         tree.set_active(binding.0, tab.tab_id);
     }
 }

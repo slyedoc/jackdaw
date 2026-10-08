@@ -38,65 +38,9 @@ use crate::{
 use bevy_window_chrome::CaptionFont;
 use bevy_window_chrome::{WindowChromeTheme, spawn_window_shell};
 
-/// Discriminator for the header tab kinds the editor knows how to host.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-pub enum TabKind {
-    /// The live scene being edited. There's exactly one Scene tab.
-    #[default]
-    Scene,
-}
-
-impl TabKind {
-    /// Human-readable label shown on the tab strip.
-    pub fn label(self) -> &'static str {
-        match self {
-            TabKind::Scene => "Main scene",
-        }
-    }
-
-    /// Colored accent stripe drawn at the left edge of the tab.
-    pub fn accent(self) -> Color {
-        match self {
-            TabKind::Scene => tokens::DOC_TAB_SCENE_ACCENT,
-        }
-    }
-
-    /// Icon glyph rendered in the tab header.
-    pub fn icon(self) -> Icon {
-        match self {
-            TabKind::Scene => Icon::File,
-        }
-    }
-}
-
-/// Layout preset for the Scene document tab.
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum SceneViewPreset {
-    #[default]
-    Scene,
-}
-
-/// The tab the editor is currently showing.
-#[derive(Resource, Default, Clone, Copy)]
-pub struct ActiveDocument {
-    pub kind: TabKind,
-}
-
-/// Marker on the tab strip row container so the tab styling system can
-/// find its children.
+/// The host of the dock tree: the editor's main area.
 #[derive(Component)]
-pub struct DocumentTabStrip;
-
-/// Marker on an individual document tab button, tagged with the
-/// `TabKind` it activates when clicked.
-#[derive(Component)]
-pub struct DocumentTabButton(pub TabKind);
-
-/// Marker on a document content container. The per-frame
-/// `update_active_document_display` system toggles `Node::display` on
-/// these so only the matching-kind container is visible.
-#[derive(Component)]
-pub struct DocumentRoot(pub TabKind);
+pub struct DocumentRoot;
 
 /// Marker on the center column container: the hook for systems that want
 /// to find the main viewport-plus-bottom-panels area.
@@ -119,7 +63,7 @@ fn spawn_editor_main_area(parent: &mut ChildSpawnerCommands) {
     // bottom) | right) is built in `init_layout` from registered
     // windows; the user can drag panels anywhere within it.
     parent.spawn((
-        DocumentRoot(TabKind::Scene),
+        DocumentRoot,
         EditorEntity,
         // Sized by the window, never by what the panels hold.
         Node {
@@ -762,69 +706,6 @@ pub fn update_toolbar_button_variants(
         };
         if *variant != target {
             *variant = target;
-        }
-    }
-}
-
-/// Toggle document-root visibility when the active tab changes.
-pub fn update_active_document_display(
-    active: Res<ActiveDocument>,
-    mut roots: Query<(&DocumentRoot, &mut Node)>,
-) {
-    if !active.is_changed() {
-        return;
-    }
-    for (root, mut node) in &mut roots {
-        node.display = if root.0 == active.kind {
-            Display::Flex
-        } else {
-            Display::None
-        };
-    }
-}
-
-/// Refresh tab-strip styling. Active tab gets its bg + border; inactive
-/// tabs go transparent.
-pub fn update_tab_strip_highlights(
-    active: Res<ActiveDocument>,
-    mut tabs: Query<(
-        &DocumentTabButton,
-        &mut BackgroundColor,
-        &mut BorderColor,
-        &Children,
-    )>,
-    mut texts: Query<&mut TextColor>,
-) {
-    if !active.is_changed() {
-        return;
-    }
-    for (tab, mut tab_bg, mut tab_border, children) in &mut tabs {
-        let is_active = tab.0 == active.kind;
-
-        tab_bg.0 = if is_active {
-            tokens::DOC_TAB_ACTIVE_BG
-        } else {
-            Color::NONE
-        };
-        *tab_border = BorderColor::all(if is_active {
-            tokens::DOC_TAB_ACTIVE_BORDER
-        } else {
-            Color::NONE
-        });
-
-        let label_color = if is_active {
-            tokens::DOC_TAB_ACTIVE_LABEL
-        } else {
-            tokens::DOC_TAB_INACTIVE_LABEL
-        };
-
-        // First child is the accent strip; skip it (its color is
-        // type-fixed). Second and third children are the icon and
-        // label text; refresh their colors.
-        for child in children.iter().skip(1) {
-            if let Ok(mut tc) = texts.get_mut(child) {
-                tc.0 = label_color;
-            }
         }
     }
 }

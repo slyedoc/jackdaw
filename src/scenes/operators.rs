@@ -365,11 +365,7 @@ pub fn scene_open_system(world: &mut World, path: &std::path::Path) {
     crate::scenes::external_watch::note_known_content(world, &canonical, &file.bytes);
 
     let mut tab = SceneTab::new_untitled(0);
-    tab.kind = if file.wrapped {
-        crate::scenes::TabKind::Scene
-    } else {
-        crate::scenes::TabKind::Prefab
-    };
+    tab.root_file = !file.wrapped;
     tab.path = Some(canonical.clone());
     tab.display_name = canonical
         .file_stem()
@@ -395,6 +391,14 @@ pub fn scene_close(_: In<OperatorParameters>, mut commands: Commands) -> Operato
 /// and a neighbor tab is activated. If the target is inactive, just
 /// remove it from the list.
 pub fn scene_close_system(world: &mut World, target: usize) {
+    if world
+        .resource::<Scenes>()
+        .tabs
+        .get(target)
+        .is_some_and(SceneTab::is_game)
+    {
+        return;
+    }
     let tab_count = world.resource::<Scenes>().tabs.len();
     if tab_count <= 1 {
         info!("scene.close: cannot close the last open tab");
@@ -430,6 +434,14 @@ pub fn scene_close_system(world: &mut World, target: usize) {
 /// the dialog's Save/Discard branches (after the user has confirmed).
 /// Does not check the dirty flag.
 pub fn scene_close_system_unprompted(world: &mut World, target: usize) {
+    if world
+        .resource::<Scenes>()
+        .tabs
+        .get(target)
+        .is_some_and(SceneTab::is_game)
+    {
+        return;
+    }
     let tab_count = world.resource::<Scenes>().tabs.len();
     if tab_count <= 1 {
         info!("scene.close: cannot close the last open tab");

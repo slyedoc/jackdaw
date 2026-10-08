@@ -16,7 +16,7 @@ use jackdaw_feathers::dialog::{DialogActionEvent, DialogVariant, EditorDialog, O
 use jackdaw_feathers::icons::EditorFont;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-use crate::scenes::{Scenes, TabContent, TabKind};
+use crate::scenes::{Scenes, TabContent};
 
 pub struct ExternalSceneWatchPlugin;
 
@@ -67,8 +67,6 @@ pub struct ExternalSceneChange {
     pub tab_display_name: String,
     /// Whether that tab has edits a reload would throw away.
     pub tab_dirty: bool,
-    /// Whether the tab holding it is a prefab tab, which changes the wording.
-    pub tab_is_prefab: bool,
     /// Hash of the bytes this prompt was raised for. Answering records these
     /// rather than whatever is on disk by then.
     hash: u64,
@@ -80,13 +78,9 @@ impl ExternalSceneChange {
         file_name_of(&self.path)
     }
 
-    /// Dialog title, naming the kind of document the tab holds.
+    /// Dialog title.
     pub fn title(&self) -> &'static str {
-        if self.tab_is_prefab {
-            "Prefab Changed on Disk"
-        } else {
-            "Scene Changed on Disk"
-        }
+        "File Changed on Disk"
     }
 
     /// Label on the button that takes what is on disk.
@@ -316,11 +310,7 @@ fn adopt_reloaded_document(world: &mut World, index: usize) {
     let Some(tab) = scenes.tabs.get_mut(index) else {
         return;
     };
-    tab.kind = if root_file {
-        TabKind::Prefab
-    } else {
-        TabKind::Scene
-    };
+    tab.root_file = root_file;
     tab.content = TabContent::Live;
     tab.dirty = false;
     // The load cleared the undo stacks, so the tab's baseline is zero.
@@ -344,27 +334,22 @@ struct OpenSceneTab {
     index: usize,
     display_name: String,
     dirty: bool,
-    is_prefab: bool,
 }
 
-/// Every open tab this watcher covers, prefab tabs included;
-/// `crate::prefab::watcher` skips any path an open prefab tab holds so the
-/// change is not handled twice.
+/// Every open document tab.
 fn open_scene_tabs(scenes: &Scenes) -> Vec<OpenSceneTab> {
     scenes
         .tabs
         .iter()
         .enumerate()
-        .filter(|(_, tab)| matches!(tab.kind, TabKind::Scene | TabKind::Prefab))
+        .filter(|(_, tab)| !tab.is_game())
         .filter_map(|(index, tab)| {
             let path = canonical(tab.path.as_ref()?);
-            let is_prefab = matches!(tab.kind, TabKind::Prefab);
             path.is_file().then(|| OpenSceneTab {
                 path,
                 index,
                 display_name: tab.display_name.clone(),
                 dirty: tab.dirty,
-                is_prefab,
             })
         })
         .collect()
@@ -500,7 +485,6 @@ fn drain_changes(world: &mut World) {
                 tab_index: tab.index,
                 tab_display_name: tab.display_name,
                 tab_dirty: tab.dirty,
-                tab_is_prefab: tab.is_prefab,
                 hash,
             });
     }
@@ -522,7 +506,6 @@ fn sync_prompts_with_tabs(scenes: Res<Scenes>, mut changes: ResMut<ExternalScene
             tab_index: tab.index,
             tab_display_name: tab.display_name.clone(),
             tab_dirty: tab.dirty,
-            tab_is_prefab: tab.is_prefab,
             ..prompt.clone()
         });
     }

@@ -568,7 +568,7 @@ fn a_write_during_the_prompt_is_asked_about_after_keep() {
 /// An outside edit can turn a scene file into a root file, and a root file
 /// left in a Scene tab would be saved back as a plain scene.
 #[test]
-fn a_reload_that_brings_a_root_file_retypes_the_tab() {
+fn a_reload_that_brings_a_root_file_saves_as_one() {
     const PREFAB: &str = "#Rock\nbevy_transform::components::transform::Transform\n";
 
     let tmp = tempfile::tempdir().unwrap();
@@ -578,10 +578,7 @@ fn a_reload_that_brings_a_root_file_retypes_the_tab() {
     let mut app = make_app();
     open_and_settle(&mut app, &scene);
     assert!(
-        matches!(
-            app.world().resource::<jackdaw::scenes::Scenes>().tabs[0].kind,
-            jackdaw::scenes::TabKind::Scene
-        ),
+        !app.world().resource::<jackdaw::scenes::Scenes>().tabs[0].root_file,
         "it opened as a scene, or this proves nothing",
     );
 
@@ -591,8 +588,8 @@ fn a_reload_that_brings_a_root_file_retypes_the_tab() {
 
     let scenes = app.world().resource::<jackdaw::scenes::Scenes>();
     assert!(
-        matches!(scenes.tabs[0].kind, jackdaw::scenes::TabKind::Prefab),
-        "what came off disk decides what the tab is",
+        scenes.tabs[0].root_file,
+        "what came off disk decides how the tab saves",
     );
 }
 
@@ -610,11 +607,8 @@ fn an_outside_edit_to_an_open_root_file_raises_a_prompt() {
     let mut app = make_app();
     open_and_settle(&mut app, &prefab);
     assert!(
-        matches!(
-            app.world().resource::<jackdaw::scenes::Scenes>().tabs[0].kind,
-            jackdaw::scenes::TabKind::Prefab
-        ),
-        "it opened as a prefab tab, or this proves nothing",
+        app.world().resource::<jackdaw::scenes::Scenes>().tabs[0].root_file,
+        "it opened as a root file, or this proves nothing",
     );
 
     external_write(&prefab, BOULDER);
@@ -622,15 +616,6 @@ fn an_outside_edit_to_an_open_root_file_raises_a_prompt() {
     assert!(
         pump_until(&mut app, |app| prompt_names(app, &prefab)),
         "an outside edit to an open prefab must surface as a prompt",
-    );
-    assert!(
-        prompts(&app)[0].tab_is_prefab,
-        "and the prompt knows it is asking about a prefab",
-    );
-    assert_eq!(
-        prompts(&app)[0].title(),
-        "Prefab Changed on Disk",
-        "so the dialog names what actually changed",
     );
     assert!(
         spawned_names(&mut app).iter().any(|n| n == "Rock"),
