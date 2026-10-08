@@ -321,6 +321,55 @@ pub(crate) fn build_inspector_displays(
         ));
     }
 
+    // An instance is placement only; its contents are its base's, edited there.
+    let instance_of = entity_ref
+        .get::<bevy::scene::SceneBase>()
+        .map(|base| base.0.clone());
+    if let Some(base) = &instance_of {
+        commands.spawn((
+            ComponentDisplay,
+            Node {
+                padding: UiRect::axes(Val::Px(tokens::SPACING_MD), Val::Px(tokens::SPACING_SM)),
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..Default::default()
+            },
+            BackgroundColor(tokens::SELECTED_BG),
+            ChildOf(inspector_entity),
+            children![
+                (
+                    Text::new(format!("Instance of {base}")),
+                    TextFont {
+                        font: editor_font.0.clone().into(),
+                        font_size: tokens::TEXT_SIZE_SM,
+                        ..Default::default()
+                    },
+                    TextColor(tokens::TEXT_PRIMARY),
+                ),
+                (
+                    Node {
+                        padding: UiRect::axes(Val::Px(8.0), Val::Px(2.0)),
+                        ..Default::default()
+                    },
+                    BackgroundColor(tokens::HOVER_BG),
+                    EditSourceButton(source_entity),
+                    children![(
+                        Text::new("Edit Source"),
+                        TextFont {
+                            font: editor_font.0.clone().into(),
+                            font_size: tokens::TEXT_SIZE_SM,
+                            ..Default::default()
+                        },
+                        TextColor(tokens::TEXT_PRIMARY),
+                        Pickable::IGNORE,
+                    )],
+                ),
+            ],
+        ));
+    }
+
     let registry = type_registry.read();
 
     let mut comp_list: Vec<ListedComponent> = archetype
@@ -337,6 +386,9 @@ pub(crate) fn build_inspector_displays(
                 let full_path = table.path();
                 let chrome = type_metadata.resolve(full_path, &registry, project_types);
                 if !offered_as_card(full_path, &chrome) {
+                    return None;
+                }
+                if instance_of.is_some() && !crate::instances::PLACEMENT.contains(&full_path) {
                     return None;
                 }
                 // AST filter: hide Bevy-internal components that
@@ -1336,4 +1388,21 @@ mod tests {
             assert!(!hidden_by_namespace(path), "{path} is hidden");
         }
     }
+}
+
+/// The inspector's Edit Source button on an instance.
+#[derive(Component)]
+pub(crate) struct EditSourceButton(Entity);
+
+pub(crate) fn edit_source_on_click(
+    mut click: On<PointerClick>,
+    buttons: Query<&EditSourceButton>,
+    mut commands: Commands,
+) {
+    let Ok(button) = buttons.get(click.entity) else {
+        return;
+    };
+    click.propagate(false);
+    let instance = button.0;
+    commands.queue(move |world: &mut World| crate::instances::edit_source(world, instance));
 }

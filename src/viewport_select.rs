@@ -173,6 +173,9 @@ pub(crate) fn handle_viewport_click(
     // would otherwise fall through to `selection.clear()` and strip
     // `Selected` from the just-spawned brush.
     mut was_drawing: Local<bool>,
+    time: Res<Time>,
+    // The last click's pick and when, so a second on the same thing opens its source.
+    mut last_click: Local<Option<(Entity, f64)>>,
 ) {
     let drawing_now = guards.draw_state.active.is_some();
     let just_finished_draw = *was_drawing && !drawing_now;
@@ -220,6 +223,9 @@ pub(crate) fn handle_viewport_click(
 
     // Try mesh raycast first for accurate geometry-based selection
     let mut best_entity = None;
+    // What the ray hit first, before resolving to a selectable ancestor: inside an instance,
+    // that is the entity Edit Source selects in its base.
+    let mut first_hit = None;
 
     if camera.viewport_to_world(cam_tf, local_cursor).is_ok() {
         // Filter out editor-internal mesh entities (material preview
@@ -233,6 +239,7 @@ pub(crate) fn handle_viewport_click(
             .filtered(&editor_filter)
             .map(|hit| hit.entity)
             .collect();
+        first_hit = hits.first().copied();
 
         for hit_entity in &hits {
             if let Some(ancestor) = find_selectable_ancestor(
@@ -284,6 +291,21 @@ pub(crate) fn handle_viewport_click(
                 }
             }
         }
+    }
+
+    let now = time.elapsed_secs_f64();
+    let doubled = best_entity.is_some_and(|picked| {
+        matches!(*last_click, Some((at, then))
+            if at == picked && now - then < crate::hierarchy::DOUBLE_CLICK_SECS)
+    });
+    *last_click = (!doubled).then_some(()).and(best_entity.map(|e| (e, now)));
+    if doubled && let Some(picked) = first_hit.or(best_entity) {
+        commands.queue(move |world: &mut World| {
+            if crate::instances::document_instance_of(world, picked).is_some() {
+                crate::instances::edit_source(world, picked);
+            }
+        });
+        return;
     }
 
     if let Some(entity) = best_entity {

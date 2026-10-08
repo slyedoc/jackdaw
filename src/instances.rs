@@ -1,9 +1,11 @@
 //! Instances: an entity that inherits a `.bsn` file (`:"characters/priest.bsn"` in the file it
 //! sits in), spawned by bevy's loader with the base's own entities under it.
 //!
-//! The base file is where its contents are edited; in a scene the instance root carries only
-//! what differs (a Transform, say), which is all the writer saves. The base's own descendants are
-//! read-only here.
+//! The base file is where its contents are edited; in a scene an instance is placement only (its
+//! Transform, Name and Visibility). Nothing inside an instance can be selected: a pick or a row
+//! inside one selects the instance, and Edit Source (double-click, or the inspector's button)
+//! opens the base in its own tab with the picked entity selected. Saving the base reloads it,
+//! and every tab's instances of it respawn the next time that tab is in front.
 
 use std::path::Path;
 
@@ -163,8 +165,257 @@ fn place_pending_instances(world: &mut World) {
 pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<PendingInstances>()
         .init_resource::<HeldBases>()
-        .add_systems(Update, place_pending_instances)
+        .init_resource::<BaseGenerations>()
+        .init_resource::<PendingSourceSelect>()
+        .add_systems(
+            Update,
+            (
+                place_pending_instances,
+                select_instances_not_their_insides,
+                track_reloads,
+                refresh_changed_instances,
+                select_in_source,
+            ),
+        )
         .add_observer(hold_base);
+}
+
+/// The components an instance keeps of its own: where it is, what it is called, whether it shows.
+pub const PLACEMENT: [&str; 3] = [
+    "bevy_transform::components::transform::Transform",
+    "bevy_ecs::name::Name",
+    "bevy_camera::visibility::Visibility",
+];
+
+/// The instance `entity` belongs to in the open document: the outermost instance root among
+/// itself and its ancestors. An instance nested in a base is part of that base.
+pub fn document_instance_of(world: &World, entity: Entity) -> Option<Entity> {
+    let mut found = None;
+    let mut current = Some(entity);
+    while let Some(at) = current {
+        if world.get::<SceneBase>(at).is_some() {
+            found = Some(at);
+        }
+        current = world.get::<ChildOf>(at).map(ChildOf::parent);
+    }
+    found
+}
+
+/// Whether `entity` is an instance placed in the open document (not one inside a base).
+pub fn is_document_instance(world: &World, entity: Entity) -> bool {
+    world.get::<SceneBase>(entity).is_some() && !is_inherited(world, entity)
+}
+
+/// The names from `instance` (exclusive) down to `entity`, which is how its base names it.
+fn path_below(world: &World, instance: Entity, entity: Entity) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut current = entity;
+    while current != instance {
+        names.push(
+            world
+                .get::<Name>(current)
+                .map(|n| n.as_str().to_string())
+                .unwrap_or_default(),
+        );
+        match world.get::<ChildOf>(current) {
+            Some(parent) => current = parent.parent(),
+            None => return Vec::new(),
+        }
+    }
+    names.reverse();
+    names
+}
+
+/// A selection reaching inside an instance becomes the instance: its insides are its base's.
+fn select_instances_not_their_insides(world: &mut World) {
+    let selected = world.resource::<crate::selection::Selection>().entities.clone();
+    if !selected.iter().any(|&e| is_inherited(world, e)) {
+        return;
+    }
+    let mut lifted: Vec<Entity> = Vec::new();
+    for entity in selected {
+        let target = if is_inherited(world, entity) {
+            document_instance_of(world, entity).unwrap_or(entity)
+        } else {
+            entity
+        };
+        if !lifted.contains(&target) {
+            lifted.push(target);
+        }
+    }
+    crate::selection::select_many(world, &lifted);
+}
+
+/// Edit Source on `entity`: open its instance's base in a tab and select what was picked there.
+pub fn edit_source(world: &mut World, entity: Entity) {
+    let Some(instance) = document_instance_of(world, entity) else {
+        return;
+    };
+    let path = path_below(world, instance, entity);
+    let Some(base) = base_of(world, instance) else {
+        return;
+    };
+    open_base(world, instance);
+    world.resource_mut::<PendingSourceSelect>().0 = Some((base, path, 0));
+}
+
+/// An entity to select in a source tab once it has spawned: the base, the names down to it, and
+/// frames waited.
+#[derive(Resource, Default)]
+struct PendingSourceSelect(Option<(String, Vec<String>, u32)>);
+
+fn select_in_source(world: &mut World) {
+    let Some((base, path, frames)) = world.resource::<PendingSourceSelect>().0.clone() else {
+        return;
+    };
+    let active = world
+        .get_resource::<crate::scenes::Scenes>()
+        .and_then(|s| s.tabs.get(s.active))
+        .and_then(|t| t.path.clone());
+    let assets = world
+        .get_resource::<crate::project::ProjectRoot>()
+        .map(crate::project::ProjectRoot::assets_dir);
+    let in_front = active
+        .zip(assets)
+        .is_some_and(|(tab, assets)| asset_path_of(&assets, &tab) == base);
+    if frames > 120 {
+        world.resource_mut::<PendingSourceSelect>().0 = None;
+        return;
+    }
+    let found = in_front.then(|| find_in_document(world, &path)).flatten();
+    match found {
+        Some(entity) => {
+            crate::selection::select_only(world, entity);
+            world.resource_mut::<PendingSourceSelect>().0 = None;
+        }
+        None => world.resource_mut::<PendingSourceSelect>().0 = Some((base, path, frames + 1)),
+    }
+}
+
+/// The entity at `path` in the open document: under its one root (a root-entity file), or from
+/// its top-level entities (a scene).
+fn find_in_document(world: &mut World, path: &[String]) -> Option<Entity> {
+    let roots = crate::scene_io::scene_roots(world);
+    let descend = |world: &World, from: Vec<Entity>, names: &[String]| {
+        let mut level = from;
+        let mut found = None;
+        for name in names {
+            let next = level
+                .iter()
+                .copied()
+                .find(|&e| world.get::<Name>(e).is_some_and(|n| n.as_str() == name))?;
+            found = Some(next);
+            level = world
+                .get::<Children>(next)
+                .map(|c| c.iter().collect())
+                .unwrap_or_default();
+        }
+        found
+    };
+    if path.is_empty() {
+        return (roots.len() == 1).then(|| roots[0]);
+    }
+    if let [root] = roots[..] {
+        let below: Vec<Entity> = world
+            .get::<Children>(root)
+            .map(|c| c.iter().collect())
+            .unwrap_or_default();
+        if let Some(found) = descend(world, below, path) {
+            return Some(found);
+        }
+    }
+    descend(world, roots, path)
+}
+
+/// How many times each base was saved this session, and how many of those saves its reload has
+/// brought in: an instance behind the reloaded count respawns.
+#[derive(Resource, Default)]
+struct BaseGenerations {
+    saved: bevy::platform::collections::HashMap<String, u32>,
+    reloaded: bevy::platform::collections::HashMap<String, u32>,
+}
+
+/// A held base was reloaded: its instances may catch up to the saves it carries. A reload
+/// announces itself as `Modified`; a `LoadedWithDependencies` right after a save is the old asset.
+fn track_reloads(
+    mut events: MessageReader<AssetEvent<ScenePatch>>,
+    held: Res<HeldBases>,
+    mut generations: ResMut<BaseGenerations>,
+) {
+    for event in events.read() {
+        let AssetEvent::Modified { id } = event else {
+            continue;
+        };
+        let Some(base) = held.0.iter().find(|(_, h)| h.id() == *id).map(|(b, _)| b.clone())
+        else {
+            continue;
+        };
+        if let Some(&saved) = generations.saved.get(&base) {
+            generations.reloaded.insert(base, saved);
+        }
+    }
+}
+
+/// The generation of its base an instance was spawned from.
+#[derive(Component, Clone, Copy)]
+struct SeenGeneration(u32);
+
+/// A file was saved: reload it as a base, and let the instances of it catch up.
+pub fn note_saved(world: &mut World, file: &Path) {
+    let Some(assets) = world
+        .get_resource::<crate::project::ProjectRoot>()
+        .map(crate::project::ProjectRoot::assets_dir)
+    else {
+        return;
+    };
+    let base = asset_path_of(&assets, file);
+    if !world.resource::<HeldBases>().0.contains_key(&base) {
+        return; // nothing inherits it
+    }
+    world.resource::<AssetServer>().reload(base.clone());
+    *world
+        .resource_mut::<BaseGenerations>()
+        .saved
+        .entry(base)
+        .or_default() += 1;
+}
+
+/// Respawn the open document's instances whose base was saved since they spawned, once the
+/// reloaded base is in.
+fn refresh_changed_instances(world: &mut World) {
+    if world.resource::<BaseGenerations>().saved.is_empty() {
+        return;
+    }
+    let mut instances = world.query_filtered::<(Entity, &SceneBase, Option<&SeenGeneration>), With<SceneEntity>>();
+    let mut stale = Vec::new();
+    let mut unseen = Vec::new();
+    for (entity, base, seen) in instances.iter(world) {
+        let current = world
+            .resource::<BaseGenerations>()
+            .reloaded
+            .get(&base.0)
+            .copied()
+            .unwrap_or(0);
+        match seen {
+            Some(seen) if seen.0 < current => stale.push((entity, base.0.clone(), current)),
+            Some(_) => {}
+            None => unseen.push((entity, current)),
+        }
+    }
+    for (entity, generation) in unseen {
+        world.entity_mut(entity).insert(SeenGeneration(generation));
+    }
+    for (instance, base, generation) in stale {
+        if is_inherited(world, instance) {
+            continue;
+        }
+        match revert_instance(world, instance) {
+            Ok(fresh) => {
+                world.entity_mut(fresh).insert(SeenGeneration(generation));
+            }
+            Err(err) => warn!("refresh {base}: {err}"),
+        }
+    }
 }
 
 /// The bases instances inherit, kept loaded: a save diffs each instance against its base.

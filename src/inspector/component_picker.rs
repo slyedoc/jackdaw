@@ -217,8 +217,13 @@ pub(crate) fn on_add_component_button_click(
     denylist: Res<PickerDenylist>,
     project_types: Res<crate::project_types::ProjectTypes>,
     type_metadata: Res<crate::type_metadata::TypeMetadata>,
+    instances: Query<(), With<bevy::scene::SceneBase>>,
 ) {
     if add_buttons.get(event.entity).is_err() {
+        return;
+    }
+    // An instance is placement only: components go on its source.
+    if selection.primary().is_some_and(|e| instances.contains(e)) {
         return;
     }
 

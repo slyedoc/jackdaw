@@ -95,6 +95,7 @@ impl Plugin for InspectorPlugin {
             .add_plugins(component_tooltip::plugin)
             .add_plugins(file_card::plugin)
             .add_plugins(type_metadata_pane::plugin)
+            .add_observer(component_display::edit_source_on_click)
             .add_observer(component_display::on_inspector_dirty)
             .add_observer(material_card_routing::on_refresh_inspector_card_body)
             .add_observer(component_picker::on_add_component_button_click)

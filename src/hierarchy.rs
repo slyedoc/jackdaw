@@ -1567,10 +1567,18 @@ fn on_tree_row_clicked(
     let doubled = matches!(*last_click, Some((entity, at))
         if entity == event.source_entity && now - at < DOUBLE_CLICK_SECS);
     *last_click = (!doubled).then_some((event.source_entity, now));
-    if doubled && instances.contains(event.source_entity) {
-        let instance = event.source_entity;
-        commands.queue(move |world: &mut World| crate::instances::open_base(world, instance));
-        return;
+    if doubled {
+        // On an instance or anything inside one: edit its source, with that entity picked.
+        let picked = event.source_entity;
+        let is_instance = instances.contains(picked);
+        commands.queue(move |world: &mut World| {
+            if is_instance || crate::instances::is_inherited(world, picked) {
+                crate::instances::edit_source(world, picked);
+            }
+        });
+        if is_instance {
+            return;
+        }
     }
 
     let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);

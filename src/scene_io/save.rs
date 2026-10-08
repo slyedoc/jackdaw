@@ -113,7 +113,12 @@ pub fn save_scene_with_outcome(world: &mut World) -> SaveOutcome {
     }
 
     match save_scene_inner(world) {
-        Ok(()) => SaveOutcome::Saved,
+        Ok(()) => {
+            if let Some(path) = world.resource::<SceneFilePath>().path.clone() {
+                crate::instances::note_saved(world, std::path::Path::new(&path));
+            }
+            SaveOutcome::Saved
+        }
         Err(err) => {
             error!("scene save failed: {err}");
             crate::status_bar::notify_error(world, format!("Not saved: {err}"));
@@ -469,14 +474,6 @@ pub fn scene_text(world: &mut World) -> Result<String, String> {
             .get::<AuthoredComponents>(environment)
             .is_some_and(|authored| !authored.0.is_empty())
     });
-    // The root names itself an environment, so a load knows the file is an environment scene.
-    if let Some(environment) = environment
-        && let Some(mut authored) = world.get_mut::<AuthoredComponents>(environment)
-    {
-        authored
-            .0
-            .insert(std::any::TypeId::of::<bevy_aurora::environment::Environment>());
-    }
     if environment.is_none() && active_tab_is_root_file(world) && roots.len() == 1 {
         return bevy::bsn_asset::write_scene_text(world, roots[0], &settings)
             .map_err(|err| err.to_string());
