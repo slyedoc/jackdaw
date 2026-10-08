@@ -768,7 +768,7 @@ fn a_routed_ui_scene_saves_without_its_routing() {
         app.world().get::<bevy::ui::UiTargetCamera>(root).is_some(),
         "the root is routed before the save",
     );
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
 
     let text = jackdaw::scene_io::emit_bsn_scene_with_inline_assets(
         app.world_mut(),
@@ -1304,7 +1304,7 @@ fn scroll_up(app: &mut App) {
 }
 
 /// Run the 3D grid's scroll handler. It is scheduled inside
-/// `EditorInteractionSystems`, which never runs in `AppState::ProjectSelect`.
+/// `EditorInteractionSystems`, which never runs in `AppState::Off`.
 fn step_the_world_grid(app: &mut App) {
     app.world_mut()
         .run_system_cached(jackdaw::snapping::handle_grid_size_scroll)
@@ -1395,7 +1395,7 @@ fn the_mode_control_is_a_radio_group_and_checks_the_current_mode() {
     );
 }
 
-fn mode_app() -> App {
+fn mode_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     app.init_resource::<WidgetEvents>();
     app
@@ -1409,7 +1409,7 @@ fn mode_panel(app: &mut App) -> Entity {
         .spawn((
             jackdaw::EditorEntity,
             // A docked panel is the topmost thing under the cursor:
-            // `AppState::ProjectSelect`'s screen would otherwise take the hover.
+            // `AppState::Off`'s screen would otherwise take the hover.
             GlobalZIndex(PANEL_ON_TOP),
             Node {
                 position_type: PositionType::Absolute,
@@ -2175,7 +2175,7 @@ fn a_ui_scene_opened_before_the_workspace_exists_is_still_fronted_and_framed() {
 #[test]
 fn a_focus_asked_for_by_a_tab_the_user_left_does_not_front_the_panel() {
     use jackdaw::scenes::swap::swap_active_tab;
-    use jackdaw::scenes::{SceneTab, Scenes, TabContent};
+    use jackdaw::scenes::{SceneTab, Scenes};
     use jackdaw::viewport_host::PendingViewportFocus;
 
     let mut app = util::editor_test_app();
@@ -2189,16 +2189,8 @@ fn a_focus_asked_for_by_a_tab_the_user_left_does_not_front_the_panel() {
         scenes.tabs.push(SceneTab::new_untitled(2));
         // Tab 0 is the UI scene restore opens first; tab 1 is the
         // ordinary scene it opens second and leaves in front.
-        scenes.tabs[0].content = TabContent::Scene(Some(Box::new(
-            jackdaw_bsn::parse_bsn_text("#Overlay\njackdaw_scene_types::UiSceneRoot\n")
-                .expect("the fixture parses"),
-        )));
-        scenes.tabs[1].content = TabContent::Scene(Some(Box::new(
-            jackdaw_bsn::parse_bsn_text(
-                "#World\nbevy_transform::components::transform::Transform\n",
-            )
-            .expect("the fixture parses"),
-        )));
+        scenes.tabs[0].path = Some(scene_file("#Overlay\njackdaw_scene_types::UiSceneRoot\n"));
+        scenes.tabs[1].path = Some(scene_file("#World\nbevy_transform::components::transform::Transform\n"));
         scenes.active = 1;
     }
 
@@ -2324,7 +2316,7 @@ fn selecting_by_name_needs_exactly_one_match() {
 /// An editor app with the viewport panel's extension on. The startup resolver
 /// only enables what the developer's on-disk extensions.json lists, so an op
 /// test that skips this passes or fails by the machine it runs on.
-fn op_app() -> App {
+fn op_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     jackdaw_api_internal::lifecycle::enable_extension(
         app.world_mut(),
@@ -2584,7 +2576,7 @@ fn zoom_text(app: &mut App, panel: Entity) -> String {
 #[test]
 fn a_ui_tab_that_never_got_framed_is_framed_when_a_panel_arrives() {
     use jackdaw::scenes::swap::swap_active_tab;
-    use jackdaw::scenes::{SceneTab, Scenes, TabContent};
+    use jackdaw::scenes::{SceneTab, Scenes};
 
     let mut app = util::editor_test_app();
     {
@@ -2595,10 +2587,7 @@ fn a_ui_tab_that_never_got_framed_is_framed_when_a_panel_arrives() {
         scenes.active = 0;
         // Tab 1 is the UI scene, carried as a document so activating it takes
         // the real spawn-and-frame path.
-        scenes.tabs[1].content = TabContent::Scene(Some(Box::new(
-            jackdaw_bsn::parse_bsn_text("#Overlay\njackdaw_scene_types::UiSceneRoot\n")
-                .expect("the fixture parses"),
-        )));
+        scenes.tabs[1].path = Some(scene_file("#Overlay\njackdaw_scene_types::UiSceneRoot\n"));
     }
 
     // Opened with no 2D panel docked: the fit this activation asks for is lost.
@@ -2908,4 +2897,16 @@ fn press(app: &mut App, clause: &str) {
         }
     }
     settle(app);
+}
+
+/// A scene file holding `text`, for a tab to open from.
+fn scene_file(text: &str) -> std::path::PathBuf {
+    let (_, path) = tempfile::Builder::new()
+        .suffix(".bsn")
+        .tempfile()
+        .expect("a temp file")
+        .keep()
+        .expect("the temp file is kept");
+    std::fs::write(&path, text).expect("the scene is written");
+    path
 }

@@ -31,8 +31,8 @@ pub use mesh_rebuild::{DEFAULT_BRUSH_MATERIAL, evaluate_brush_geometry};
 pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
 pub use types::{
     Brush, BrushFaceData, BrushPlane, BrushTopology, CustomProperties, DerivedFaceMesh,
-    DetailLayer, DetailMesh, DetailPresser, GltfSource, InstanceMaterialOverrides,
-    MaterialOverrides, MaterialSlot, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude, PrefabBaseline,
+    DetailLayer, DetailMesh, DetailPresser, GltfSource, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude,
+    PrefabBaseline,
     PropertyValue, ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain, TerrainChannel,
     TerrainChannelElement, TerrainNavmesh, TerrainPaletteEntry, TerrainQuantization, Wind,
 };
@@ -79,9 +79,6 @@ impl Plugin for SceneTypesPlugin {
             .register_type::<PropertyValue>()
             .register_type::<SceneNodeId>()
             .register_type::<GltfSource>()
-            .register_type::<MaterialOverrides>()
-            .register_type::<MaterialSlot>()
-            .register_type::<InstanceMaterialOverrides>()
             .register_type::<Terrain>()
             .register_type::<TerrainChannel>()
             .register_type::<TerrainChannelElement>()

@@ -36,10 +36,6 @@ pub fn last_new_project_location_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("last_new_project_location"))
 }
 
-pub fn keybinds_path() -> Option<std::path::PathBuf> {
-    config_dir().map(|d| d.join("keybinds.json"))
-}
-
 /// Where the user's per-operator keymap overrides live.
 pub fn keymap_path() -> Option<std::path::PathBuf> {
     config_dir().map(|d| d.join("keymap.json"))

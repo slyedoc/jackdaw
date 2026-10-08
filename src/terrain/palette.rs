@@ -39,7 +39,7 @@ use crate::selection::Selection;
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        toggle_palette_visibility.run_if(in_state(crate::AppState::Editor)),
+        toggle_palette_visibility.run_if(crate::editor_active),
     )
     .add_observer(update_terrain_palette_highlights);
 }

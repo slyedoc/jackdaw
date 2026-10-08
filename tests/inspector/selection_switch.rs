@@ -90,7 +90,7 @@ fn select(app: &mut App, entity: Entity) {
 
 /// An editor with an inspector panel and two document entities, neither
 /// selected yet.
-fn app_with_two_entities(recorder: &Recorder) -> (App, Entity, Entity) {
+fn app_with_two_entities(recorder: &Recorder) -> (util::TestApp, Entity, Entity) {
     let mut app = util::editor_test_app();
     recorder.install(&mut app);
     app.world_mut()
@@ -111,7 +111,7 @@ fn app_with_two_entities(recorder: &Recorder) -> (App, Entity, Entity) {
                 },
             ))
             .id();
-        jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+        jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
         entity
     };
     let first = spawn_one("first", 1.0);

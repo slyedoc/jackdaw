@@ -262,3 +262,91 @@ pub fn has_legacy_interaction(world: &World, entity: Entity) -> bool {
             .any(|(_, info)| info.name().to_string().ends_with("::Interaction"))
     })
 }
+
+/// A UI camera on the primary window, for a test that clicks UI without the editor up: the
+/// editor spawns its own only on entering [`AppState::Editor`](jackdaw::AppState).
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn ui_camera(app: &mut App) -> Entity {
+    app.world_mut().spawn(Camera2d).id()
+}
+
+/// Bring the editor up, the way a host app does, and let its setup run.
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn enter_editor(app: &mut App) {
+    app.world_mut()
+        .resource_mut::<NextState<jackdaw::AppState>>()
+        .set(jackdaw::AppState::Editor);
+    app.update();
+    app.update();
+}
+
+/// The type paths of the components `entity` authors: what a save writes, as opposed to what
+/// required components and hooks add. Sorted.
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn authored_type_paths(world: &World, entity: Entity) -> Vec<String> {
+    let Some(authored) = world.get::<bevy::scene::AuthoredComponents>(entity) else {
+        return Vec::new();
+    };
+    let registry = world.resource::<AppTypeRegistry>().read();
+    let mut paths: Vec<String> = authored
+        .0
+        .iter()
+        .filter_map(|id| registry.get(*id))
+        .map(|registration| registration.type_info().type_path().to_string())
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// The inspector's leaf widget editing `field_path` of `type_path`; panics naming every field
+/// the inspector does show.
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn inspector_widget(app: &mut App, type_path: &str, field_path: &str) -> Entity {
+    if let Some(widget) = jackdaw::inspector::field_widget(app.world_mut(), type_path, field_path) {
+        return widget;
+    }
+    let widgets: Vec<Entity> = app
+        .world_mut()
+        .query_filtered::<Entity, With<bevy::feathers_inspector::InspectorBinding>>()
+        .iter(app.world())
+        .collect();
+    let shown: Vec<String> = widgets
+        .into_iter()
+        .filter_map(|widget| jackdaw::inspector::inspected_field(app.world(), widget))
+        .map(|(known, field)| format!("{known}: {field}"))
+        .collect();
+    panic!("no inspector widget writes `{type_path}: {field_path}`; it shows {shown:?}")
+}
+
+/// The inspector's button adding an item to a list field (the first, when several show).
+#[expect(clippy::allow_attributes, reason = "shared across test binaries")]
+#[allow(dead_code, reason = "shared across test binaries")]
+pub fn list_add_button(app: &mut App) -> Entity {
+    let captions: Vec<Entity> = app
+        .world_mut()
+        .query::<(Entity, &Text)>()
+        .iter(app.world())
+        .filter(|(_, text)| text.0 == "+ add")
+        .map(|(entity, _)| entity)
+        .collect();
+    captions
+        .into_iter()
+        .find_map(|caption| {
+            let mut at = caption;
+            loop {
+                if app
+                    .world()
+                    .get::<bevy::feathers::controls::FeathersButton>(at)
+                    .is_some()
+                {
+                    return Some(at);
+                }
+                at = app.world().get::<ChildOf>(at)?.parent();
+            }
+        })
+        .expect("the list field offers an add")
+}

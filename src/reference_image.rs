@@ -72,7 +72,7 @@ impl Plugin for ReferenceImagePlugin {
             .add_systems(
                 Update,
                 (maintain_reference_images, poll_reference_image_pick)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

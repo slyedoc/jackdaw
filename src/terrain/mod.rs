@@ -62,7 +62,7 @@ impl Plugin for TerrainPlugin {
                     .chain()
                     .before(jackdaw_terrain::render::ScatterSystems::Rebuild)
                     .before(jackdaw_terrain::render::DetailSystems::Rebuild)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_observer(scatter_data::hide_drawn_scatter)
             .add_observer(detail::hide_drawn_detail)
@@ -661,6 +661,7 @@ pub(crate) mod pointer_harness {
         let terrain_entity = app
             .world_mut()
             .spawn((
+                crate::scene_io::SceneEntity,
                 terrain,
                 TerrainDirtyChunks::default(),
                 GlobalTransform::IDENTITY,

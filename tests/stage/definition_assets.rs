@@ -57,7 +57,7 @@ fn item_path(tmp: &tempfile::TempDir, name: &str) -> PathBuf {
 }
 
 /// An editor with a project of its own and one definition type registered.
-fn editor_with_items() -> (App, tempfile::TempDir) {
+fn editor_with_items() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut app = util::editor_test_app();
     app.init_asset::<ItemDef>();
@@ -268,7 +268,7 @@ fn a_scene_entity_edit_still_lands_while_a_definition_is_open() {
         .world_mut()
         .spawn((Name::new("Target"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), node);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), node);
     app.update();
 
     call(
@@ -883,7 +883,7 @@ fn a_duplicate_is_written_beside_its_source_under_its_own_name() {
     let copy = item_path(&tmp, "torch_1");
     let text = std::fs::read_to_string(&copy).expect("the copy is written");
     assert_eq!(
-        jackdaw_bsn::read_asset_header(&text).as_deref(),
+        jackdaw::bsn_files::read_asset_header(&text).as_deref(),
         Some(ItemDef::type_path()),
         "the copy still says what it holds:\n{text}"
     );
@@ -1041,7 +1041,7 @@ fn a_duplicate_names_a_root_that_carried_no_name() {
         "the copy answers to its own name and keeps what it held:\n{text}"
     );
     assert_eq!(
-        jackdaw_bsn::read_asset_header(&text).as_deref(),
+        jackdaw::bsn_files::read_asset_header(&text).as_deref(),
         Some(ItemDef::type_path()),
         "under the header it came with:\n{text}"
     );
@@ -1085,7 +1085,7 @@ fn a_duplicate_under_a_name_needing_quotes_is_written_quoted() {
         "the name is quoted where it has to be:\n{text}"
     );
     assert!(
-        jackdaw_bsn::read_document_text(&item_path(&tmp, "torch-lit")).is_ok(),
+        jackdaw::bsn_files::read_document_text(&item_path(&tmp, "torch-lit")).is_ok(),
         "and the copy reads back as a document"
     );
 }

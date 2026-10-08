@@ -1,8 +1,14 @@
-use bevy::{feathers::theme::ThemedText, prelude::*};
+use bevy::{
+    feathers::{controls::FeathersListRow, theme::ThemedText},
+    prelude::*,
+};
 use jackdaw_widgets::file_browser::FileBrowserItem;
 use lucide_icons::Icon;
 
-use crate::{icons::IconFont, tokens};
+use crate::{
+    icons::{IconFont, icon_scene},
+    tokens,
+};
 
 /// Spawn a file browser item (grid cell).
 pub fn file_browser_item(item: &FileBrowserItem, icon_font: &IconFont) -> impl Bundle {
@@ -64,18 +70,17 @@ pub fn file_browser_item_with_icon(
     )
 }
 
-/// Spawn a file browser item for list view mode.
-pub fn file_browser_list_item(item: &FileBrowserItem, icon_font: &IconFont) -> impl Bundle {
-    file_browser_list_item_with_icon(item, icon_font, None)
+/// A file browser item for list view mode.
+pub fn file_browser_list_item(item: &FileBrowserItem) -> impl Scene {
+    file_browser_list_item_with_icon(item, None)
 }
 
-/// Spawn a file browser item for list view mode with an optional icon
-/// override for non-directory entries. Directories always use `Icon::Folder`.
+/// A file browser item for list view mode with an optional icon override
+/// for non-directory entries. Directories always use `Icon::Folder`.
 pub fn file_browser_list_item_with_icon(
     item: &FileBrowserItem,
-    icon_font: &IconFont,
     icon_override: Option<Icon>,
-) -> impl Bundle {
+) -> impl Scene {
     let icon = if item.is_directory {
         Icon::Folder
     } else {
@@ -86,40 +91,23 @@ pub fn file_browser_list_item_with_icon(
     } else {
         tokens::FILE_ICON_COLOR
     };
-    let font = icon_font.0.clone();
-
-    (
-        item.clone(),
-        crate::list_view::list_row(),
+    let name = item.file_name.clone();
+    let item = item.clone();
+    bsn! {
+        ~{item}
+        @FeathersListRow
         Node {
-            flex_direction: FlexDirection::Row,
-            align_items: AlignItems::Center,
-            padding: UiRect::axes(Val::Px(tokens::SPACING_MD), Val::Px(tokens::SPACING_SM)),
-            column_gap: Val::Px(tokens::SPACING_MD),
-            width: Val::Percent(100.0),
-            border_radius: BorderRadius::all(Val::Px(tokens::BORDER_RADIUS_SM)),
-            ..Default::default()
-        },
-        children![
-            (
-                Text::new(String::from(icon.unicode())),
-                TextFont {
-                    font: font.into(),
-                    font_size: tokens::TEXT_SIZE,
-                    ..Default::default()
-                },
-                TextColor(icon_color),
-            ),
-            (
-                Text::new(item.file_name.clone()),
-                TextFont {
-                    font_size: tokens::TEXT_SIZE,
-                    ..Default::default()
-                },
-                ThemedText,
-            )
-        ],
-    )
+            column_gap: px(tokens::SPACING_MD),
+            width: percent(100.0),
+            border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_SM)),
+            padding: UiRect::axes(px(tokens::SPACING_MD), px(tokens::SPACING_SM)),
+        }
+        Children [
+            @icon_scene(icon.unicode(), tokens::TEXT_SIZE_PX) TextColor(icon_color)
+            --
+            Text(name) TextFont { font_size: tokens::TEXT_SIZE } ThemedText
+        ]
+    }
 }
 
 pub fn file_icon(name: &str) -> Icon {

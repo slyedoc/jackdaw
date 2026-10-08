@@ -98,7 +98,7 @@ impl Plugin for AssetIngestPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            handle_file_drops.run_if(in_state(crate::AppState::Editor)),
+            handle_file_drops.run_if(crate::editor_active),
         );
     }
 }

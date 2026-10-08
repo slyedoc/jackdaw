@@ -7,7 +7,7 @@ plugin, you can write a jackdaw extension.
 
 ## Plugin structure
 
-The composable editor is delivered by `jackdaw_editor` as
+The composable editor is delivered by `jackdaw` as
 `JackdawEditorPlugins`, a Bevy `PluginGroup`.
 The editor binary looks like:
 

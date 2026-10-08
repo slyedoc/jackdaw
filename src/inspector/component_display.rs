@@ -39,7 +39,7 @@ use super::{
     ComponentPicker, Inspector, InspectorDirty, InspectorGroupSection, InspectorSearch,
     InspectorTarget, ReflectDisplayable, bindings_card, brush_display,
     category_strip::ActiveInspectorCategory, component_tooltip::ReflectedTypeTooltip,
-    custom_props_display, material_display, modifier_display, node_card, reflect_fields,
+    custom_props_display, material_display, modifier_display, node_card,
 };
 use crate::type_metadata::{TypeChrome, TypeMetadata};
 use bevy::picking::hover::Hovered;
@@ -80,7 +80,6 @@ pub(crate) fn sync_inspector_to_selection(
         )>,
     >,
     inspectors: Query<(Entity, Option<&InspectorTarget>), With<Inspector>>,
-    names: Query<&Name>,
     icon_font: Res<IconFont>,
     editor_font: Res<EditorFont>,
     materials: Res<Assets<AuroraMaterial>>,
@@ -167,10 +166,8 @@ pub(crate) fn sync_inspector_to_selection(
             entity_ref,
             inspector,
             sel_count,
-            &names,
             &icon_font,
             &editor_font,
-            false,
             &materials,
             &authored_type_paths,
             &collapse_state,
@@ -241,7 +238,7 @@ fn hidden_by_namespace(full_path: &str) -> bool {
 ///
 /// Everything the namespace cull passes does, and inside it so does any type
 /// that names an editor category without hiding itself: that is how scene
-/// data such as `Wind` or `MaterialOverrides` says it is authored rather than
+/// data such as `Wind` says it is authored rather than
 /// bookkeeping.
 fn offered_as_card(full_path: &str, chrome: &TypeChrome) -> bool {
     !hidden_by_namespace(full_path) || (!chrome.category.is_empty() && !chrome.hidden)
@@ -286,10 +283,8 @@ pub(crate) fn build_inspector_displays(
     entity_ref: EntityRef,
     inspector_entity: Entity,
     selection_count: usize,
-    names: &Query<&Name>,
     icon_font: &IconFont,
     editor_font: &EditorFont,
-    _read_only: bool,
     materials: &Assets<AuroraMaterial>,
     authored_type_paths: &HashSet<String>,
     collapse_state: &super::InspectorCollapseState,
@@ -491,9 +486,6 @@ pub(crate) fn build_inspector_displays(
                     inspector_entity,
                     source_entity,
                     stack,
-                    names,
-                    type_registry,
-                    &editor_font.0,
                     &icon_font.0,
                     collapse_state,
                 );
@@ -637,21 +629,15 @@ pub(crate) fn build_inspector_displays(
                 continue;
             }
 
-            // Priority 3: Generic reflection display
-            let full_path = registration.type_info().type_path_table().path();
-            reflect_fields::spawn_reflected_fields(
-                commands,
-                body_entity,
-                reflected,
-                0,
-                String::new(),
-                source_entity,
-                full_path,
-                names,
-                type_registry,
-                &editor_font.0,
-                &icon_font.0,
-            );
+            // Priority 3: the generic fields, built by the feathers inspector.
+            let body = body_entity;
+            commands.queue(move |world: &mut World| {
+                let root = bevy::feathers_inspector::InspectorRoot::Component {
+                    entity: source_entity,
+                    type_id,
+                };
+                bevy::feathers_inspector::build_body(world, root, body);
+            });
             continue;
         }
 
@@ -735,7 +721,6 @@ pub(crate) fn on_inspector_dirty(
         )>,
     >,
     selection: Res<Selection>,
-    names: Query<&Name>,
     icon_font: Res<IconFont>,
     editor_font: Res<EditorFont>,
     materials: Res<Assets<AuroraMaterial>>,
@@ -809,10 +794,8 @@ pub(crate) fn on_inspector_dirty(
             entity_ref,
             inspector_entity,
             sel_count,
-            &names,
             &icon_font,
             &editor_font,
-            false,
             &materials,
             &authored_type_paths,
             &collapse_state,
@@ -1148,23 +1131,11 @@ pub(crate) fn filter_inspector_components(
 
 #[cfg(test)]
 mod tests {
-    use super::{ComponentDisplaySpec, hidden_by_namespace, source_note, spawn_component_display};
+    use super::{ComponentDisplaySpec, hidden_by_namespace, spawn_component_display};
     use bevy::feathers::controls::FeathersToolButton;
     use bevy::prelude::*;
     use jackdaw_api_internal::operator::Operator;
     use jackdaw_feathers::button::ButtonOperatorCall;
-
-    #[test]
-    fn a_source_that_is_on_disk_but_did_not_read_says_so_rather_than_reading_as_missing() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let unreadable = dir.path().join("broken.bsn");
-        std::fs::write(&unreadable, "this is not a document").expect("write");
-
-        assert!(source_note(&unreadable).starts_with("Source could not be read"));
-        assert!(
-            source_note(&dir.path().join("absent.bsn")).starts_with("Source is not in the project"),
-        );
-    }
 
     /// The card's remove control is a tool button carrying the remove operator.
     #[test]
@@ -1326,10 +1297,6 @@ mod tests {
         assert!(super::offered_as_card(
             "jackdaw_scene_types::types::Wind",
             &chrome("Environment", false)
-        ));
-        assert!(super::offered_as_card(
-            "jackdaw_scene_types::types::MaterialOverrides",
-            &chrome("Rendering", false)
         ));
         assert!(!super::offered_as_card(
             "jackdaw_scene_types::types::ScatterInstance",

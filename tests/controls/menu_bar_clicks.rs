@@ -64,6 +64,7 @@ fn menu_app() -> util::TestApp {
             .expect("headless apps still have a primary window");
         window.resolution = WindowResolution::new(1600, 1000);
     }
+    util::ui_camera(&mut app);
     app
 }
 

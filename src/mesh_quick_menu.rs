@@ -142,7 +142,7 @@ impl Plugin for MeshQuickMenuPlugin {
         app.init_resource::<MeshQuickMenu>()
             .add_systems(
                 Update,
-                mesh_quick_menu_input.run_if(in_state(crate::AppState::Editor)),
+                mesh_quick_menu_input.run_if(crate::editor_active),
             )
             .add_observer(dispatch_quick_menu_selection);
     }

@@ -14,9 +14,9 @@ use jackdaw::commands::CommandHistory;
 use jackdaw::entity_ops::{EntityClipboard, SystemClipboard};
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
-use jackdaw_bsn::SceneBsnAst;
+use jackdaw::scene_io::SceneEntity;
 
-fn clipboard_app() -> App {
+fn clipboard_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     app.world_mut().remove_resource::<SystemClipboard>();
     app
@@ -92,14 +92,14 @@ fn scene_with_two_children(app: &mut App) -> (Entity, Vec<Entity>) {
             Node::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
+    jackdaw::scene_io::adopt_entity(world, root);
     let children: Vec<Entity> = ["Alpha", "Omega"]
         .into_iter()
         .map(|name| {
             let child = world
                 .spawn((Name::new(name), Node::default(), ChildOf(root)))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(world, child);
+            jackdaw::scene_io::adopt_entity(world, child);
             child
         })
         .collect();
@@ -143,9 +143,7 @@ fn a_paste_lands_beside_the_selection_under_a_free_name() {
     );
     assert!(
         app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(selected[0])
-            .is_some(),
+            .get::<SceneEntity>(selected[0]).is_some(),
         "the paste is in the document, so a save keeps it"
     );
 }
@@ -236,7 +234,7 @@ fn a_copy_survives_a_reload_and_pastes_into_the_reopened_scene() {
         .world_mut()
         .spawn((Name::new("Kept"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), target);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), target);
     app.update();
     select(&mut app, target);
     run_finished(&mut app, "entity.copy");
@@ -260,7 +258,7 @@ fn a_subtree_copied_in_one_tab_pastes_into_another() {
         .world_mut()
         .spawn((Name::new("Travelled"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), source);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), source);
     app.update();
     select(&mut app, source);
     run_finished(&mut app, "entity.copy");
@@ -288,9 +286,7 @@ fn a_subtree_copied_in_one_tab_pastes_into_another() {
         .expect("the pasted entity");
     assert!(
         app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(pasted)
-            .is_some(),
+            .get::<SceneEntity>(pasted).is_some(),
         "the paste is in the second tab's document"
     );
 }
@@ -383,7 +379,7 @@ fn the_paste_gets_a_row_in_the_outliner() {
         .world_mut()
         .spawn((Name::new("Caption"), Node::default(), ChildOf(children[0])))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), caption);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), caption);
     app.update();
 
     select(&mut app, children[0]);
@@ -433,12 +429,13 @@ fn a_pasted_ui_node_gains_no_transform_patch() {
     press(&mut app, "entity.paste");
 
     let pasted = app.world().resource::<Selection>().entities[0];
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(pasted).expect("the paste is in the document");
     assert!(
-        ast.find_patch_by_type_path(node, "bevy_transform::components::transform::Transform")
-            .is_none(),
-        "the paste wrote a Transform into a node that authored none"
+        app.world().get::<SceneEntity>(pasted).is_some(),
+        "the paste is in the document"
+    );
+    assert!(
+        app.world().get::<Transform>(pasted).is_none(),
+        "the paste gave a Transform to a node that had none"
     );
 }
 
@@ -483,7 +480,7 @@ fn a_paste_with_nothing_selected_uses_the_open_scenes_root() {
         .world_mut()
         .spawn((Name::new("Carried"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), carried);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), carried);
     app.update();
     select(&mut app, carried);
     run_finished(&mut app, "entity.copy");

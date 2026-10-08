@@ -41,7 +41,7 @@ impl Plugin for ViewportOverlaysPlugin {
             .add_systems(Startup, configure_entity_gizmos)
             .add_systems(
                 Update,
-                ensure_axis_labels.run_if(in_state(crate::AppState::Editor)),
+                ensure_axis_labels.run_if(crate::editor_active),
             )
             .add_systems(
                 PostUpdate,
@@ -49,7 +49,7 @@ impl Plugin for ViewportOverlaysPlugin {
             )
             .add_systems(
                 Update,
-                ensure_volumetric_fog.run_if(in_state(crate::AppState::Editor)),
+                ensure_volumetric_fog.run_if(crate::editor_active),
             )
             .add_systems(
                 PostUpdate,
@@ -66,7 +66,7 @@ impl Plugin for ViewportOverlaysPlugin {
                     draw_reflection_probe_gizmo,
                 )
                     .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_systems(
                 PostUpdate,

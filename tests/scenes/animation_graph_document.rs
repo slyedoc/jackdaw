@@ -479,17 +479,16 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     let graph = std::fs::read_to_string(assets.join("character_1.animgraph.bsn")).expect("written");
     assert!(graph.contains("anim/ual/Idle_Loop.anim.ron"), "{graph}");
 
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let root = ast.roots[0];
-    assert!(
-        ast.component_type_paths(root)
-            .iter()
-            .any(|path| path.ends_with("AnimationRig")),
-        "the character opened, its root carrying the rig"
-    );
+    let character = jackdaw::scene_io::scene_roots(app.world_mut())
+        .into_iter()
+        .find(|&root| {
+            app.world().inspect_entity(root).is_ok_and(|mut components| {
+                components.any(|(_, info)| info.name().to_string().ends_with("AnimationRig"))
+            })
+        })
+        .expect("the character opened, its root carrying the rig");
 
     // Selected, the character shows its Playback card (in the Animation tab).
-    let character = ast.ecs_for_ast(root).expect("the character is live");
     jackdaw::selection::select_only(app.world_mut(), character);
     for _ in 0..8 {
         app.update();
@@ -570,12 +569,11 @@ fn a_held_graph_leaves_the_open_scene_alone() {
         "the held graph took the edit"
     );
 
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let names: Vec<String> = ast
-        .roots
-        .iter()
-        .flat_map(|&r| std::iter::once(r).chain(ast.descendants_of(r)))
-        .filter_map(|n| ast.get_name(n).map(str::to_string))
+    let names: Vec<String> = app
+        .world_mut()
+        .query_filtered::<&Name, With<jackdaw::scene_io::SceneEntity>>()
+        .iter(app.world())
+        .map(|name| name.as_str().to_string())
         .collect();
     assert_eq!(names, ["Crate"], "the scene's document is the scene alone");
 

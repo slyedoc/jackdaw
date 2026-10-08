@@ -15,7 +15,7 @@ use jackdaw_api_internal::widgets::WidgetRegistry;
 use jackdaw_feathers::icons::Icon;
 use jackdaw_scene_types::UiSceneRoot;
 
-fn palette_app() -> App {
+fn palette_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     jackdaw_api_internal::lifecycle::enable_extension(app.world_mut(), "jackdaw.ui_palette");
     app.update();
@@ -23,13 +23,13 @@ fn palette_app() -> App {
 }
 
 /// An open UI scene with an outliner panel showing it.
-fn outliner_app() -> (App, Entity) {
+fn outliner_app() -> (util::TestApp, Entity) {
     let mut app = palette_app();
     let world = app.world_mut();
     let root = world
         .spawn((Name::new("UiRoot"), UiSceneRoot::default(), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
+    jackdaw::scene_io::adopt_entity(world, root);
     world.spawn((
         HierarchyTreeContainer,
         Node::default(),
@@ -284,32 +284,19 @@ fn the_world_kinds_each_read_as_themselves() {
     }
 }
 
-/// A scene root is what it is before it is a container, and a prefab
-/// instance before it is whatever it inherits.
+/// A scene root is what it is before it is a container.
 #[test]
-fn a_scene_root_and_a_prefab_instance_win_over_what_they_are_made_of() {
+fn a_scene_root_wins_over_what_it_is_made_of() {
     let mut app = palette_app();
     let world = app.world_mut();
     let ui_root = world.spawn((UiSceneRoot::default(), Node::default())).id();
     let scene_2d = world
         .spawn((jackdaw_scene_types::Scene2dRoot, Transform::default()))
         .id();
-    let instance = world
-        .spawn((
-            jackdaw_prefab::components::IsA::default(),
-            AuroraMesh3d::default(),
-            Transform::default(),
-        ))
-        .id();
     app.update();
 
     assert_eq!(icon_of(&app, ui_root), Some(Icon::LayoutTemplate.unicode()));
     assert_eq!(icon_of(&app, scene_2d), Some(Icon::Frame.unicode()));
-    assert_eq!(
-        icon_of(&app, instance),
-        Some(Icon::Component.unicode()),
-        "a prefab instance is a prefab instance before it is a mesh"
-    );
 }
 
 /// A model instance and a scene root each name themselves; without a rule of
@@ -358,7 +345,7 @@ fn a_model_row_catches_up_with_its_kind_in_glyph_and_colour() {
         .world_mut()
         .spawn((Name::new("CommonTree_1"), Transform::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), source);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), source);
     app.update();
     app.update();
 
@@ -438,7 +425,7 @@ fn a_terrain_gets_its_glyph_when_the_kind_lands_after_the_row() {
         .world_mut()
         .spawn((Name::new("Terrain"), Transform::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), source);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), source);
     app.update();
     app.update();
     assert_ne!(

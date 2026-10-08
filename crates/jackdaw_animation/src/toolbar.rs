@@ -4,6 +4,7 @@
 //! Every control here dispatches an operator, so a script drives the tab the
 //! same way a click does.
 
+use bevy::feathers::controls::{FeathersSelect, list_rows_from_strings};
 use bevy::prelude::*;
 use jackdaw_feathers::button::{
     ButtonOperatorCall, ButtonProps, ButtonSize, ButtonVariant, IconButtonProps, button,
@@ -285,11 +286,7 @@ fn spawn_clip_selector(commands: &mut Commands, bar: Entity, state: &ToolbarStat
         .clip
         .and_then(|clip| state.clips.iter().position(|(entity, _)| *entity == clip))
         .unwrap_or(0);
-    let options: Vec<jackdaw_feathers::combobox::ComboBoxOptionData> = state
-        .clips
-        .iter()
-        .map(|(_, label)| jackdaw_feathers::combobox::ComboBoxOptionData::new(label.clone()))
-        .collect();
+    let options: Vec<String> = state.clips.iter().map(|(_, label)| label.clone()).collect();
     let wrapper = commands
         .spawn((
             Node {
@@ -313,13 +310,17 @@ fn spawn_clip_selector(commands: &mut Commands, bar: Entity, state: &ToolbarStat
         ));
         return;
     }
-    commands.spawn((
-        TimelineClipSelector {
-            sibling_clips: state.clips.iter().map(|(entity, _)| *entity).collect(),
-        },
-        jackdaw_feathers::combobox::combobox_with_selected(options, selected),
-        ChildOf(wrapper),
-    ));
+    commands
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(options, Some(selected)) }
+            Node { width: percent(100) }
+        })
+        .insert((
+            TimelineClipSelector {
+                sibling_clips: state.clips.iter().map(|(entity, _)| *entity).collect(),
+            },
+            ChildOf(wrapper),
+        ));
 }
 
 /// A field with a marker on its wrapper, which is where the commit observers

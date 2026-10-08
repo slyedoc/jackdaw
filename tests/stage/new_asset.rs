@@ -25,7 +25,7 @@ struct ItemDef {
 
 /// An editor with a project of its own, one type it has registered and one the
 /// project's schema reports.
-fn editor_with_kinds() -> (App, tempfile::TempDir) {
+fn editor_with_kinds() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(tmp.path().join("assets")).expect("an assets folder");
     let mut app = util::editor_test_app();

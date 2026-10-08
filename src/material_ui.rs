@@ -52,13 +52,13 @@ pub(crate) fn plugin(app: &mut App) {
                 gate_collapsed_color_picker_focus,
                 flush_material_slider_drag,
             )
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         )
         .add_systems(
             PostUpdate,
             refresh_material_rows
                 .after(AssetEventSystems)
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
 }
 
@@ -694,23 +694,25 @@ pub(crate) fn spawn_color_row(
 
     let face = ColorRowFace { swatch, hex };
     let write_handle = handle.clone();
-    let root = crate::inspector::reflect_fields::spawn_color_picker(
-        commands,
-        body,
-        rgba,
-        label,
-        0.0,
-        move |world, rgba, _is_final| {
-            if let Some(mut material) = world
-                .resource_mut::<Assets<AuroraMaterial>>()
-                .get_mut(&write_handle)
-            {
-                write(&mut material, rgba);
-            }
-            repaint_color_row_face(world, face, rgba);
-        },
-    );
-    commands.entity(root).insert(MaterialFieldMarker);
+    commands
+        .spawn_scene(bevy::feathers_inspector::color_picker(Color::srgba(
+            rgba[0], rgba[1], rgba[2], rgba[3],
+        )))
+        .insert((MaterialFieldMarker, ChildOf(body)))
+        .observe(move |change: On<ValueChange<Color>>, mut commands: Commands| {
+            let c = change.value.to_srgba();
+            let rgba = [c.red, c.green, c.blue, c.alpha];
+            let handle = write_handle.clone();
+            commands.queue(move |world: &mut World| {
+                if let Some(mut material) = world
+                    .resource_mut::<Assets<AuroraMaterial>>()
+                    .get_mut(&handle)
+                {
+                    write(&mut material, rgba);
+                }
+                repaint_color_row_face(world, face, rgba);
+            });
+        });
     commands.entity(field.row).insert((
         face,
         MaterialColorBinding {

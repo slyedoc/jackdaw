@@ -124,7 +124,7 @@ impl Plugin for HierarchyPlugin {
                     on_show_all_changed,
                     jackdaw_feathers::tree_view::tree_keyboard_navigation,
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_systems(
                 PostUpdate,
@@ -145,6 +145,8 @@ impl Plugin for HierarchyPlugin {
                 )
                     .after(jackdaw_widgets::tree_view::maintain_tree_index),
             )
+            .add_observer(hide_input_action)
+            .add_observer(hide_input_binding)
             .add_observer(toggle_show_all_button)
             .add_observer(handle_inline_rename_commit)
             .add_observer(on_root_entity_added)
@@ -2218,7 +2220,7 @@ fn on_context_menu_action(
     event: On<ContextMenuAction>,
     mut commands: Commands,
     global_transforms: Query<&GlobalTransform>,
-    mut camera_query: Query<&mut Transform, With<jackdaw_camera::JackdawCameraSettings>>,
+    mut camera_query: Query<&mut Transform, With<jackdaw_camera::EditorCamera>>,
 ) {
     let target_entity = event.target_entity;
 
@@ -3322,4 +3324,13 @@ fn set_display(node: &mut Mut<Node>, display: Display) {
     if node.display != display {
         node.display = display;
     }
+}
+
+/// Input actions and their bindings are the host's machinery, never scene content.
+fn hide_input_action(add: On<Add<ActionValue>>, mut commands: Commands) {
+    commands.entity(add.entity).try_insert(EditorHidden);
+}
+
+fn hide_input_binding(add: On<Add<Binding>>, mut commands: Commands) {
+    commands.entity(add.entity).try_insert(EditorHidden);
 }

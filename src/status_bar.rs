@@ -164,7 +164,7 @@ impl Plugin for StatusBarPlugin {
                 update_scene_stats,
             )
                 .chain()
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
         // Click observer on `StatusBarRight` so a Ready / Failed
         // build indicator becomes interactive (Reload / open log).

@@ -21,7 +21,7 @@ impl Plugin for MeasureToolPlugin {
                 PostUpdate,
                 (draw_measure_line, update_measure_labels)
                     .in_set(JackdawDrawSystems)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

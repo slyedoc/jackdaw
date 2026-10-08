@@ -456,7 +456,7 @@ impl Plugin for DrawBrushPlugin {
                     draw_brush_preview.after(draw_brush_confirm),
                     manage_draw_preview_mesh.after(crate::brush::mesh::regenerate_brush_meshes),
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_observer(dispatch_start_add_append)
             .add_observer(dispatch_start_cut);

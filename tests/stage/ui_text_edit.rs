@@ -70,7 +70,7 @@ fn scene(app: &mut App) -> (Entity, Entity) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let label = app
         .world_mut()
         .spawn((
@@ -87,7 +87,7 @@ fn scene(app: &mut App) -> (Entity, Entity) {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), label);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), label);
     let plain = app
         .world_mut()
         .spawn((
@@ -103,7 +103,7 @@ fn scene(app: &mut App) -> (Entity, Entity) {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), plain);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), plain);
     settle(app);
     (label, plain)
 }
@@ -414,7 +414,7 @@ fn a_commit_writes_one_node_and_leaves_the_selection_as_it_was() {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), other);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), other);
     settle(&mut app);
 
     open_entry(&mut app, panel, Vec2::new(400.0, 200.0));

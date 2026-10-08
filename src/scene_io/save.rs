@@ -621,11 +621,14 @@ mod terrain_sidecar_tests {
         let mut store = TerrainDataStore::default();
         store.insert(data_path.to_string(), document(&data));
         world.insert_resource(store);
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: data_path.to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: data_path.to_string(),
+                ..default()
+            },
+        ));
         world
     }
 
@@ -807,16 +810,19 @@ mod terrain_sidecar_tests {
         let sidecar_path = tmp.join("zone.terrain-0.jdterrain");
 
         let mut original = sidecar::save(&document(&sculpted())).expect("encodes");
-        original[8..10].copy_from_slice(&(sidecar::VERSION_10 + 1).to_le_bytes());
+        original[8..10].copy_from_slice(&(sidecar::VERSION_9 + 1).to_le_bytes());
         std::fs::write(&sidecar_path, &original).expect("write sidecar");
 
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: "zone.terrain-0.jdterrain".to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: "zone.terrain-0.jdterrain".to_string(),
+                ..default()
+            },
+        ));
 
         crate::scene_io::import_terrain_sidecars(
             &mut world,
@@ -878,7 +884,7 @@ mod terrain_sidecar_tests {
 
         let mut world = World::new();
         world.insert_resource(store_holding(&terrain));
-        world.spawn(terrain.clone());
+        world.spawn((crate::scene_io::SceneEntity, terrain.clone()));
         let authored = {
             let mut store = world.resource_mut::<TerrainDataStore>();
             store
@@ -909,7 +915,7 @@ mod terrain_sidecar_tests {
         // A fresh store, as a reopened editor has.
         let mut reopened = World::new();
         reopened.insert_resource(TerrainDataStore::default());
-        reopened.spawn(terrain.clone());
+        reopened.spawn((crate::scene_io::SceneEntity, terrain.clone()));
         crate::scene_io::import_terrain_sidecars(
             &mut reopened,
             &scene_path.to_string_lossy(),
@@ -960,7 +966,7 @@ mod terrain_sidecar_tests {
         };
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(odd.clone());
+        world.spawn((crate::scene_io::SceneEntity, odd.clone()));
 
         crate::scene_io::import_terrain_sidecars(
             &mut world,
@@ -1020,11 +1026,14 @@ mod terrain_sidecar_tests {
 
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: "zone.terrain-0.jdterrain".to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: "zone.terrain-0.jdterrain".to_string(),
+                ..default()
+            },
+        ));
         crate::scene_io::import_terrain_sidecars(
             &mut world,
             &scene_path.to_string_lossy(),
@@ -1041,7 +1050,7 @@ mod terrain_sidecar_tests {
         let rewritten = std::fs::read(&sidecar_path).expect("read back");
         assert_eq!(
             u16::from_le_bytes([rewritten[8], rewritten[9]]),
-            sidecar::VERSION_10,
+            sidecar::VERSION_9,
         );
         // The load settled this terrain onto the geometry its declared rectangle drew with
         // (four vertices across the default 100 metres, cornered at -size/2) and the rewrite
@@ -1075,7 +1084,7 @@ mod terrain_sidecar_tests {
 
         let mut world = World::new();
         world.insert_resource(store_holding(&terrain));
-        world.spawn(terrain.clone());
+        world.spawn((crate::scene_io::SceneEntity, terrain.clone()));
         {
             let mut store = world.resource_mut::<TerrainDataStore>();
             let mut entry = store.entry_for(&terrain).expect("keyed");
@@ -1102,11 +1111,14 @@ mod terrain_sidecar_tests {
 
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: "zone.terrain-0.jdterrain".to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: "zone.terrain-0.jdterrain".to_string(),
+                ..default()
+            },
+        ));
 
         crate::scene_io::import_terrain_sidecars(
             &mut world,

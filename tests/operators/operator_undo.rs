@@ -104,8 +104,7 @@ fn entity_place_gltf_survives_later_history_and_scene_tabs() {
     let placed = assert_single_renderable_gltf(&mut app, path, position);
     assert!(
         app.world()
-            .resource::<jackdaw_bsn::SceneBsnAst>()
-            .ast_for(placed)
+            .get::<jackdaw::scene_io::SceneEntity>(placed)
             .is_some(),
         "placed GLB must be part of the authoritative scene document"
     );
@@ -288,7 +287,7 @@ fn entity_toggle_visibility_round_trip() {
     let entity = app.world_mut().spawn(Name::new("Hidden")).id();
     // The snapshot is the emitted document, so an entity outside it would diff
     // to nothing.
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     app.world_mut()
         .resource_mut::<jackdaw::selection::Selection>()
         .entities = vec![entity];

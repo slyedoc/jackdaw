@@ -129,25 +129,9 @@ fn authored(world: &World, source: Entity) -> bool {
     world.get::<crate::scene_io::SceneEntity>(source).is_some()
 }
 
-/// Put a material on a part of a loaded model, as a saved override on its placed model when it has one.
+/// Put a material on a part of a loaded model until the model reloads; the model's own file is
+/// where a lasting change goes.
 fn wear_until_reloaded(world: &mut World, source: Entity, path: &str) -> bool {
-    if let Some(root) = crate::material_overrides::model_root(world, source)
-        && let Some(name) = world
-            .get::<bevy::gltf::GltfMaterialName>(source)
-            .map(|name| name.0.clone())
-    {
-        if !path.is_empty() && material_named(world, path).is_none() {
-            crate::status_bar::notify_error(world, format!("{path} holds no material"));
-            return false;
-        }
-        let material = (!path.is_empty()).then_some(path);
-        let command =
-            crate::material_overrides::SetMaterialOverrides::new(world, root, &[name], material);
-        if !command.is_noop() {
-            commit(world, Box::new(command));
-        }
-        return true;
-    }
     let chosen = if path.is_empty() {
         WornMaterial::Standard(Handle::default())
     } else {

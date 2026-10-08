@@ -256,7 +256,7 @@ impl Plugin for SceneIoPlugin {
             .init_resource::<SceneDirtyState>()
             .add_systems(
                 Update,
-                poll_scene_dialog.run_if(in_state(crate::AppState::Editor)),
+                poll_scene_dialog.run_if(crate::editor_active),
             )
             .init_resource::<PendingSceneSpawns>()
             .add_systems(

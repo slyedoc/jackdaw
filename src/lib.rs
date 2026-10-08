@@ -2,10 +2,9 @@
     html_logo_url = "https://raw.githubusercontent.com/jbuehler23/jackdaw/main/assets/logo/jackdaw_icon_small.png",
     html_favicon_url = "https://raw.githubusercontent.com/jbuehler23/jackdaw/main/assets/logo/jackdaw_icon_small.png"
 )]
-//! Implementation of the official Jackdaw editor.
+//! The Jackdaw editor, as a library a game embeds (add [`JackdawEditorPlugins`]).
 //!
-//! Custom standalone editors should use `jackdaw_editor`; extension crates
-//! should use `jackdaw_extension`; games should use `jackdaw_runtime`.
+//! Extension crates should use `jackdaw_extension`; games should use `jackdaw_runtime`.
 pub mod active_tool;
 pub mod add_entity_picker;
 pub mod alignment_guides;
@@ -78,7 +77,6 @@ pub mod instances;
 pub mod layout;
 pub mod material_assets;
 pub mod material_browser;
-pub mod material_overrides;
 pub mod material_preview;
 pub mod material_ui;
 pub mod measure_tool;
@@ -96,14 +94,12 @@ pub mod physics_tool;
 pub mod preview_context;
 pub(crate) mod preview_model;
 pub mod project;
-pub mod project_select;
 pub mod project_settings;
 // TODO(bsn-consolidation): always empty now; delete with the schema-only inspector paths.
 pub mod project_types;
 pub mod project_window;
 pub mod reference_image;
 pub mod reflect_default;
-pub mod restart;
 pub mod run_game;
 pub mod scene_io;
 pub mod scene_ops;
@@ -145,12 +141,15 @@ pub mod worn_material;
 use bevy::{
     app::PluginGroupBuilder,
     ecs::system::SystemState,
-    feathers::{FeathersCorePlugin, dark_theme::create_dark_theme, theme::UiTheme},
+    feathers::{
+        FeathersCorePlugin, controls::OptionIndex, dark_theme::create_dark_theme, theme::UiTheme,
+    },
     input::mouse::{MouseScrollUnit, MouseWheel},
     input_focus::tab_navigation::TabNavigationPlugin,
     picking::hover::HoverMap,
     platform::collections::HashMap,
     prelude::*,
+    ui_widgets::ValueChange,
 };
 use bevy_aurora::material::AuroraMaterial;
 use jackdaw_api::prelude::*;
@@ -206,13 +205,160 @@ pub fn no_dialog_open(
 
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
+    /// The editor is not shown: the host app runs as itself.
     #[default]
-    ProjectSelect,
+    Off,
     Editor,
 }
 
 #[derive(Component, Copy, Clone, Default)]
 pub struct EditorEntity;
+
+/// Whether the editor is in front. The host app hides it and brings it back by flipping this;
+/// [`AppState::Editor`] is entered once and stays, so nothing the editor holds (its tabs, the
+/// selection, history, the project) is torn down by a hide.
+#[derive(Resource, Clone, Copy, PartialEq, Eq)]
+pub struct EditorShown(pub bool);
+
+impl Default for EditorShown {
+    fn default() -> Self {
+        Self(true)
+    }
+}
+
+/// Run condition: the editor is in front.
+pub fn editor_shown(shown: Res<EditorShown>) -> bool {
+    shown.0
+}
+
+/// Run condition: the editor is up and in front. Editor work stops while it is hidden; change
+/// detection catches up when it is shown again.
+pub fn editor_active(state: Res<State<AppState>>, shown: Res<EditorShown>) -> bool {
+    *state.get() == AppState::Editor && shown.0
+}
+
+fn activate<C: Component>(commands: &mut Commands, contexts: impl Iterator<Item = Entity>, on: bool) {
+    use bevy_enhanced_input::prelude::ContextActivity;
+    for context in contexts {
+        commands.entity(context).insert(if on {
+            ContextActivity::<C>::ACTIVE
+        } else {
+            ContextActivity::<C>::INACTIVE
+        });
+    }
+}
+
+/// A host camera the editor switched off while it covers the window, to switch back on when
+/// it is hidden.
+#[derive(Component)]
+struct CoveredByEditor;
+
+/// A host UI root the editor hid while it covers the window, with the display it had.
+#[derive(Component)]
+struct HiddenByEditor(Display);
+
+/// While the editor is up, the host's own window UI (an fps readout, a dev panel) would draw over
+/// it: the editor's camera is the default UI camera then. The roots there when it comes up stand
+/// down, and exactly those come back when it goes away. Roots spawned meanwhile (the editor's own
+/// dropdowns and context menus) are left alone, as is a root that targets its own camera.
+fn cover_host_ui(
+    state: Res<State<AppState>>,
+    shown: Res<EditorShown>,
+    mut was_up: Local<bool>,
+    mut roots: Query<
+        (Entity, &mut Node, Option<&HiddenByEditor>),
+        (
+            Without<ChildOf>,
+            Without<EditorEntity>,
+            Without<bevy::ui::UiTargetCamera>,
+        ),
+    >,
+    mut commands: Commands,
+) {
+    let up = *state.get() == AppState::Editor && shown.0;
+    if up == *was_up {
+        return;
+    }
+    *was_up = up;
+    for (entity, mut node, hidden) in &mut roots {
+        match (up, hidden) {
+            (true, None) if node.display != Display::None => {
+                commands.entity(entity).insert(HiddenByEditor(node.display));
+                node.display = Display::None;
+            }
+            (false, Some(HiddenByEditor(display))) => {
+                node.display = *display;
+                commands.entity(entity).remove::<HiddenByEditor>();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Hide or show what the editor draws and listens with: its window shell (out of layout while
+/// hidden), its cameras (the UI camera hands the default-UI role back to the host's), and its
+/// input contexts. While it is shown the host's window cameras stand down: the editor covers
+/// the window, and its viewport is the view of the world.
+fn show_or_hide_editor(
+    shown: Res<EditorShown>,
+    mut commands: Commands,
+    mut shells: Query<
+        (&mut Visibility, &mut Node),
+        (With<bevy_window_chrome::WindowShellRoot>, With<EditorEntity>),
+    >,
+    mut cameras: Query<(Entity, &mut Camera, Has<Camera2d>), With<EditorEntity>>,
+    mut host_cameras: Query<
+        (Entity, &mut Camera, Option<&bevy::camera::RenderTarget>, Has<CoveredByEditor>),
+        Without<EditorEntity>,
+    >,
+    viewports: Query<Entity, With<viewport::MainViewportCamera>>,
+    nav: Query<Entity, With<input_contexts::NavInputContext>>,
+    pointer: Query<Entity, With<input_contexts::PointerInputContext>>,
+    core: Query<Entity, With<core_extension::CoreExtensionInputContext>>,
+    flyers: Query<Entity, With<jackdaw_camera::EditorCamera>>,
+) {
+    let on = shown.0;
+    for (mut visibility, mut node) in &mut shells {
+        *visibility = if on { Visibility::Inherited } else { Visibility::Hidden };
+        node.display = if on { Display::Flex } else { Display::None };
+    }
+    for (entity, mut camera, target, covered) in &mut host_cameras {
+        let to_window = matches!(target, None | Some(bevy::camera::RenderTarget::Window(_)));
+        if on && to_window && camera.is_active {
+            camera.is_active = false;
+            commands.entity(entity).insert(CoveredByEditor);
+        } else if !on && covered {
+            camera.is_active = true;
+            commands.entity(entity).remove::<CoveredByEditor>();
+        }
+    }
+    for (entity, mut camera, ui) in &mut cameras {
+        camera.is_active = on;
+        if ui {
+            if on {
+                commands.entity(entity).insert(bevy::ui::IsDefaultUiCamera);
+            } else {
+                commands.entity(entity).remove::<bevy::ui::IsDefaultUiCamera>();
+            }
+        }
+    }
+    for viewport in &viewports {
+        commands.queue(move |world: &mut World| {
+            if let Some(mut camera) = world.get_mut::<Camera>(viewport) {
+                camera.is_active = on;
+            }
+        });
+    }
+    // The modal context is left to its own per-frame switch: nothing starts a modal while the
+    // interaction systems are stopped.
+    activate::<input_contexts::NavInputContext>(&mut commands, nav.iter(), on);
+    activate::<input_contexts::PointerInputContext>(&mut commands, pointer.iter(), on);
+    activate::<core_extension::CoreExtensionInputContext>(&mut commands, core.iter(), on);
+    // Shown, the hover pass picks the one to fly.
+    if !on {
+        activate::<jackdaw_camera::EditorCamera>(&mut commands, flyers.iter(), false);
+    }
+}
 
 /// Marker component for UI overlays that should block viewport camera input
 /// (scroll, pan, orbit) while they exist. Add this to any overlay entity
@@ -249,43 +395,7 @@ pub struct ViewDependentBounds;
 // `jackdaw_runtime` can reach it without pulling in the full editor
 // crate. Re-exported via `inspector` module + `prelude` below.
 
-/// The editor plugin group. Construct with [`JackdawEditorPlugins::default`] for the
-/// builder, or add the default instance directly with
-/// `app.add_plugins(EditorPlugin::default())`.
-///
-/// The builder lets callers opt out of the built-in extensions and
-/// register their own:
-///
-/// ```ignore
-/// App::new()
-///     .add_plugins(jackdaw_editor::JackdawEditorPlugins::default()
-///         .with_extension("my_tool", || Box::new(MyTool))
-///         .build())
-///     .run();
-/// ```
-///
-/// To drop the built-in feature-area extensions (Scene Tree, Asset
-/// Browser, etc.):
-///
-/// ```ignore
-/// App::new()
-///     .add_plugins(jackdaw_editor::JackdawEditorPlugins::default()
-///         .with_builtin_extensions(false)
-///         .with_extension("my_tool", || Box::new(MyTool))
-///         .build())
-///     .run();
-/// ```
-///
-/// To additionally load extensions from disk at startup (dynamic
-/// library extensions dropped into the user's config directory):
-///
-/// ```ignore
-/// App::new()
-///     .add_plugins(jackdaw_editor::JackdawEditorPlugins::default()
-///         .with_dylib_loader()
-///         .build())
-///     .run();
-/// ```
+/// The editor plugin group: `app.add_plugins(JackdawEditorPlugins::default())`.
 pub struct JackdawEditorPlugins {
     /// Reserved so callers use [`JackdawEditorPlugins::default`].
     /// ensuring forward compatibility in case we add fields in the future.
@@ -300,12 +410,6 @@ impl Default for JackdawEditorPlugins {
 
 impl PluginGroup for JackdawEditorPlugins {
     fn build(self) -> PluginGroupBuilder {
-        // DylibLoaderPlugin is intentionally NOT in this group. The
-        // launcher binary (`jackdaw`) opts in by adding it directly,
-        // because the launcher is the sole consumer of the
-        // `~/.config/jackdaw/games/` and `~/.config/jackdaw/extensions/`
-        // dylib install dirs. Per-project static editor binaries
-        // Custom standalone editors choose whether to add the loader.
         PluginGroupBuilder::start::<Self>()
             .add(EditorCorePlugin)
             .add(ExtensionPlugin::default())
@@ -324,6 +428,12 @@ impl Plugin for EditorCorePlugin {
              add `EnhancedInputPlugin` in main.rs before JackdawEditorPlugins."
         );
         app.init_state::<AppState>();
+        app.add_systems(
+            Update,
+            project::open_pending_tabs
+                .run_if(editor_active)
+                .run_if(resource_exists::<project::PendingTabOpens>),
+        );
         // A game whose own UI is built on feathers adds the group itself,
         // and the editor loads that game's plugin into this app. Adding a
         // plugin twice is a panic, so the editor takes each of these only
@@ -378,7 +488,6 @@ impl Plugin for EditorCorePlugin {
                 runtime_mesh_rebuild: false,
             },
             (
-                project_select::ProjectSelectPlugin,
                 scrolling_log::ScrollingLogPlugin,
                 inspector::InspectorPlugin,
                 hierarchy::HierarchyPlugin,
@@ -416,9 +525,7 @@ impl Plugin for EditorCorePlugin {
         // gives exactly that -- data, no draw.
         .init_asset::<AuroraMaterial>()
         .init_asset::<jackdaw_terrain::render::TerrainSplatMaterial>()
-        .add_plugins(jackdaw_runtime::MaterialOverridesPlugin)
         .add_plugins(file_ops::FileOpsPlugin)
-        .add_plugins(keybinds::KeybindsPlugin)
         .add_plugins(keybind_settings::KeybindSettingsPlugin)
         .add_plugins(panel_focus::PanelFocusPlugin)
         .add_plugins((
@@ -506,7 +613,8 @@ impl Plugin for EditorCorePlugin {
         .configure_sets(
             Update,
             EditorInteractionSystems
-                .run_if(in_state(AppState::Editor))
+                .run_if(editor_active)
+                .run_if(editor_shown)
                 .run_if(no_dialog_open),
         )
         .configure_sets(
@@ -515,7 +623,16 @@ impl Plugin for EditorCorePlugin {
                 .after(bevy::transform::TransformSystems::Propagate)
                 .after(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate)
                 .run_if(|| std::env::var_os("JD_PERF_NO_DRAW").is_none())
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active)
+                .run_if(editor_shown),
+        )
+        .init_resource::<EditorShown>()
+        .add_systems(
+            PostUpdate,
+            (
+                show_or_hide_editor.run_if(resource_changed::<EditorShown>),
+                cover_host_ui,
+            ),
         )
         .insert_resource(UiTheme(create_dark_theme()))
         .insert_resource(jackdaw_api_internal::load_active_keymap_preset())
@@ -544,7 +661,7 @@ impl Plugin for EditorCorePlugin {
         .add_systems(First, project::mirror_open_project)
         .add_systems(
             Update,
-            rebuild_menu_if_dirty.run_if(in_state(AppState::Editor)),
+            rebuild_menu_if_dirty.run_if(editor_active),
         )
         .add_systems(OnExit(AppState::Editor), cleanup_editor)
         .add_systems(
@@ -561,7 +678,7 @@ impl Plugin for EditorCorePlugin {
                 sync_selected_keyframes_from_selection,
                 auto_save_layout_on_change,
             )
-                .run_if(in_state(AppState::Editor)),
+                .run_if(editor_active),
         )
         .add_systems(Update, keybind_focus::disable_keyboard_input_when_typing)
         .add_observer(layout::update_toolbar_button_variants)
@@ -822,12 +939,13 @@ fn selected_clip_target_with_name(world: &World) -> Option<(Entity, String)> {
 /// Clip selector combobox changed. Maps the selected index to a
 /// clip entity and switches `SelectedClip`.
 fn on_clip_selector_change(
-    event: On<jackdaw_feathers::combobox::ComboBoxChangeEvent>,
+    event: On<ValueChange<Entity>>,
     selectors: Query<&jackdaw_animation::TimelineClipSelector>,
+    options: Query<&OptionIndex>,
     child_of_query: Query<&ChildOf>,
     mut commands: Commands,
 ) {
-    let mut current = event.entity;
+    let mut current = event.source;
     let mut selector = None;
     for _ in 0..6 {
         if let Ok(s) = selectors.get(current) {
@@ -842,7 +960,9 @@ fn on_clip_selector_change(
     let Some(selector) = selector else {
         return;
     };
-    let idx = event.selected;
+    let Ok(&OptionIndex(idx)) = options.get(event.value) else {
+        return;
+    };
     let Some(&clip_entity) = selector.sibling_clips.get(idx) else {
         return;
     };
@@ -2188,7 +2308,7 @@ fn populate_menu(
         .unwrap_or_default();
 
     let mut menu_items = [
-        (TopLevelMenu::File, file_menu_rows(recent_projects_rows())),
+        (TopLevelMenu::File, file_menu_rows()),
         (
             TopLevelMenu::Edit,
             vec![
@@ -2438,30 +2558,6 @@ pub(crate) fn menu_hover(
     }
 }
 
-/// Open one of the recent projects, the way the Open Recent list does.
-#[operator(
-    id = "project.open_recent",
-    label = "Open Recent Project",
-    description = "Open a project from the recent list.",
-    allows_undo = false,
-    params(path(String, doc = "Directory the project lives in."))
-)]
-pub(crate) fn project_open_recent(
-    params: In<OperatorParameters>,
-    mut commands: bevy::prelude::Commands,
-) -> OperatorResult {
-    let path = std::path::PathBuf::from(unescape_action_value(params.as_str("path")?));
-    commands.insert_resource(project_select::PendingAutoOpen {
-        path,
-        skip_build: false,
-    });
-    commands.queue(|world: &mut World| {
-        world
-            .resource_mut::<NextState<AppState>>()
-            .set(AppState::ProjectSelect);
-    });
-    OperatorResult::Finished
-}
 
 /// Reset the dock layout to its default.
 #[operator(
@@ -2554,11 +2650,10 @@ fn section_label(name: &str) -> (String, String) {
 }
 
 /// The File menu: entries and dividers, no headings.
-fn file_menu_rows(recent: Vec<(String, String)>) -> Vec<(String, String)> {
+fn file_menu_rows() -> Vec<(String, String)> {
     [
         new_scene_rows(),
         vec![op_entry::<crate::scenes::operators::SceneOpenOp>("Open")],
-        recent,
         vec![
             op_entry::<crate::scenes::operators::SceneCloseOp>("Close Tab"),
             separator(),
@@ -2569,7 +2664,6 @@ fn file_menu_rows(recent: Vec<(String, String)>) -> Vec<(String, String)> {
             separator(),
             op_entry::<app_ops::AppOpenKeybindsOp>("Keybinds..."),
             op_entry::<app_ops::AppOpenExtensionsOp>("Extensions..."),
-            op_entry::<app_ops::AppGoHomeOp>("Home"),
         ],
     ]
     .concat()
@@ -2593,76 +2687,6 @@ pub fn new_scene_rows() -> Vec<(String, String)> {
         })
         .collect::<Vec<_>>();
     jackdaw_feathers::menu_bar::submenu_row("New", kinds)
-}
-
-/// How many recent projects the File menu lists before the rest stay in
-/// the dialog.
-const RECENT_MENU_LIMIT: usize = 10;
-
-/// The File menu's Open Recent group: a row per recent project, expanding
-/// on hover. With nothing to list it is a plain row that opens the dialog.
-fn recent_projects_rows() -> Vec<(String, String)> {
-    let recent = project::read_recent_projects();
-    if recent.projects.is_empty() {
-        return vec![op_entry::<scene_ops::SceneOpenRecentOp>("Open Recent...")];
-    }
-    let projects = recent
-        .projects
-        .iter()
-        .take(RECENT_MENU_LIMIT)
-        .map(|entry| {
-            (
-                format!(
-                    "{OP_PREFIX}{}?path={}",
-                    ProjectOpenRecentOp::ID,
-                    escape_action_value(&entry.path.to_string_lossy())
-                ),
-                entry.name.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
-    jackdaw_feathers::menu_bar::submenu_row("Open Recent", projects)
-}
-
-/// Percent-escape the characters an `op:` action string gives meaning to
-/// (`?`, `&`, `=`, `%`), so a parameter carrying one arrives whole.
-fn escape_action_value(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for character in value.chars() {
-        match character {
-            '%' => escaped.push_str("%25"),
-            '?' => escaped.push_str("%3F"),
-            '&' => escaped.push_str("%26"),
-            '=' => escaped.push_str("%3D"),
-            other => escaped.push(other),
-        }
-    }
-    escaped
-}
-
-/// Undo `escape_action_value`. Text that was never escaped comes back
-/// unchanged, including a bare `%`.
-fn unescape_action_value(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    let mut rest = value;
-    while let Some(index) = rest.find('%') {
-        out.push_str(&rest[..index]);
-        let escape = rest
-            .get(index + 1..index + 3)
-            .and_then(|digits| u8::from_str_radix(digits, 16).ok());
-        match escape {
-            Some(byte) => {
-                out.push(byte as char);
-                rest = &rest[index + 3..];
-            }
-            None => {
-                out.push('%');
-                rest = &rest[index + 1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// Dispatch `op:`-prefixed [`MenuAction`] events emitted by callers that
@@ -2806,140 +2830,6 @@ fn cleanup_editor(world: &mut World) {
     }
 }
 
-pub(crate) fn open_recent_dialog(world: &mut World) {
-    let recent = project::read_recent_projects();
-
-    let mut dialog_event = jackdaw_feathers::dialog::OpenDialogEvent::new("Open Recent", "")
-        .without_cancel()
-        .with_close_button(true)
-        .without_content_padding();
-    dialog_event.action = None;
-    world.commands().trigger(dialog_event);
-    world.flush();
-
-    // Find the DialogChildrenSlot and spawn rows inside it
-    let slot_entity = world
-        .query_filtered::<Entity, With<jackdaw_feathers::dialog::DialogChildrenSlot>>()
-        .iter(world)
-        .next();
-
-    let Some(slot_entity) = slot_entity else {
-        return;
-    };
-
-    let editor_font = world
-        .resource::<jackdaw_feathers::icons::EditorFont>()
-        .0
-        .clone();
-
-    // A first run has nothing to list, and the dialog still opens to say so.
-    if recent.projects.is_empty() {
-        world.commands().spawn((
-            Node {
-                width: Val::Percent(100.0),
-                padding: UiRect::all(Val::Px(16.0)),
-                ..Default::default()
-            },
-            children![(
-                Text::new("No projects opened yet."),
-                TextFont {
-                    font: editor_font.clone().into(),
-                    font_size: jackdaw_feathers::tokens::TEXT_SIZE,
-                    ..Default::default()
-                },
-                TextColor(jackdaw_feathers::tokens::TEXT_SECONDARY),
-                Pickable::IGNORE,
-            )],
-            ChildOf(slot_entity),
-        ));
-        world.flush();
-        return;
-    }
-
-    for entry in &recent.projects {
-        let path = entry.path.clone();
-        let name = entry.name.clone();
-        let path_display = entry.path.to_string_lossy().to_string();
-        let font = editor_font.clone();
-
-        let row = world
-            .commands()
-            .spawn((
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    width: Val::Percent(100.0),
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(2.0),
-                    ..Default::default()
-                },
-                BackgroundColor(jackdaw_feathers::tokens::TOOLBAR_BG),
-                children![
-                    (
-                        Text::new(name),
-                        TextFont {
-                            font: font.clone().into(),
-                            font_size: jackdaw_feathers::tokens::TEXT_SIZE_LG,
-                            ..Default::default()
-                        },
-                        TextColor(jackdaw_feathers::tokens::TEXT_PRIMARY),
-                        Pickable::IGNORE,
-                    ),
-                    (
-                        Text::new(path_display),
-                        TextFont {
-                            font: font.into(),
-                            font_size: jackdaw_feathers::tokens::TEXT_SIZE_SM,
-                            ..Default::default()
-                        },
-                        TextColor(jackdaw_feathers::tokens::TEXT_SECONDARY),
-                        Pickable::IGNORE,
-                    ),
-                ],
-            ))
-            .id();
-
-        // Hover effects
-        world.commands().entity(row).observe(
-            |hover: On<PointerOver>, mut bg: Query<&mut BackgroundColor>| {
-                if let Ok(mut bg) = bg.get_mut(hover.event_target()) {
-                    bg.0 = jackdaw_feathers::tokens::HOVER_BG;
-                }
-            },
-        );
-        world.commands().entity(row).observe(
-            |out: On<PointerOut>, mut bg: Query<&mut BackgroundColor>| {
-                if let Ok(mut bg) = bg.get_mut(out.event_target()) {
-                    bg.0 = jackdaw_feathers::tokens::TOOLBAR_BG;
-                }
-            },
-        );
-
-        // Click: open the project
-        world
-            .commands()
-            .entity(row)
-            .observe(move |_: On<PointerClick>, mut commands: Commands| {
-                let path = path.clone();
-                commands.insert_resource(project_select::PendingAutoOpen {
-                    path: path.clone(),
-                    skip_build: false,
-                });
-                commands.trigger(jackdaw_feathers::dialog::CloseDialogEvent);
-                commands.queue(move |world: &mut World| {
-                    // Cancelling at the prompt drops the pick above.
-                    if scenes::confirm_dialog::leave_project_or_confirm(world) {
-                        world
-                            .resource_mut::<NextState<AppState>>()
-                            .set(AppState::ProjectSelect);
-                    }
-                });
-            });
-
-        world.commands().entity(slot_entity).add_child(row);
-    }
-
-    world.flush();
-}
 
 const SCROLL_LINE_HEIGHT: f32 = 21.0;
 
@@ -3911,22 +3801,11 @@ mod file_menu_tests {
     use super::*;
     use jackdaw_feathers::menu_bar::{
         SECTION_ACTION_PREFIX, SEPARATOR_ACTION, SUBMENU_ACTION_PREFIX, SUBMENU_END_ACTION,
-        submenu_row,
     };
-
-    fn recent() -> Vec<(String, String)> {
-        submenu_row(
-            "Open Recent",
-            [(
-                String::from("op:project.open_recent?path=/tmp/game"),
-                String::from("game"),
-            )],
-        )
-    }
 
     #[test]
     fn the_file_menu_names_no_sections() {
-        let rows = file_menu_rows(recent());
+        let rows = file_menu_rows();
         assert!(
             !rows
                 .iter()
@@ -3939,92 +3818,12 @@ mod file_menu_tests {
         );
     }
 
-    #[test]
-    fn the_recent_projects_are_a_group_of_the_menus_two() {
-        let rows = file_menu_rows(recent());
-        let openers = rows
-            .iter()
-            .filter(|(action, _)| action.starts_with(SUBMENU_ACTION_PREFIX))
-            .map(|(action, _)| action.clone())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            openers,
-            vec![
-                format!("{SUBMENU_ACTION_PREFIX}New"),
-                format!("{SUBMENU_ACTION_PREFIX}Open Recent"),
-            ],
-            "the scene kinds and the recent list: {rows:?}",
-        );
-        assert_eq!(
-            rows.iter()
-                .filter(|(action, _)| action == SUBMENU_END_ACTION)
-                .count(),
-            openers.len(),
-            "every group is closed: {rows:?}",
-        );
-
-        let opened = rows
-            .iter()
-            .position(|(action, _)| action == &format!("{SUBMENU_ACTION_PREFIX}Open Recent"))
-            .expect("the group is in the menu");
-        let open = rows
-            .iter()
-            .position(|(_, label)| label == "Open")
-            .expect("Open is in the menu");
-        assert!(opened > open, "the recent list follows Open: {rows:?}");
-    }
-
-    /// A project directory is arbitrary text travelling through an action
-    /// string that splits on `?`, `&` and `=`.
-    #[test]
-    fn a_path_with_the_encodings_own_characters_survives_it() {
-        for path in [
-            "/home/joe/games/a&b",
-            "/home/joe/games/rate=1?x",
-            "/home/joe/100% real",
-            "/home/joe/plain",
-        ] {
-            let escaped = escape_action_value(path);
-            assert!(
-                !escaped.contains('&') && !escaped.contains('=') && !escaped.contains('?'),
-                "`{escaped}` still splits the action string",
-            );
-            assert_eq!(unescape_action_value(&escaped), path, "round trip");
-        }
-    }
-
-    /// An operator called by hand carries whatever the caller typed.
-    #[test]
-    fn text_that_was_never_escaped_comes_back_unchanged() {
-        assert_eq!(unescape_action_value("/home/50%"), "/home/50%");
-        assert_eq!(unescape_action_value("/home/%zz/x"), "/home/%zz/x");
-    }
-
-    /// With no recent projects there is no list to expand, so the row goes
-    /// back to being the one that opens the dialog.
-    #[test]
-    fn an_empty_recent_list_is_no_group_at_all() {
-        let rows = file_menu_rows(vec![op_entry::<scene_ops::SceneOpenRecentOp>(
-            "Open Recent...",
-        )]);
-        assert!(
-            !rows
-                .iter()
-                .any(|(action, _)| action == &format!("{SUBMENU_ACTION_PREFIX}Open Recent")),
-            "nothing expands there: {rows:?}",
-        );
-        assert!(
-            rows.iter().any(|(_, label)| label == "Open Recent..."),
-            "the dialog is still reachable: {rows:?}",
-        );
-    }
-
     /// Each row is `scene.new` with the clause that names its scene kind.
     #[test]
     fn the_new_group_offers_the_three_scene_kinds() {
         use jackdaw_feathers::button::ButtonOperatorCall;
 
-        let rows = file_menu_rows(recent());
+        let rows = file_menu_rows();
         let open = rows
             .iter()
             .position(|(action, _)| action == &format!("{SUBMENU_ACTION_PREFIX}New"))

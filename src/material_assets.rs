@@ -566,7 +566,7 @@ pub(crate) fn plugin(app: &mut App) {
     .init_resource::<EditedMaterials>()
     .add_systems(
         Update,
-        write_edited_materials.run_if(in_state(crate::AppState::Editor)),
+        write_edited_materials.run_if(crate::editor_active),
     )
     .add_observer(on_delete_dialog_opened)
     .add_observer(on_delete_dialog_closed)
@@ -944,6 +944,7 @@ fn delete_material(world: &mut World, name: &str) {
 mod tests {
     use super::*;
     use bevy::asset::AssetPlugin;
+    use bevy::image::ImageLoaderSettings;
     use path_slash::PathExt as _;
 
     fn material_app() -> App {
@@ -1864,6 +1865,8 @@ mod tests {
         use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
         let mut app = material_app();
+        app.insert_resource(State::new(crate::AppState::Off))
+            .insert_resource(crate::EditorShown(false));
         app.add_plugins(plugin);
         let image = app
             .world_mut()

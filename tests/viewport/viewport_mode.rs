@@ -7,7 +7,7 @@ use crate::util;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use jackdaw::scenes::swap::swap_active_tab;
-use jackdaw::scenes::{SceneTab, Scenes, TabContent};
+use jackdaw::scenes::{SceneTab, Scenes};
 use jackdaw::{
     viewport::{
         ActiveViewport, ViewportPanelHost, build_viewport_panel, run_active_viewport_update,
@@ -381,14 +381,8 @@ fn two_scene_tabs(app: &mut App) {
     scenes.tabs.clear();
     scenes.tabs.push(SceneTab::new_untitled(1));
     scenes.tabs.push(SceneTab::new_untitled(2));
-    scenes.tabs[0].content = TabContent::Scene(Some(Box::new(
-        jackdaw_bsn::parse_bsn_text("#Overlay\njackdaw_scene_types::UiSceneRoot\n")
-            .expect("the fixture parses"),
-    )));
-    scenes.tabs[1].content = TabContent::Scene(Some(Box::new(
-        jackdaw_bsn::parse_bsn_text("#World\nbevy_transform::components::transform::Transform\n")
-            .expect("the fixture parses"),
-    )));
+    scenes.tabs[0].path = Some(scene_file("#Overlay\njackdaw_scene_types::UiSceneRoot\n"));
+    scenes.tabs[1].path = Some(scene_file("#World\nbevy_transform::components::transform::Transform\n"));
     scenes.active = 1;
 }
 
@@ -475,10 +469,7 @@ fn a_tab_that_was_never_switched_follows_its_scenes_kind() {
         .resource_mut::<Scenes>()
         .tabs
         .push(SceneTab::new_untitled(3));
-    app.world_mut().resource_mut::<Scenes>().tabs[2].content = TabContent::Scene(Some(Box::new(
-        jackdaw_bsn::parse_bsn_text("#Screen\njackdaw_scene_types::UiSceneRoot\n")
-            .expect("the fixture parses"),
-    )));
+    app.world_mut().resource_mut::<Scenes>().tabs[2].path = Some(scene_file("#Screen\njackdaw_scene_types::UiSceneRoot\n"));
 
     swap_active_tab(app.world_mut(), 0);
     app.update();
@@ -821,8 +812,8 @@ fn an_imported_overlay_routes_into_the_panel_showing_the_world() {
     assert_eq!(host(&app, in_2d).mode, ViewportMode::TwoD);
     assert_eq!(host(&app, in_3d).mode, ViewportMode::ThreeD);
 
-    // Imported rather than authored: an `IsA` instance root with no `Prefab`
-    // of its own, which is what marks it as an overlay.
+    // Imported rather than authored: an instance of another file, which is
+    // what marks it as an overlay.
     let root = app
         .world_mut()
         .spawn((
@@ -830,10 +821,8 @@ fn an_imported_overlay_routes_into_the_panel_showing_the_world() {
                 reference_size: UVec2::new(1280, 720),
             },
             Node::default(),
-            jackdaw::prefab::IsA {
-                source: std::path::PathBuf::from("hud.bsn"),
-                deleted: Vec::new(),
-            },
+            bevy::scene::SceneBase("hud.bsn".to_string()),
+            jackdaw::scene_io::SceneEntity,
         ))
         .id();
     app.world_mut()
@@ -1052,4 +1041,16 @@ fn the_grid_size_chord_runs_after_the_hover_pass() {
             .any(|name| name.ends_with("handle_grid_size_scroll")),
         "the grid-size chord must be ordered after the hover pass",
     );
+}
+
+/// A scene file holding `text`, for a tab to open from.
+fn scene_file(text: &str) -> std::path::PathBuf {
+    let (_, path) = tempfile::Builder::new()
+        .suffix(".bsn")
+        .tempfile()
+        .expect("a temp file")
+        .keep()
+        .expect("the temp file is kept");
+    std::fs::write(&path, text).expect("the scene is written");
+    path
 }

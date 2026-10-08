@@ -28,7 +28,7 @@ impl Plugin for CameraPreviewPlugin {
             .add_systems(OnEnter(crate::AppState::Editor), setup_camera_preview)
             .add_systems(
                 Update,
-                mirror_selected_camera.run_if(in_state(crate::AppState::Editor)),
+                mirror_selected_camera.run_if(crate::editor_active),
             )
             .add_observer(on_preview_strip_added);
     }

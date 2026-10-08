@@ -4,6 +4,7 @@
 use crate::util;
 
 use bevy::asset::Asset;
+use bevy::feathers_inspector::InspectorField;
 use bevy::prelude::*;
 use jackdaw::definition_assets::{DefinitionAssetEdit, OpenDefinition};
 use jackdaw_api::prelude::*;
@@ -19,7 +20,7 @@ struct MobDef {
 
 /// An editor showing the inspector, with a project of its own and one asset
 /// type registered.
-fn editor_with_mobs() -> (App, tempfile::TempDir) {
+fn editor_with_mobs() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(tmp.path().join("assets/content/mobs")).expect("a content folder");
     let mut app = util::editor_test_app();
@@ -49,18 +50,17 @@ fn settle(app: &mut App) {
     }
 }
 
-/// Every control on the panel writing a field of a type.
+/// Every field row on the panel of a type.
 fn rows_of(app: &mut App, type_path: &str) -> Vec<String> {
-    let entities: Vec<Entity> = app
+    let rows: Vec<Entity> = app
         .world_mut()
-        .query::<Entity>()
+        .query_filtered::<Entity, With<InspectorField>>()
         .iter(app.world())
         .collect();
-    entities
-        .into_iter()
-        .filter_map(|entity| jackdaw::inspector::field_edited_by(app.world(), entity))
-        .filter(|(known, _)| *known == type_path)
-        .map(|(_, field)| field.to_string())
+    rows.into_iter()
+        .filter_map(|row| jackdaw::inspector::inspected_field(app.world(), row))
+        .filter(|(known, _)| known == type_path)
+        .map(|(_, field)| field)
         .collect()
 }
 

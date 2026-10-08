@@ -34,7 +34,7 @@ struct OperatorParamNoDefaultMarker {
 /// Build the editor test app and register `OperatorParamTestMarker` so
 /// `component_id_for_path` can find it. No entity has the component, so this also
 /// exercises the `register_type`-only path `component.add` must handle.
-fn app_with_test_marker() -> App {
+fn app_with_test_marker() -> util::TestApp {
     let mut app = util::editor_test_app();
     app.register_type::<OperatorParamTestMarker>();
     app.register_type::<OperatorParamNoDefaultMarker>();
@@ -52,7 +52,7 @@ fn spawn_selected_target(app: &mut App) -> Entity {
 
 fn spawn_authored_selected_target(app: &mut App) -> Entity {
     let entity = spawn_selected_target(app);
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     entity
 }
 
@@ -195,7 +195,7 @@ fn component_remove_with_entity_param_removes_component() {
     app.world_mut()
         .entity_mut(entity)
         .insert(OperatorParamTestMarker { value: 42 });
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     assert!(
         app.world()
             .entity(entity)
@@ -221,14 +221,12 @@ fn component_remove_with_entity_param_removes_component() {
             .contains::<OperatorParamTestMarker>(),
         "component.remove did not remove the component"
     );
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("the target is tracked");
+    let authored = util::authored_type_paths(app.world(), entity);
     assert!(
-        !ast.component_type_paths(node)
+        !authored
             .iter()
-            .any(|path| { path == "operators::operator_entity_params::OperatorParamTestMarker" }),
-        "component.remove left the component in the document; document holds {:?}",
-        ast.component_type_paths(node)
+            .any(|path| path == "operators::operator_entity_params::OperatorParamTestMarker"),
+        "component.remove left the component authored: {authored:?}"
     );
 }
 
@@ -301,7 +299,6 @@ fn physics_disable_with_entity_param_detaches_components() {
 #[test]
 fn add_cube_authors_static_physics_by_default() {
     use avian3d::prelude::RigidBody;
-    use jackdaw_bsn::SceneBsnAst;
     use jackdaw_scene_types::Brush;
 
     let mut app = util::editor_test_app();
@@ -330,11 +327,7 @@ fn add_cube_authors_static_physics_by_default() {
         "new brushes should spawn with AvianCollider"
     );
 
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast
-        .ast_for(entity)
-        .expect("cube is tracked in the document");
-    let paths = ast.component_type_paths(node);
+    let paths = util::authored_type_paths(app.world(), entity);
     assert!(
         paths
             .iter()
@@ -356,7 +349,6 @@ fn add_cube_authors_static_physics_by_default() {
 #[test]
 fn component_remove_drops_authored_physics_from_the_document() {
     use avian3d::prelude::RigidBody;
-    use jackdaw_bsn::SceneBsnAst;
     use jackdaw_scene_types::Brush;
 
     let mut app = util::editor_test_app();
@@ -418,11 +410,7 @@ fn component_remove_drops_authored_physics_from_the_document() {
         "unreflected collider requires must leave with AvianCollider"
     );
 
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast
-        .ast_for(entity)
-        .expect("cube is tracked in the document");
-    let paths = ast.component_type_paths(node);
+    let paths = util::authored_type_paths(app.world(), entity);
     assert!(
         !paths
             .iter()

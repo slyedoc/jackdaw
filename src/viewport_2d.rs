@@ -477,7 +477,7 @@ fn viewport_2d_pan_zoom(
 ///
 /// For tests: the plugin runs `viewport_2d_pan_zoom` inside
 /// [`crate::EditorInteractionSystems`], which never runs while a test app
-/// sits in `AppState::ProjectSelect`. The system itself cannot be made
+/// sits in `AppState::Off`. The system itself cannot be made
 /// public to be called directly, because two of its parameters are
 /// `crate::viewport`'s own.
 pub fn run_2d_pan_zoom(world: &mut World) {

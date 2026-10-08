@@ -20,7 +20,7 @@ const MODEL: &str = "models/dungeon.glb";
 
 /// An outliner panel over a scene holding `count` model instances, ticked
 /// until the loader has spawned what the assets hold.
-fn panel_over_models(count: usize) -> (App, Entity, Vec<Entity>) {
+fn panel_over_models(count: usize) -> (util::TestApp, Entity, Vec<Entity>) {
     let mut app = util::editor_test_app();
     let panel = app
         .world_mut()
@@ -46,7 +46,7 @@ fn panel_over_models(count: usize) -> (App, Entity, Vec<Entity>) {
                     },
                 ))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(world, entity);
+            jackdaw::scene_io::adopt_entity(world, entity);
             entity
         })
         .collect();

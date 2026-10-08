@@ -464,7 +464,7 @@ impl Plugin for BrushPlugin {
                 )
                     .chain()
                     .after(crate::EditorInteractionSystems)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             // PostUpdate to prevent flash of old position while transfroms update
             .add_systems(
@@ -483,17 +483,17 @@ impl Plugin for BrushPlugin {
             )
             .add_systems(
                 Update,
-                flag_inspector_on_modifier_stack_removal.run_if(in_state(crate::AppState::Editor)),
+                flag_inspector_on_modifier_stack_removal.run_if(crate::editor_active),
             )
             .add_systems(
                 Update,
                 edit_mode_systems::sync_brush_halfedge_on_edit_mode
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_systems(
                 Update,
                 topology_migration::migrate_legacy_brush_topology
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

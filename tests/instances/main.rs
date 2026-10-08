@@ -4,6 +4,8 @@
 #[path = "../util/mod.rs"]
 mod util;
 
+mod ui_routing;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 

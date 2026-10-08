@@ -34,7 +34,6 @@ include = [
 # extension projects). `default-run` makes `cargo run` resolve to the
 # editor without an explicit `--bin` flag; the wrapper still builds
 # alongside via `cargo build` and is installed by `cargo install`.
-default-run = "jackdaw"
 
 [features]
 default = ["camera_rig"]

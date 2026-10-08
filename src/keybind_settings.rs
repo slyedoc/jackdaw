@@ -14,7 +14,7 @@ use jackdaw_api_internal::keymap::{
     key_code_name, mouse_button_name, resolve_keymap, save_user_keymap,
 };
 use jackdaw_api_internal::lifecycle::{OperatorAction, OperatorChordSite, OperatorEntity};
-use jackdaw_commands::keybinds::{EditorAction, Keybind, KeybindRegistry};
+use jackdaw_commands::keybinds::key_display_name;
 use jackdaw_feathers::icons::Icon;
 use jackdaw_feathers::tooltip::Tooltip;
 use jackdaw_feathers::{
@@ -57,7 +57,7 @@ impl Plugin for KeybindSettingsPlugin {
                     refresh_conflict_badges,
                     cleanup_on_dialog_close,
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }
@@ -105,17 +105,6 @@ const FIXED: &str = "Fixed";
 
 /// Heading for the rows with no input action to attach a chord to.
 const MENU_ONLY: &str = "Menu only";
-
-/// The camera-fly actions, the last commands still driven by the legacy
-/// [`KeybindRegistry`] rather than by an operator.
-const CAMERA_ACTIONS: &[EditorAction] = &[
-    EditorAction::CameraForward,
-    EditorAction::CameraBackward,
-    EditorAction::CameraLeft,
-    EditorAction::CameraRight,
-    EditorAction::CameraUp,
-    EditorAction::CameraDown,
-];
 
 /// One operator as the dialog lists it: what it is called, where it
 /// belongs, and the chords it holds that the dialog cannot change.
@@ -174,8 +163,6 @@ pub struct PendingKeymapChanges {
     /// through Save untouched so a disabled extension's rebinds are not
     /// deleted by the session that could not resolve them.
     pub unresolved: Vec<PresetBinding>,
-    /// Working copy of the legacy camera bindings.
-    pub camera: HashMap<EditorAction, Vec<Keybind>>,
 }
 
 impl PendingKeymapChanges {
@@ -450,7 +437,7 @@ impl PendingKeymapChanges {
 /// the cancel gesture, since every key press is a candidate binding.
 const RECORDING_PROMPT: &str = "Press a key... right-click to cancel";
 
-/// Tracks which operator or camera action is being re-recorded.
+/// Tracks which operator is being re-recorded.
 #[derive(Resource, Default)]
 pub(crate) struct KeybindRecordingState {
     target: Option<RecordingTarget>,
@@ -468,20 +455,11 @@ enum RecordingMode {
     Add,
 }
 
+/// The operator a recording is for, and what it does to that row.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum RecordingTarget {
-    Operator(String, RecordingMode),
-    Camera(EditorAction, usize),
-}
-
-impl RecordingTarget {
-    /// The operator this recording is for, if it is for one.
-    fn operator(&self) -> Option<&str> {
-        match self {
-            Self::Operator(operator, _) => Some(operator),
-            Self::Camera(..) => None,
-        }
-    }
+struct RecordingTarget {
+    operator: String,
+    mode: RecordingMode,
 }
 
 impl KeybindRecordingState {
@@ -517,8 +495,7 @@ struct KeyFilterState {
 /// Marker on each row, storing what it is a row for.
 #[derive(Component, Clone)]
 struct KeybindRowTarget {
-    operator: Option<String>,
-    camera: Option<EditorAction>,
+    operator: String,
     category: String,
     /// Lower-cased name and chords, for the text filter.
     haystack: String,
@@ -528,8 +505,8 @@ struct KeybindRowTarget {
 #[derive(Component)]
 struct KeybindCategoryHeader(String);
 
-/// The text element showing an operator's chords. Only the camera rows
-/// still draw one; an operator row draws a `KeybindChordList` instead.
+/// The text element showing a non-editable row's chords; an editable row
+/// draws a `KeybindChordList` instead.
 #[derive(Component)]
 struct KeybindDisplayText(String);
 
@@ -551,25 +528,13 @@ struct KeybindAddChordButton(String);
 #[derive(Component)]
 pub struct KeymapConflictBadge(pub String);
 
-/// The text element showing a camera action's chords.
-#[derive(Component)]
-struct CameraDisplayText(EditorAction);
-
 /// Rebind button for an operator row, holding the operator it rebinds.
 #[derive(Component)]
 pub struct KeybindRebindButton(pub String);
 
-/// Rebind button for a camera row: (action, binding index).
-#[derive(Component)]
-struct CameraRebindButton(EditorAction, usize);
-
 /// Per-row reset to default button.
 #[derive(Component)]
 struct KeybindResetButton(String);
-
-/// Per-row reset for a camera action.
-#[derive(Component)]
-struct CameraResetButton(EditorAction);
 
 /// Reset All button marker.
 #[derive(Component)]
@@ -691,16 +656,11 @@ pub fn pending_from_world(world: &mut World) -> PendingKeymapChanges {
         .filter(|binding| !known.contains(binding.operator.as_str()))
         .cloned()
         .collect();
-    let camera = world
-        .get_resource::<KeybindRegistry>()
-        .map(|registry| registry.bindings.clone())
-        .unwrap_or_default();
     PendingKeymapChanges {
         rows,
         bindings: resolved.bindings,
         defaults,
         unresolved,
-        camera,
     }
 }
 
@@ -732,17 +692,6 @@ fn format_chords(chords: &[String]) -> String {
         return "Unbound".to_string();
     }
     chords.join(" / ")
-}
-
-fn format_bindings(bindings: &[Keybind]) -> String {
-    if bindings.is_empty() {
-        return "Unbound".to_string();
-    }
-    bindings
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(" / ")
 }
 
 /// What the advisory line says about a working copy and the last apply.
@@ -982,8 +931,7 @@ fn populate_keybind_dialog(
             let row_entity = commands
                 .spawn((
                     KeybindRowTarget {
-                        operator: Some(row.operator.clone()),
-                        camera: None,
+                        operator: row.operator.clone(),
                         category: category.clone(),
                         haystack,
                     },
@@ -1085,64 +1033,6 @@ fn populate_keybind_dialog(
                 .add_children(&[name_label, right]);
             commands.entity(scroll).add_child(row_entity);
         }
-
-        // The camera-fly rows, still on the legacy registry.
-        let header = spawn_category_header(&mut commands, "Camera");
-        commands.entity(scroll).add_child(header);
-        for &action in CAMERA_ACTIONS {
-            let bindings = pending.camera.get(&action).cloned().unwrap_or_default();
-            let binding_text = format_bindings(&bindings);
-            let haystack = format!("{action} {binding_text}").to_lowercase();
-
-            let row_entity = commands
-                .spawn((
-                    KeybindRowTarget {
-                        operator: None,
-                        camera: Some(action),
-                        category: "Camera".to_string(),
-                        haystack,
-                    },
-                    row_node(),
-                    BorderColor::all(tokens::BORDER_COLOR),
-                ))
-                .id();
-            let name_label = commands.spawn(row_label(&action.to_string(), 240.0)).id();
-            let right = commands.spawn(row_right_node()).id();
-            let chord_label = commands
-                .spawn((
-                    CameraDisplayText(action),
-                    Text::new(binding_text),
-                    TextFont {
-                        font_size: tokens::TEXT_SIZE,
-                        ..Default::default()
-                    },
-                    TextColor(chord_text_color(bindings.is_empty())),
-                    Node {
-                        min_width: px(140.0),
-                        ..Default::default()
-                    },
-                ))
-                .id();
-            let rebind_btn = commands
-                .spawn((
-                    CameraRebindButton(action, 0),
-                    button(ButtonProps::new("Rebind").with_variant(ButtonVariant::Default)),
-                ))
-                .id();
-            let reset_btn = commands
-                .spawn((
-                    CameraResetButton(action),
-                    button(ButtonProps::new("Reset").with_variant(ButtonVariant::Ghost)),
-                ))
-                .id();
-            commands
-                .entity(right)
-                .add_children(&[chord_label, rebind_btn, reset_btn]);
-            commands
-                .entity(row_entity)
-                .add_children(&[name_label, right]);
-            commands.entity(scroll).add_child(row_entity);
-        }
     }
 }
 
@@ -1182,7 +1072,7 @@ fn refresh_chord_lists(
     let waiting = recording
         .target
         .as_ref()
-        .and_then(RecordingTarget::operator);
+        .map(|target| target.operator.as_str());
     let pending_confirm = recording.pending_confirm.clone();
 
     for (entity, list, drawn) in &lists {
@@ -1331,7 +1221,6 @@ fn on_key_filter_click(
     parents: Query<&ChildOf>,
     dialogs: Query<(), With<EditorDialog>>,
     mut key_filter: ResMut<KeyFilterState>,
-    mut registry: ResMut<KeybindRegistry>,
     recording: Res<KeybindRecordingState>,
     children_query: Query<&Children>,
     captions: Query<(), With<ButtonContentText>>,
@@ -1359,7 +1248,6 @@ fn on_key_filter_click(
         );
     } else if key_filter.capturing {
         key_filter.capturing = false;
-        registry.recording = false;
         set_button_text(
             event.entity,
             "Key: Any",
@@ -1369,7 +1257,6 @@ fn on_key_filter_click(
         );
     } else {
         key_filter.capturing = true;
-        registry.recording = true;
         set_button_text(
             event.entity,
             RECORDING_PROMPT,
@@ -1401,7 +1288,6 @@ fn capture_key_filter(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut key_filter: ResMut<KeyFilterState>,
-    mut registry: ResMut<KeybindRegistry>,
     recording: Res<KeybindRecordingState>,
     key_filter_btns: Query<Entity, With<KeyFilterButton>>,
     children_query: Query<&Children>,
@@ -1418,7 +1304,6 @@ fn capture_key_filter(
     // Right-click or Escape cancels.
     if mouse.just_pressed(MouseButton::Right) || keyboard.just_pressed(KeyCode::Escape) {
         key_filter.capturing = false;
-        registry.recording = false;
         for btn in &key_filter_btns {
             set_button_text(btn, "Key: Any", &children_query, &captions, &mut texts);
         }
@@ -1432,12 +1317,8 @@ fn capture_key_filter(
 
         key_filter.capturing = false;
         key_filter.active_key = Some(*key);
-        registry.recording = false;
 
-        let label = format!(
-            "Key: {} (click to clear)",
-            jackdaw_commands::keybinds::key_display_name(*key)
-        );
+        let label = format!("Key: {} (click to clear)", key_display_name(*key));
         for btn in &key_filter_btns {
             set_button_text(btn, &label, &children_query, &captions, &mut texts);
         }
@@ -1498,18 +1379,12 @@ fn apply_keybind_filter(
             || row.haystack.contains(&text_query)
             || row.category.to_lowercase().contains(&text_query);
 
-        let key_match = match (&key_name, &row.operator, row.camera) {
-            (None, _, _) => true,
-            (Some(name), Some(operator), _) => pending.bindings.iter().any(|binding| {
-                binding.operator == *operator
+        let key_match = key_name.as_ref().is_none_or(|name| {
+            pending.bindings.iter().any(|binding| {
+                binding.operator == row.operator
                     && matches!(&binding.input, PresetInput::Key { key, .. } if key == name)
-            }),
-            (Some(_), None, Some(action)) => pending
-                .camera
-                .get(&action)
-                .is_some_and(|binds| binds.iter().any(|b| Some(b.key) == key_filter_active)),
-            (Some(_), None, None) => false,
-        };
+            })
+        });
 
         let visible = text_match && key_match;
         node.display = if visible {
@@ -1530,30 +1405,20 @@ fn apply_keybind_filter(
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one handler covering the three ways a recording starts"
-)]
 fn on_rebind_click(
     event: On<ButtonClickEvent>,
     operator_buttons: Query<&KeybindRebindButton>,
     add_buttons: Query<&KeybindAddChordButton>,
-    camera_buttons: Query<&CameraRebindButton>,
     parents: Query<&ChildOf>,
     dialogs: Query<(), With<EditorDialog>>,
     mut recording_state: ResMut<KeybindRecordingState>,
     mut capture: ResMut<KeymapCapture>,
-    mut registry: ResMut<KeybindRegistry>,
-    mut camera_texts: Query<
-        (&CameraDisplayText, &mut Text, &mut TextColor),
-        Without<KeybindDisplayText>,
-    >,
 ) {
     if !is_in_dialog(event.entity, &parents, &dialogs) {
         return;
     }
 
-    let operator = operator_buttons
+    let target = operator_buttons
         .get(event.entity)
         .map(|btn| (btn.0.clone(), RecordingMode::Replace))
         .or_else(|_| {
@@ -1561,25 +1426,10 @@ fn on_rebind_click(
                 .get(event.entity)
                 .map(|btn| (btn.0.clone(), RecordingMode::Add))
         });
-    if let Ok((operator, mode)) = operator {
-        recording_state.target = Some(RecordingTarget::Operator(operator, mode));
+    if let Ok((operator, mode)) = target {
+        recording_state.target = Some(RecordingTarget { operator, mode });
         recording_state.pending_confirm = None;
         capture.recording = true;
-        registry.recording = true;
-        return;
-    }
-
-    if let Ok(btn) = camera_buttons.get(event.entity) {
-        recording_state.target = Some(RecordingTarget::Camera(btn.0, btn.1));
-        recording_state.pending_confirm = None;
-        capture.recording = true;
-        registry.recording = true;
-        for (display, mut text, mut color) in &mut camera_texts {
-            if display.0 == btn.0 {
-                text.0 = RECORDING_PROMPT.to_string();
-                color.0 = tokens::TEXT_ACCENT;
-            }
-        }
     }
 }
 
@@ -1637,21 +1487,12 @@ pub fn capture_input(
     None
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one recorder covering the operator rows and the legacy camera rows"
-)]
 fn capture_keybind_recording(
     keyboard: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut recording_state: ResMut<KeybindRecordingState>,
     mut capture: ResMut<KeymapCapture>,
-    mut registry: ResMut<KeybindRegistry>,
     pending: Option<ResMut<PendingKeymapChanges>>,
-    mut camera_texts: Query<
-        (&CameraDisplayText, &mut Text, &mut TextColor),
-        Without<KeybindDisplayText>,
-    >,
     mut commands: Commands,
     dialog_exists: Query<(), With<EditorDialog>>,
     settings_open: Option<Res<KeybindSettingsOpen>>,
@@ -1674,8 +1515,6 @@ fn capture_keybind_recording(
         recording_state.target = None;
         recording_state.pending_confirm = None;
         capture.recording = false;
-        registry.recording = false;
-        redraw_target(&target, &pending, &mut camera_texts);
         return;
     }
 
@@ -1683,121 +1522,39 @@ fn capture_keybind_recording(
         return;
     };
 
-    match &target {
-        RecordingTarget::Operator(operator, mode) => {
-            let confirmed = recording_state.pending_confirm.as_ref() == Some(&input);
-            let others = pending.also_bound_to(operator, &input);
-            if !others.is_empty() && !confirmed {
-                recording_state.pending_confirm = Some(input.clone());
-                return;
-            }
-            match mode {
-                RecordingMode::Replace => pending.rebind(operator, input),
-                RecordingMode::Add => pending.add_chord(operator, input),
-            }
-        }
-        RecordingTarget::Camera(action, index) => {
-            let PresetInput::Key {
-                key,
-                ctrl,
-                shift,
-                alt,
-                ..
-            } = &input
-            else {
-                return;
-            };
-            let Some(key) = key_code_from_name(key) else {
-                return;
-            };
-            let new_bind = Keybind {
-                key,
-                ctrl: *ctrl,
-                shift: *shift,
-                alt: *alt,
-                mouse: None,
-            };
-            let binds = pending.camera.entry(*action).or_default();
-            if *index < binds.len() {
-                binds[*index] = new_bind;
-            } else {
-                *binds = vec![new_bind];
-            }
-        }
+    let confirmed = recording_state.pending_confirm.as_ref() == Some(&input);
+    let others = pending.also_bound_to(&target.operator, &input);
+    if !others.is_empty() && !confirmed {
+        recording_state.pending_confirm = Some(input);
+        return;
+    }
+    match target.mode {
+        RecordingMode::Replace => pending.rebind(&target.operator, input),
+        RecordingMode::Add => pending.add_chord(&target.operator, input),
     }
 
     recording_state.target = None;
     recording_state.pending_confirm = None;
     capture.recording = false;
-    registry.recording = false;
-    redraw_target(&target, &pending, &mut camera_texts);
-}
-
-fn redraw_target(
-    target: &RecordingTarget,
-    pending: &PendingKeymapChanges,
-    camera_texts: &mut Query<
-        (&CameraDisplayText, &mut Text, &mut TextColor),
-        Without<KeybindDisplayText>,
-    >,
-) {
-    match target {
-        // An operator row's chords are drawn by `refresh_chord_lists`,
-        // which follows the working copy rather than being told.
-        RecordingTarget::Operator(..) => {}
-        RecordingTarget::Camera(action, _) => {
-            let binds = pending.camera.get(action).cloned().unwrap_or_default();
-            let text_str = format_bindings(&binds);
-            let color_value = chord_text_color(binds.is_empty());
-            for (display, mut text, mut color) in camera_texts.iter_mut() {
-                if display.0 == *action {
-                    text.0 = text_str.clone();
-                    color.0 = color_value;
-                }
-            }
-        }
-    }
 }
 
 fn on_reset_click(
     event: On<ButtonClickEvent>,
-    operator_buttons: Query<&KeybindResetButton>,
-    camera_buttons: Query<&CameraResetButton>,
+    buttons: Query<&KeybindResetButton>,
     parents: Query<&ChildOf>,
     dialogs: Query<(), With<EditorDialog>>,
     pending: Option<ResMut<PendingKeymapChanges>>,
-    mut camera_texts: Query<
-        (&CameraDisplayText, &mut Text, &mut TextColor),
-        Without<KeybindDisplayText>,
-    >,
 ) {
+    let Ok(btn) = buttons.get(event.entity) else {
+        return;
+    };
     if !is_in_dialog(event.entity, &parents, &dialogs) {
         return;
     }
     let Some(mut pending) = pending else {
         return;
     };
-
-    if let Ok(btn) = operator_buttons.get(event.entity) {
-        pending.reset(&btn.0);
-        redraw_target(
-            &RecordingTarget::Operator(btn.0.clone(), RecordingMode::Replace),
-            &pending,
-            &mut camera_texts,
-        );
-        return;
-    }
-
-    if let Ok(btn) = camera_buttons.get(event.entity) {
-        let defaults = KeybindRegistry::default();
-        let default_bindings = defaults.bindings.get(&btn.0).cloned().unwrap_or_default();
-        pending.camera.insert(btn.0, default_bindings);
-        redraw_target(
-            &RecordingTarget::Camera(btn.0, 0),
-            &pending,
-            &mut camera_texts,
-        );
-    }
+    pending.reset(&btn.0);
 }
 
 fn on_reset_all_click(
@@ -1807,10 +1564,6 @@ fn on_reset_all_click(
     dialogs: Query<(), With<EditorDialog>>,
     pending: Option<ResMut<PendingKeymapChanges>>,
     mut texts: Query<(&KeybindDisplayText, &mut Text, &mut TextColor)>,
-    mut camera_texts: Query<
-        (&CameraDisplayText, &mut Text, &mut TextColor),
-        Without<KeybindDisplayText>,
-    >,
 ) {
     if reset_all_buttons.get(event.entity).is_err() {
         return;
@@ -1823,17 +1576,11 @@ fn on_reset_all_click(
     };
 
     pending.reset_all();
-    pending.camera = KeybindRegistry::default().bindings;
 
     for (display, mut text, mut color) in &mut texts {
         let chords = pending.chords_of(&display.0);
         text.0 = format_chords(&chords);
         color.0 = chord_text_color(chords.is_empty());
-    }
-    for (display, mut text, mut color) in &mut camera_texts {
-        let binds = pending.camera.get(&display.0).cloned().unwrap_or_default();
-        text.0 = format_bindings(&binds);
-        color.0 = chord_text_color(binds.is_empty());
     }
 }
 
@@ -1843,14 +1590,12 @@ fn on_keybind_settings_save(
     pending: Option<Res<PendingKeymapChanges>>,
     settings_open: Option<Res<KeybindSettingsOpen>>,
     mut capture: ResMut<KeymapCapture>,
-    mut registry: ResMut<KeybindRegistry>,
 ) {
     if settings_open.is_none() {
         return;
     }
 
     if let Some(pending) = pending {
-        registry.bindings = pending.camera.clone();
         let user = pending.to_user_keymap();
         // A refused write still leaves the working copy as this session's
         // keymap; only the next launch loses it, which is what the notice
@@ -1872,10 +1617,7 @@ fn on_keybind_settings_save(
             }
         });
     }
-    registry.recording = false;
     capture.recording = false;
-
-    crate::keybinds::save_keybinds(&registry);
 
     commands.remove_resource::<PendingKeymapChanges>();
     commands.remove_resource::<KeybindSettingsOpen>();
@@ -1885,7 +1627,6 @@ fn cleanup_on_dialog_close(
     mut commands: Commands,
     settings_open: Option<Res<KeybindSettingsOpen>>,
     dialogs: Query<(), With<EditorDialog>>,
-    mut registry: ResMut<KeybindRegistry>,
     mut recording_state: ResMut<KeybindRecordingState>,
     mut capture: ResMut<KeymapCapture>,
     mut key_filter: ResMut<KeyFilterState>,
@@ -1897,7 +1638,6 @@ fn cleanup_on_dialog_close(
         return;
     }
 
-    registry.recording = false;
     recording_state.target = None;
     recording_state.pending_confirm = None;
     capture.recording = false;
@@ -1945,7 +1685,6 @@ mod tests {
         app.init_resource::<ButtonInput<MouseButton>>();
         app.init_resource::<KeyFilterState>();
         app.init_resource::<KeybindRecordingState>();
-        app.init_resource::<KeybindRegistry>();
         app.add_systems(Update, capture_key_filter);
         let button_entity = app
             .world_mut()
@@ -2049,7 +1788,6 @@ mod tests {
             bindings: defaults.clone(),
             defaults,
             unresolved: Vec::new(),
-            camera: HashMap::new(),
         }
     }
 

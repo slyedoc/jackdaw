@@ -28,7 +28,7 @@ fn item_kind() -> AssetKind {
 
 /// An editor over a project holding a material, an item and a scene, with the
 /// Project window and the inspector both up.
-fn editor_with_a_project() -> (App, tempfile::TempDir) {
+fn editor_with_a_project() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let content = tmp.path().join("assets/content");
     std::fs::create_dir_all(&content).expect("the content folder is made");

@@ -1250,9 +1250,11 @@ dependencies = [
  "bevy_input",
  "bevy_input_focus",
  "bevy_log",
+ "bevy_math",
  "bevy_platform",
  "bevy_reflect",
  "bevy_scene",
+ "bevy_text",
  "bevy_ui",
  "bevy_ui_widgets",
 ]
@@ -4409,6 +4411,7 @@ name = "jackdaw_camera"
 version = "0.19.0"
 dependencies = [
  "bevy",
+ "bevy_enhanced_input",
 ]
 
 [[package]]
@@ -4436,13 +4439,6 @@ dependencies = [
  "jackdaw_scene_types",
  "manifold-csg",
  "manifold-csg-sys",
-]
-
-[[package]]
-name = "jackdaw_editor"
-version = "0.19.0"
-dependencies = [
- "jackdaw",
 ]
 
 [[package]]

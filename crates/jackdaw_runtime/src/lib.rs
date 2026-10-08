@@ -43,14 +43,6 @@ pub use jackdaw_scene_types::{
     PropertyValue, ScatterGroup, ScatterInstance, SkipSerialization,
 };
 
-#[cfg(feature = "render")]
-mod material_overrides;
-#[cfg(feature = "render")]
-pub use material_overrides::{
-    MaterialOverridesPlugin, ModelMaterial, dress_model, dress_part, material_of_reference,
-    overrides_reaching,
-};
-
 #[cfg(feature = "terrain")]
 mod terrain;
 #[cfg(feature = "terrain")]
@@ -106,7 +98,6 @@ impl Plugin for JackdawPlugin {
             jackdaw_surface::LayeredSurfacePlugin,
             jackdaw_surface::FoliagePlugin,
             jackdaw_surface::WaterPlugin,
-            MaterialOverridesPlugin,
         ))
         .add_systems(Update, attach_inserted_gltf_sources);
 

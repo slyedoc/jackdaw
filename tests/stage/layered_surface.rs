@@ -42,7 +42,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 }
 
 /// An editor with a project of its own and a materials folder to write into.
-fn editor() -> (App, tempfile::TempDir) {
+fn editor() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
         fixture_dir().join("jackdaw.toml"),
@@ -162,7 +162,7 @@ fn a_mesh_wearing_a_standard_material(app: &mut App) -> Entity {
             AuroraMaterial3d(standard),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), mesh);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), mesh);
     app.world_mut().resource_mut::<Selection>().entities = vec![mesh];
     settle(app);
     mesh

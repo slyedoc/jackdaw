@@ -29,7 +29,7 @@ fn authored(app: &mut App, name: &str, parent: Option<Entity>) -> Entity {
         entity.insert(ChildOf(parent));
     }
     let entity = entity.id();
-    jackdaw::scene_io::register_entity_in_ast(world, entity);
+    jackdaw::scene_io::adopt_entity(world, entity);
     entity
 }
 

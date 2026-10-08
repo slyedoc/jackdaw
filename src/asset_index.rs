@@ -755,7 +755,7 @@ pub(crate) fn plugin(app: &mut App) {
                 finish_asset_walk,
             )
                 .chain()
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
 }
 
@@ -983,7 +983,7 @@ mod tests {
     fn write_asset(root: &Path, relative: &str, text: &str) {
         let path = root.join("assets").join(relative);
         std::fs::create_dir_all(path.parent().expect("a parent")).expect("the folder is made");
-        jackdaw_bsn::write_document_text(&path, text).expect("the file is written");
+        std::fs::write(&path, text).expect("the file is written");
     }
 
     const GRASS: &str = "#grass\nbevy_aurora::material::AuroraMaterial {}\n";
@@ -1014,27 +1014,6 @@ mod tests {
         assert!(
             index.get(Path::new("materials/grass.bsn")).is_some(),
             "the file is there to be named by its path"
-        );
-    }
-
-    #[test]
-    fn a_document_held_only_in_binary_is_keyed_by_the_path_its_text_twin_would_sit_at() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let mut app = material_project(tmp.path());
-        write_asset(tmp.path(), "materials/grass.bsb", GRASS);
-
-        rescan_asset_index(app.world_mut());
-
-        let index = app.world().resource::<AssetIndex>();
-        assert!(
-            index.get(Path::new("materials/grass.bsn")).is_some(),
-            "a reference written before the export still names it"
-        );
-        assert!(index.get(Path::new("materials/grass.bsb")).is_none());
-        assert_eq!(
-            index.by_stem("grass").map(|entry| entry.path.clone()),
-            Some(PathBuf::from("materials/grass.bsn")),
-            "and the one name it carries is not made ambiguous by its own form"
         );
     }
 

@@ -32,9 +32,8 @@ use bevy::ui::{Checked, InteractionDisabled};
 use bevy::ui_widgets::ValueChange;
 use jackdaw_bind::{BindContext, BindPath, Binding, Bindings, ParsedPath, ResolvedBindings};
 use jackdaw_feathers::field_row::{FieldRowProps, spawn_field_row};
-use jackdaw_feathers::number_input::{
-    NumberInputPrecision, ScrubNumberInput, ScrubNumberInputValue,
-};
+use bevy::feathers::controls::{NumberInputPrecision, FeathersNumberInput};
+use bevy::ui_widgets::NumericValue;
 use jackdaw_feathers::text_edit::{TextEditCommitEvent, TextEditProps, text_edit};
 use jackdaw_feathers::tokens;
 use jackdaw_feathers::tooltip::Tooltip;
@@ -1618,11 +1617,11 @@ fn spawn_axes_row(
         };
         queue
             .spawn_scene(bsn! {
-                @ScrubNumberInput { @sigil_color: {sigil}, @label_text: {label} }
+                @FeathersNumberInput { @sigil_color: {sigil}, @label_text: {label} }
                 Node { flex_grow: 1.0, height: px(22.0) }
             })
             .insert((
-                ScrubNumberInputValue::F64(value),
+                NumericValue::F64(value),
                 NumberInputPrecision(2),
                 binding,
                 EditorEntity,
@@ -1654,11 +1653,11 @@ fn spawn_scrub_row(
             };
             queue
                 .spawn_scene(bsn! {
-                    @ScrubNumberInput
+                    @FeathersNumberInput
                     Node { width: percent(100.0), height: px(22.0) }
                 })
                 .insert((
-                    ScrubNumberInputValue::F64(number),
+                    NumericValue::F64(number),
                     NumberInputPrecision(2),
                     binding,
                     EditorEntity,

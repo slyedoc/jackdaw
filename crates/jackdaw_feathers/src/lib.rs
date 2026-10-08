@@ -1,30 +1,21 @@
-pub mod alert;
 pub mod button;
 pub mod collapsible;
-pub mod color_picker;
-pub mod combobox;
 pub mod context_menu;
 pub mod dialog;
 pub mod field_row;
 pub mod file_browser;
 pub mod icons;
 pub mod inspector_card;
-pub mod inspector_field;
-pub mod list_view;
 pub mod menu_bar;
-pub mod number_input;
 pub mod panel_card;
-pub mod panel_section;
 pub mod picker;
 pub mod popover;
-pub mod progress;
 pub mod scroll;
 pub mod segmented;
 pub mod separator;
 pub mod slider_row;
-pub mod split_panel;
-pub mod status_bar;
 pub mod swatch_row;
+pub mod status_bar;
 pub mod tab_strip;
 pub mod text_edit;
 pub mod toast;
@@ -33,7 +24,6 @@ pub mod tooltip;
 pub mod tree_view;
 pub mod utils;
 pub mod variant_edit;
-pub mod vector_edit;
 
 use bevy::app::Plugin;
 
@@ -56,25 +46,17 @@ impl Plugin for EditorFeathersPlugin {
         }
         app.add_plugins((
             jackdaw_widgets::EditorWidgetsPlugins,
-            split_panel::SplitPanelPlugin,
             icons::IconFontPlugin,
             button::plugin,
             popover::plugin,
-            combobox::plugin,
             dialog::plugin,
             text_edit::plugin,
-            panel_section::plugin,
-            inspector_field::plugin,
             variant_edit::plugin,
             scroll::plugin,
-            list_view::plugin,
             toast::plugin,
-            number_input::ScrubNumberInputPlugin,
         ));
         app.add_plugins((
             tooltip::TooltipPlugin,
-            alert::plugin,
-            color_picker::plugin,
             menu_bar::plugin,
             context_menu::plugin,
             picker::plugin,

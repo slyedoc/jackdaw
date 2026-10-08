@@ -34,7 +34,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 }
 
 /// An editor with a project of its own and one scene open.
-fn editor_on_a_scene() -> (App, tempfile::TempDir, PathBuf) {
+fn editor_on_a_scene() -> (util::TestApp, tempfile::TempDir, PathBuf) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
         fixture_dir().join("jackdaw.toml"),

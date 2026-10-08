@@ -16,11 +16,11 @@ use jackdaw_widgets::tree_view::TreeRowDropped;
 fn parent_and_child(app: &mut App) -> (Entity, Entity) {
     let world = app.world_mut();
     let parent = world.spawn((Name::new("Parent"), Node::default())).id();
-    jackdaw::scene_io::register_entity_in_ast(world, parent);
+    jackdaw::scene_io::adopt_entity(world, parent);
     let child = world
         .spawn((Name::new("Child"), Node::default(), ChildOf(parent)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, child);
+    jackdaw::scene_io::adopt_entity(world, child);
     app.update();
     (parent, child)
 }
@@ -84,7 +84,7 @@ fn a_row_dropped_on_another_parent_moves_under_it() {
     let other = {
         let world = app.world_mut();
         let other = world.spawn((Name::new("Other"), Node::default())).id();
-        jackdaw::scene_io::register_entity_in_ast(world, other);
+        jackdaw::scene_io::adopt_entity(world, other);
         other
     };
     app.update();

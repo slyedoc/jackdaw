@@ -45,18 +45,6 @@ fn click(app: &mut App, entity: Entity) {
     app.update();
 }
 
-fn segment_of<T: Component + PartialEq>(app: &mut App, wanted: &T) -> Entity {
-    let found: Vec<Entity> = app
-        .world_mut()
-        .query::<(Entity, &T)>()
-        .iter(app.world())
-        .filter(|(_, segment)| *segment == wanted)
-        .map(|(entity, _)| entity)
-        .collect();
-    assert_eq!(found.len(), 1, "one segment per choice");
-    found[0]
-}
-
 fn assert_is_a_segment(app: &App, segment: Entity) {
     assert!(
         app.world().get::<RadioButton>(segment).is_some(),

@@ -18,14 +18,10 @@
 //!
 //! [`NavInputContext`] is always active and carries low priority (default 0).
 //! It hosts scroll-bound brush-resize actions (`nav.brush_resize_up` /
-//! `nav.brush_resize_down`) alongside the camera navigation actions. Brush
-//! resize fires on every scroll tick that passes the `ScrollTick` condition;
-//! the terrain sculpt system still gates on Shift being held. Camera zoom is
-//! NOT routed through a BEI action: `populate_camera_nav_input` reads
-//! `MouseWheel` events directly and normalises Line vs Pixel units before
-//! writing `CameraNavInput.zoom_ticks`. Wheel zoom stays a raw axis feed:
-//! unit normalization (line vs pixel) is lost through the accumulated BEI
-//! path.
+//! `nav.brush_resize_down`). Brush resize fires on every scroll tick that
+//! passes the `ScrollTick` condition; the terrain sculpt system still gates on
+//! Shift being held. Camera navigation is the `EditorCamera` context on each
+//! viewport camera (`jackdaw_camera`).
 //!
 //! [`PointerInputContext`] is always active (priority 0) and carries the
 //! single `PointerPrimary` action, bound code-level to `MouseButton::Left`
@@ -49,7 +45,6 @@
 //! The action types and their polling `SystemParam`s (`ModalInputs`,
 //! `NavScrollInputs`, `PointerInputs`) live in [`crate::modal_inputs`].
 
-use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
 use bevy_enhanced_input::prelude::{
     Action, ActionOf, ActionSettings, Binding, BindingOf, ContextActivity, ContextPriority, Down,
@@ -59,7 +54,7 @@ use jackdaw_api_internal::keymap_conditions::ScrollTick;
 
 use crate::modal_inputs::{
     ModalAction, ModalAxisX, ModalAxisY, ModalAxisZ, ModalCancel, ModalConfirm, ModalStepDown,
-    ModalStepUp, NavBrushResizeDown, NavBrushResizeUp, NavFly, NavLook, PointerPrimary,
+    ModalStepUp, NavBrushResizeDown, NavBrushResizeUp, PointerPrimary,
 };
 
 use crate::brush::{BrushDragState, EdgeDragState, VertexDragState};
@@ -68,8 +63,6 @@ use jackdaw_api_internal::keymap::{
     BuiltinActions, DefaultKeymap, PresetBinding, PresetContext, PresetInput, PresetPhase,
 };
 use jackdaw_api_internal::lifecycle::ActiveModalQuery;
-use jackdaw_camera::CameraNavInput;
-use jackdaw_commands::keybinds::{EditorAction, KeybindRegistry};
 
 // ---- Context marker components ----
 
@@ -131,21 +124,10 @@ impl Plugin for InputContextsPlugin {
         // Register the two BEI contexts. `spawn_contexts` is NOT added here
         // because `extension_lifecycle::plugin` chains it explicitly between
         // `apply_enabled_extensions_startup` and `apply_active_keymap`.
-        //
-        // `populate_camera_nav_input` runs in `PreUpdate` after
-        // `EnhancedInputSystems::Update` so BEI has already evaluated all
-        // action values for this frame before we read them. The camera system
-        // runs in `Update` (always after `PreUpdate`), so it sees the freshly
-        // written `CameraNavInput` values.
-        use bevy_enhanced_input::prelude::EnhancedInputSystems;
         app.add_input_context::<ModalInputContext>()
             .add_input_context::<NavInputContext>()
             .add_input_context::<PointerInputContext>()
-            .add_systems(PostUpdate, update_modal_context_activity)
-            .add_systems(
-                PreUpdate,
-                populate_camera_nav_input.after(EnhancedInputSystems::Update),
-            );
+            .add_systems(PostUpdate, update_modal_context_activity);
     }
 }
 
@@ -214,51 +196,12 @@ pub(crate) fn spawn_contexts(
         ))
         .id();
 
-    // NavFly: code-level binding with `Down` condition so the action value is
-    // `true` every frame RMB is held (not just on the rising edge).
-    // `Down` is the correct condition for hold semantics; `Press` would fire
-    // only on the first frame and leave fly_active false on all subsequent
-    // held frames. This action is NOT registered in `BuiltinActions` and has
-    // no `DefaultKeymap` entry: it is not preset-bindable this pass.
-    let nav_fly_entity = commands
-        .spawn((
-            Action::<NavFly>::new(),
-            ActionOf::<NavInputContext>::new(nav_entity),
-            ChildOf(nav_entity),
-        ))
-        .id();
-    commands.spawn((
-        Binding::MouseButton {
-            button: MouseButton::Right,
-            mod_keys: ModKeys::empty(),
-        },
-        Down::default(),
-        BindingOf(nav_fly_entity),
-        ChildOf(nav_fly_entity),
-    ));
-
-    // NavLook: mouse motion delta. Bound code-level; axis feeds are not
-    // preset-bindable (the activation chord is the rebindable part).
-    let nav_look_entity = commands
-        .spawn((
-            Action::<NavLook>::new(),
-            ActionOf::<NavInputContext>::new(nav_entity),
-            ChildOf(nav_entity),
-        ))
-        .id();
-    commands.spawn((
-        Binding::mouse_motion(),
-        BindingOf(nav_look_entity),
-        ChildOf(nav_look_entity),
-    ));
-
     // NavBrushResizeUp / NavBrushResizeDown: one scroll tick upward/downward.
     // Bound to mouse wheel with ScrollTick so each tick fires FIRE once.
     // Registered in BuiltinActions and DefaultKeymap (PresetContext::Navigation)
     // so keymap presets can rebind the resize chord.
-    // Camera zoom is read raw via MouseWheel in populate_camera_nav_input, not
-    // through a BEI action; the Shift guard in the camera system keeps zoom and
-    // resize from conflicting.
+    // The viewport camera's wheel action is blocked while Shift is held, so zoom and
+    // resize never both fire.
     let nav_resize_up_entity = commands
         .spawn((
             Action::<NavBrushResizeUp>::new(),
@@ -318,8 +261,6 @@ pub(crate) fn spawn_contexts(
     ));
 
     // ---- BuiltinActions registry ----
-    // nav.fly / nav.look / nav.zoom are code-level and do not need name
-    // resolution by the preset applier, so they are not registered here.
     builtin.register("modal.confirm", confirm);
     builtin.register("modal.cancel", cancel);
     builtin.register("modal.axis_x", axis_x);
@@ -354,7 +295,6 @@ pub(crate) fn spawn_contexts(
             context: PresetContext::Modal,
         });
     }
-    // nav.fly has no DefaultKeymap entry: its binding is code-level.
 
     // nav.brush_resize_up / nav.brush_resize_down: scroll-bound, Navigation context.
     let nav_resize_bindings: &[(&str, bool)] = &[
@@ -374,78 +314,6 @@ pub(crate) fn spawn_contexts(
     commands.insert_resource(ModalContextEntity(modal_entity));
     commands.insert_resource(NavContextEntity(nav_entity));
     commands.insert_resource(PointerContextEntity(pointer_entity));
-}
-
-/// Writes `CameraNavInput` from BEI action values and raw wheel events each
-/// `PreUpdate` frame, after `EnhancedInputSystems::Update` has evaluated
-/// actions for this frame.
-///
-/// Ordering: runs in `PreUpdate` after `EnhancedInputSystems::Update`; the
-/// camera system runs in `Update`. This guarantees a single write per frame
-/// with values that are stable for the entire `Update` phase.
-///
-/// Zoom is read from `MouseWheel` events directly rather than through a BEI
-/// action so that `MouseScrollUnit` normalization is preserved.
-/// `MouseScrollUnit::Line` events count as 1.0 tick each; `Pixel` events are
-/// scaled by 0.01 to produce an equivalent magnitude. Wheel zoom stays a raw
-/// axis feed: unit normalization (line vs pixel) is lost through the
-/// accumulated BEI path.
-///
-/// WASD/QE movement keys are read from raw keyboard this pass. These keys
-/// are registered in `KeybindRegistry` as RMB-chords, but the RMB gate is
-/// already provided by `fly_active` (the `NavFly` action value). Using
-/// `key_pressed` (key only, no mouse check) guarded by `fly_active` is
-/// exactly equivalent to the previous `key_chord_pressed` call guarded by
-/// `right_held`.
-pub(crate) fn populate_camera_nav_input(
-    fly_q: Query<&Action<NavFly>>,
-    look_q: Query<&Action<NavLook>>,
-    mut wheel_events: MessageReader<MouseWheel>,
-    keyboard: Res<ButtonInput<KeyCode>>,
-    keybinds: Res<KeybindRegistry>,
-    mut nav: ResMut<CameraNavInput>,
-) {
-    let fly_active = fly_q.iter().any(|a| **a);
-    let look_delta = look_q.iter().fold(Vec2::ZERO, |acc, a| acc + **a);
-    let zoom_ticks: f32 = wheel_events
-        .read()
-        .map(|ev| match ev.unit {
-            MouseScrollUnit::Line => ev.y,
-            MouseScrollUnit::Pixel => ev.y * 0.01,
-        })
-        .sum();
-
-    // WASD/QE: keyboard only, guarded by fly_active. Raw keyboard stays this
-    // pass because the camera movement keys live in `KeybindRegistry` (the
-    // legacy binding system) and are not yet ported to BEI actions.
-    let mut move_axes = Vec3::ZERO;
-    if fly_active {
-        if keybinds.key_pressed(EditorAction::CameraForward, &keyboard) {
-            move_axes.z += 1.0;
-        }
-        if keybinds.key_pressed(EditorAction::CameraBackward, &keyboard) {
-            move_axes.z -= 1.0;
-        }
-        if keybinds.key_pressed(EditorAction::CameraLeft, &keyboard) {
-            move_axes.x -= 1.0;
-        }
-        if keybinds.key_pressed(EditorAction::CameraRight, &keyboard) {
-            move_axes.x += 1.0;
-        }
-        if keybinds.key_pressed(EditorAction::CameraDown, &keyboard) {
-            move_axes.y -= 1.0;
-        }
-        if keybinds.key_pressed(EditorAction::CameraUp, &keyboard) {
-            move_axes.y += 1.0;
-        }
-    }
-
-    *nav = CameraNavInput {
-        fly_active,
-        look_delta,
-        zoom_ticks,
-        move_axes,
-    };
 }
 
 /// Runs in `PostUpdate`: ORs all modal-active conditions and sets

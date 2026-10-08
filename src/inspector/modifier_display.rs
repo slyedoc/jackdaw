@@ -8,7 +8,6 @@
 //! bisect) flow through the generic reflected-field rows, which commit via the
 //! same undoable AST path every reflected component uses.
 
-use bevy::ecs::reflect::AppTypeRegistry;
 use bevy::prelude::*;
 use bevy::reflect::TypePath;
 use jackdaw_feathers::{
@@ -20,7 +19,11 @@ use jackdaw_feathers::{
 
 use jackdaw_geometry::{Modifier, ModifierEntry, ModifierStack};
 
-use super::{ComponentDisplay, ComponentDisplayTypePath, ComponentName, reflect_fields};
+use std::any::TypeId;
+
+use bevy::feathers_inspector::{InspectorRoot, build_body_at};
+
+use super::{ComponentDisplay, ComponentDisplayTypePath, ComponentName};
 
 /// Capitalize the modifier kind label for the sub-card header.
 fn kind_label(modifier: &Modifier) -> String {
@@ -35,23 +38,14 @@ fn kind_label(modifier: &Modifier) -> String {
 /// Render one top-level inspector card per modifier entry under `parent`.
 /// The "Add Modifier" button lives in the Modifiers tab header (see
 /// `add_header.rs`), so no footer is emitted here.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors the reflected-field call site; threading the registry, names query, and fonts is unavoidable"
-)]
 pub(super) fn spawn_modifier_display(
     commands: &mut Commands,
     parent: Entity,
     source_entity: Entity,
     stack: &ModifierStack,
-    entity_names: &Query<&Name>,
-    type_registry: &AppTypeRegistry,
-    editor_font: &Handle<Font>,
     icon_font: &Handle<Font>,
     collapse_state: &super::InspectorCollapseState,
 ) {
-    let stack_type_path = <ModifierStack as TypePath>::type_path();
-
     for (i, entry) in stack.modifiers.iter().enumerate() {
         spawn_entry_card(
             commands,
@@ -59,33 +53,22 @@ pub(super) fn spawn_modifier_display(
             source_entity,
             i,
             entry,
-            stack_type_path,
-            entity_names,
-            type_registry,
-            editor_font,
             icon_font,
             collapse_state,
         );
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "one sub-card needs the entry index, fonts, registry, and names query to render both its controls and its reflected fields"
-)]
 fn spawn_entry_card(
     commands: &mut Commands,
     parent: Entity,
     source_entity: Entity,
     index: usize,
     entry: &ModifierEntry,
-    stack_type_path: &str,
-    entity_names: &Query<&Name>,
-    type_registry: &AppTypeRegistry,
-    editor_font: &Handle<Font>,
     icon_font: &Handle<Font>,
     collapse_state: &super::InspectorCollapseState,
 ) {
+    let stack_type_path = <ModifierStack as TypePath>::type_path();
     let label = kind_label(&entry.modifier);
     let card_ents = spawn_inspector_card(
         commands,
@@ -190,27 +173,25 @@ fn spawn_entry_card(
         ButtonVariant::Destructive,
     );
 
-    // Editable modifier fields. The reflected-field commit path resolves
-    // `modifiers[i].modifier` against the `ModifierStack` type, unwraps the
-    // `Modifier::Mirror` variant, and writes the named field. Same generic,
-    // undoable path the inspector uses for every other reflected component.
-    let Modifier::Mirror(mirror) = &entry.modifier;
-    reflect_fields::spawn_reflected_fields(
-        commands,
-        card,
-        mirror,
-        0,
-        // `.0` addresses the `MeshMirror` payload of the `Modifier::Mirror`
-        // newtype variant; the path navigator flattens it back to the inner
-        // struct so each field commits through the standard reflected path.
-        format!("modifiers[{index}].modifier.0"),
-        source_entity,
-        stack_type_path,
-        entity_names,
-        type_registry,
-        editor_font,
-        icon_font,
-    );
+    // The modifier's fields: `.0` is the payload of its newtype variant. Edits go through the
+    // same undoable path as every other component field.
+    let body = commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                ..Default::default()
+            },
+            ChildOf(card),
+        ))
+        .id();
+    let root = InspectorRoot::Component {
+        entity: source_entity,
+        type_id: TypeId::of::<ModifierStack>(),
+    };
+    let path = format!(".modifiers[{index}].modifier.0");
+    commands.queue(move |world: &mut World| {
+        build_body_at(world, root, &path, body);
+    });
 }
 
 /// Spawn one per-entry flag toggle that dispatches `modifier.toggle`.

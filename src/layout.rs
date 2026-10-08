@@ -121,9 +121,11 @@ fn spawn_editor_main_area(parent: &mut ChildSpawnerCommands) {
     parent.spawn((
         DocumentRoot(TabKind::Scene),
         EditorEntity,
+        // Sized by the window, never by what the panels hold.
         Node {
             width: percent(100),
             flex_grow: 1.0,
+            flex_basis: px(0.0),
             min_height: px(0.0),
             display: Display::Flex,
             flex_direction: FlexDirection::Row,
@@ -297,6 +299,7 @@ pub(crate) fn viewport_with_toolbar() -> impl Bundle {
         Node {
             width: percent(100),
             height: percent(100),
+            min_height: px(0),
             flex_direction: FlexDirection::Column,
             overflow: Overflow::clip(),
             border_radius: BorderRadius::all(px(tokens::BORDER_RADIUS_LG)),
@@ -531,6 +534,7 @@ pub fn hierarchy_content(icon_font: Handle<Font>) -> impl Bundle {
         Node {
             flex_direction: FlexDirection::Column,
             flex_grow: 1.0,
+            flex_basis: px(0.0),
             min_height: px(0.0),
             padding: UiRect::all(px(tokens::SPACING_SM)),
             ..Default::default()
@@ -614,6 +618,7 @@ pub fn hierarchy_content(icon_font: Handle<Font>) -> impl Bundle {
                     flex_direction: FlexDirection::Column,
                     width: percent(100),
                     flex_grow: 1.0,
+                    flex_basis: px(0.0),
                     min_height: px(0.0),
                     overflow: Overflow::scroll_y(),
                     margin: UiRect::top(px(tokens::SPACING_SM)),
@@ -646,9 +651,13 @@ fn scene_view() -> impl Bundle {
     (
         EditorEntity,
         SceneViewport,
+        // Sized by the panel, never by content: its size is the camera's render target.
         Node {
             width: percent(100),
             flex_grow: 1.0,
+            min_width: px(0),
+            min_height: px(0),
+            overflow: Overflow::clip(),
             // Width reserved permanently so the Live accent border can be
             // toggled by color alone without shifting the viewport bounds.
             border: UiRect::all(px(2.0)),

@@ -54,7 +54,7 @@ fn is_animatable(component_type_path: &str, field_path: &str) -> bool {
 /// when rows are (re-)spawned, so it's cheap.
 ///
 /// The `InspectorFieldRow` marker sits on the row's **outer column
-/// container**, which `reflect_fields.rs` spawns with `position_type:
+/// container**, which the inspector bridge gives `position_type:
 /// Relative` specifically so absolutely-positioned children land in
 /// the row's coordinate space. That lets us tuck the diamond into
 /// the top-right corner next to the field label without reflowing

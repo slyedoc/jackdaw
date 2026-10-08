@@ -137,9 +137,7 @@ pub(crate) fn field_edit_preview(
     field_edit_begin(world, type_path, field_path);
     let targets = field_edit_session_targets(world);
     for target in targets {
-        if !apply_json_map_entry_to_ecs(world, target, type_path, field_path, value) {
-            apply_json_field_to_ecs(world, target, type_path, field_path, value);
-        }
+        apply_json_field_to_ecs(world, target, type_path, field_path, value);
     }
 }
 
@@ -1158,9 +1156,6 @@ fn try_typed_deserialize(
 }
 
 /// The path to write a field edit at and the value to write there.
-///
-/// An edit reaching into a map entry writes the whole map at the map's own path: a reflect
-/// path cannot name a map key.
 fn field_edit_value(
     world: &World,
     entity: Entity,
@@ -1168,191 +1163,8 @@ fn field_edit_value(
     field_path: &str,
     value: &serde_json::Value,
 ) -> Option<(String, FieldValue)> {
-    if let Some(edit) = map_entry_edit(world, entity, type_path, field_path, value) {
-        return Some(edit);
-    }
     json_field_value(world, entity, type_path, field_path, value)
         .map(|new_value| (field_path.to_string(), new_value))
-}
-
-/// Where a field path steps into a map entry: the map's own path, the entry's
-/// key as the inspector spells it (`"Leaves"` for a string key), and the path
-/// that runs on inside the entry's value.
-struct MapEntryPath<'a> {
-    map: &'a str,
-    key: &'a str,
-    rest: &'a str,
-}
-
-/// The last `[key]` step of `field_path` that reads into a map held by
-/// `component`, or `None` when no step does. A `[n]` into a list is left to
-/// the reflect path, which reads one already.
-fn map_entry_path<'a>(
-    component: &dyn bevy::reflect::PartialReflect,
-    field_path: &'a str,
-) -> Option<MapEntryPath<'a>> {
-    use bevy::reflect::{ReflectPath, ReflectRef};
-
-    field_path.match_indices('[').rev().find_map(|(open, _)| {
-        let close = open + field_path[open..].find(']')?;
-        let map = &field_path[..open];
-        let holder = if map.is_empty() {
-            component
-        } else {
-            map.reflect_element(component).ok()?
-        };
-        matches!(holder.reflect_ref(), ReflectRef::Map(_)).then(|| MapEntryPath {
-            map,
-            key: &field_path[open + 1..close],
-            rest: field_path[close + 1..].trim_start_matches('.'),
-        })
-    })
-}
-
-/// The value `field_path` names under `root`, reading a `[key]` step into a
-/// map as the entry the inspector spells with that key.
-pub(crate) fn read_field_path<'a>(
-    root: &'a dyn bevy::reflect::PartialReflect,
-    field_path: &str,
-) -> Option<&'a dyn bevy::reflect::PartialReflect> {
-    use bevy::reflect::{ReflectPath, ReflectRef};
-
-    if let Ok(field) = field_path.reflect_element(root) {
-        return Some(field);
-    }
-    let entry = map_entry_path(root, field_path)?;
-    let holder = if entry.map.is_empty() {
-        root
-    } else {
-        entry.map.reflect_element(root).ok()?
-    };
-    let ReflectRef::Map(map) = holder.reflect_ref() else {
-        return None;
-    };
-    let (_, value) = map.iter().find(|(key, _)| {
-        crate::inspector::reflect_fields::format_partial_reflect_value(*key) == entry.key
-    })?;
-    if entry.rest.is_empty() {
-        Some(value)
-    } else {
-        read_field_path(value, entry.rest)
-    }
-}
-
-/// Write `value` into the map entry `field_path` names, on a copy of the
-/// entity's component, and return the map's own path with the whole map as
-/// it then stands. `None` when the path steps into no map entry, or names a
-/// key the map does not hold.
-fn map_entry_edit(
-    world: &World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-    value: &serde_json::Value,
-) -> Option<(String, FieldValue)> {
-    if !field_path.contains('[') {
-        return None;
-    }
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-    let registration = registry.get_with_type_path(type_path)?;
-    let component = registration
-        .data::<ReflectComponent>()?
-        .reflect(world.get_entity(entity).ok()?)?;
-    let mut merged: Box<dyn Reflect> = registration
-        .data::<bevy::reflect::ReflectFromReflect>()?
-        .from_reflect(component.as_partial_reflect())?;
-    let map_path = write_map_entry(
-        merged.as_partial_reflect_mut(),
-        field_path,
-        value,
-        &registry,
-    )?;
-    let map = if map_path.is_empty() {
-        merged.as_partial_reflect()
-    } else {
-        merged.reflect_path(map_path.as_str()).ok()?
-    };
-    Some((map_path.clone(), clone_value(map)?))
-}
-
-/// Write `value` into the live map entry `field_path` names. Whether the path
-/// named one the component holds.
-fn apply_json_map_entry_to_ecs(
-    world: &mut World,
-    entity: Entity,
-    type_path: &str,
-    field_path: &str,
-    value: &serde_json::Value,
-) -> bool {
-    if !field_path.contains('[') {
-        return false;
-    }
-    let registry = world.resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-    let Some(reflect_component) = registry
-        .get_with_type_path(type_path)
-        .and_then(|registration| registration.data::<ReflectComponent>())
-    else {
-        return false;
-    };
-    let Some(live) = reflect_component.reflect_mut(world.entity_mut(entity)) else {
-        return false;
-    };
-    write_map_entry(
-        live.into_inner().as_partial_reflect_mut(),
-        field_path,
-        value,
-        &registry,
-    )
-    .is_some()
-}
-
-/// Write `value` into the map entry `field_path` names under `root`, returning
-/// the map's own path, or `None` when the path steps into no entry `root`
-/// holds.
-fn write_map_entry(
-    root: &mut dyn bevy::reflect::PartialReflect,
-    field_path: &str,
-    value: &serde_json::Value,
-    registry: &bevy::reflect::TypeRegistry,
-) -> Option<String> {
-    use bevy::reflect::{ReflectMut, ReflectPath};
-
-    let (map_path, key, rest) = {
-        let entry = map_entry_path(root, field_path)?;
-        (
-            entry.map.to_string(),
-            entry.key.to_string(),
-            entry.rest.to_string(),
-        )
-    };
-    let holder: &mut dyn bevy::reflect::PartialReflect = if map_path.is_empty() {
-        root
-    } else {
-        map_path.as_str().reflect_element_mut(root).ok()?
-    };
-    let ReflectMut::Map(map) = holder.reflect_mut() else {
-        return None;
-    };
-    let mut written = false;
-    map.retain(&mut |entry_key, entry_value| {
-        if !written
-            && crate::inspector::reflect_fields::format_partial_reflect_value(entry_key) == key
-        {
-            let target = if rest.is_empty() {
-                Some(entry_value)
-            } else {
-                rest.as_str().reflect_element_mut(entry_value).ok()
-            };
-            if let Some(target) = target {
-                apply_json_to_reflect(target, value, registry);
-                written = true;
-            }
-        }
-        true
-    });
-    written.then_some(map_path)
 }
 
 /// The value one field edit given as reflect-format JSON stands for. Field-level edits merge

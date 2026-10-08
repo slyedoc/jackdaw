@@ -25,9 +25,7 @@ use bevy::prelude::*;
 use bevy::scene::ScenePatch;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
-use std::collections::BTreeMap;
 
-use jackdaw_scene_types::{MaterialOverrides, MaterialSlot};
 
 use crate::placement::{ScatterPalette, ScatterPaletteEntry, ScatterPlacement, is_prefab_asset};
 use crate::region::RegionCoord;
@@ -177,8 +175,6 @@ pub struct ScatterRendered {
 pub struct ScatterPrimitive {
     pub mesh: Handle<AuroraMesh>,
     pub material: Handle<AuroraMaterial>,
-    /// The part's material name, which a palette entry's overrides are keyed by.
-    pub material_name: Option<String>,
     /// Where this part sat inside the scene, flattened through the hierarchy
     /// above it.
     pub local: Transform,
@@ -432,10 +428,6 @@ fn flatten(world: &World, root: Entity) -> Option<ReadyAsset> {
                 .get::<AuroraMaterial3d>()
                 .map(|material| material.0.clone())
                 .unwrap_or_default(),
-            material_name: entity_ref
-                .get::<MaterialSlot>()
-                .map(|slot| slot.0.clone())
-                .or_else(|| material_name_of(entity_ref.get::<Name>()?)),
             local,
         });
     }
@@ -447,13 +439,6 @@ fn flatten(world: &World, root: Entity) -> Option<ReadyAsset> {
         primitives,
         bounds: Aabb::from_min_max(min, max),
     })
-}
-
-/// The material half of a baked part's `node.material` name.
-fn material_name_of(name: &Name) -> Option<String> {
-    name.as_str()
-        .rsplit_once('.')
-        .map(|(_, material)| material.to_string())
 }
 
 /// Respawn the chunks a terrain's dirty regions name.
@@ -528,7 +513,6 @@ fn spawn_chunk(
         let Some(ScatterAsset::Ready(ready)) = assets.entries.get(&entry.asset) else {
             continue;
         };
-        let materials: &BTreeMap<String, String> = &entry.materials;
         let stand = Transform {
             translation: region.origin + placement.offset(),
             rotation: Quat::from_rotation_y(placement.yaw),
@@ -536,18 +520,6 @@ fn spawn_chunk(
         };
         let range = cull_range(entry.cull_distance, ready.height() * stand.scale.y);
         for primitive in &ready.primitives {
-            let dressed = primitive
-                .material_name
-                .as_ref()
-                .filter(|name| materials.contains_key(*name))
-                .map(|name| {
-                    (
-                        MaterialSlot(name.clone()),
-                        MaterialOverrides {
-                            materials: materials.clone(),
-                        },
-                    )
-                });
             instances.push((
                 (
                     AuroraMesh3d(primitive.mesh.clone()),
@@ -559,7 +531,6 @@ fn spawn_chunk(
                     },
                 ),
                 range.clone(),
-                dressed,
             ));
         }
         let affine = stand.compute_affine();
@@ -588,13 +559,10 @@ fn spawn_chunk(
             ChildOf(terrain),
         ))
         .with_children(|chunk| {
-            for (instance, range, dressed) in instances {
+            for (instance, range) in instances {
                 let mut drawn = chunk.spawn(instance);
                 if let Some(range) = range {
                     drawn.insert(range);
-                }
-                if let Some(dressed) = dressed {
-                    drawn.insert(dressed);
                 }
             }
         });
@@ -696,13 +664,11 @@ mod tests {
                     ScatterPrimitive {
                         mesh: bark,
                         material: material.clone(),
-                        material_name: Some("Bark".to_string()),
                         local: Transform::IDENTITY,
                     },
                     ScatterPrimitive {
                         mesh: leaves,
                         material,
-                        material_name: Some("Leaves".to_string()),
                         local: Transform::from_xyz(0.0, 2.0, 0.0),
                     },
                 ],
@@ -748,77 +714,6 @@ mod tests {
             assert!(
                 app.world().get::<Name>(entity).is_none(),
                 "a drawn placement is not a named scene node"
-            );
-        }
-    }
-
-    #[test]
-    fn a_palette_entrys_overrides_ride_on_every_placement_of_the_parts_they_name() {
-        let mut app = App::new();
-        app.add_plugins(bevy::asset::AssetPlugin::default())
-            .init_asset::<AuroraMesh>()
-            .init_asset::<AuroraMaterial>();
-        let (bark, leaves) = {
-            let meshes = app.world_mut().resource_mut::<Assets<AuroraMesh>>();
-            (meshes.reserve_handle(), meshes.reserve_handle())
-        };
-        let material = app
-            .world_mut()
-            .resource_mut::<Assets<AuroraMaterial>>()
-            .reserve_handle();
-        let mut assets = ScatterAssets::default();
-        assets.entries.insert(
-            "models/tree.bsn".to_string(),
-            ScatterAsset::Ready(ReadyAsset {
-                primitives: vec![
-                    ScatterPrimitive {
-                        mesh: bark,
-                        material: material.clone(),
-                        material_name: Some("Bark".to_string()),
-                        local: Transform::IDENTITY,
-                    },
-                    ScatterPrimitive {
-                        mesh: leaves.clone(),
-                        material,
-                        material_name: Some("Leaves".to_string()),
-                        local: Transform::from_xyz(0.0, 2.0, 0.0),
-                    },
-                ],
-                bounds: Aabb::from_min_max(Vec3::new(-1.0, 0.0, -1.0), Vec3::new(1.0, 4.0, 1.0)),
-            }),
-        );
-        app.insert_resource(assets);
-
-        let mut data = document();
-        data.scatter.assets[0]
-            .materials
-            .insert("Leaves".to_string(), "materials/pine.bsn".to_string());
-        let scatter = TerrainScatter::from_document(&data);
-        let placements = scatter.placement_count();
-        app.world_mut().spawn((
-            Transform::IDENTITY,
-            Visibility::default(),
-            scatter,
-            ScatterDirty::all(),
-        ));
-        app.add_systems(Update, rebuild_chunks);
-        app.update();
-
-        let mut dressed = app
-            .world_mut()
-            .query::<(&AuroraMesh3d, &MaterialSlot, &MaterialOverrides)>();
-        let dressed: Vec<_> = dressed.iter(app.world()).collect();
-        assert_eq!(
-            dressed.len(),
-            placements,
-            "every placement's leaves carry the override"
-        );
-        for (mesh, name, overrides) in dressed {
-            assert_eq!(mesh.0, leaves);
-            assert_eq!(name.0, "Leaves");
-            assert_eq!(
-                overrides.materials.get("Leaves").map(String::as_str),
-                Some("materials/pine.bsn")
             );
         }
     }

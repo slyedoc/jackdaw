@@ -34,7 +34,7 @@ fn guides_added_by_operator_round_trip_through_save_and_open() {
         "the guides have to reach the document:\n{text}",
     );
 
-    jackdaw::prefab::watcher::respawn_from_sparse_text(app.world_mut(), &text);
+    reopen(&mut app, &text);
     app.update();
     let reopened = ui_root(&mut app);
     assert_eq!(
@@ -126,7 +126,7 @@ fn a_bare_canvas_guides_line_still_loads() {
         1,
     );
 
-    jackdaw::prefab::watcher::respawn_from_sparse_text(app.world_mut(), &bare);
+    reopen(&mut app, &bare);
     app.update();
     let reopened = ui_root(&mut app);
     assert_eq!(
@@ -138,7 +138,7 @@ fn a_bare_canvas_guides_line_still_loads() {
 
 /// An editor with one UI scene open, its root registered in the live
 /// document. Returns the root.
-fn guide_app() -> (App, Entity) {
+fn guide_app() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     let root = jackdaw::ui_palette::seed_ui_scene_root(app.world_mut());
     app.update();
@@ -170,10 +170,21 @@ fn guides(app: &App, root: Entity) -> Option<CanvasGuides> {
 
 fn ui_root(app: &mut App) -> Entity {
     app.world_mut()
-        .query_filtered::<Entity, jackdaw::prefab::AuthoredUiSceneRoot>()
+        .query_filtered::<Entity, (
+            With<jackdaw_scene_types::UiSceneRoot>,
+            With<jackdaw::scene_io::SceneEntity>,
+        )>()
         .iter(app.world())
         .min()
         .expect("the document holds a UI scene root")
+}
+
+/// Open `text` in place of the scene, the way reopening its file does.
+fn reopen(app: &mut App, text: &str) {
+    for root in jackdaw::scene_io::scene_roots(app.world_mut()) {
+        app.world_mut().entity_mut(root).despawn();
+    }
+    jackdaw::scene_io::spawn_bsn_text(app.world_mut(), text, "").expect("the scene respawns");
 }
 
 fn emit(app: &mut App) -> String {

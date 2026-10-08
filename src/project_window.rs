@@ -10,24 +10,25 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, mpsc};
 
-use bevy::ecs::spawn::Spawn;
-use bevy::feathers::controls::FeathersDisclosureToggle;
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
+use bevy::feathers::controls::{
+    FeathersDisclosureToggle, FeathersPane, FeathersSelect, FeathersSplitPane,
+    FeathersSplitPaneHandle, OptionIndex, list_rows_from_strings,
+};
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
 use bevy::ui::Checked;
-use bevy::ui_widgets::ValueChange;
+use bevy::ui_widgets::{ValueChange, split_pane_self_update};
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::button::{ButtonProps, ButtonVariant, button};
-use jackdaw_feathers::combobox::{
-    ComboBoxChangeEvent, ComboBoxSelectedIndex, combobox_with_selected,
-};
-use jackdaw_feathers::split_panel::{panel, panel_group, panel_handle};
 use jackdaw_feathers::text_edit::{
     TextEditCommitEvent, TextEditProps, TextEditValue, TextEditWrapper, set_text_input_value,
     text_edit,
 };
 use jackdaw_feathers::tooltip::Tooltip;
+use jackdaw_feathers::utils::{scene_bundle, show_select_option};
 use jackdaw_feathers::{file_browser, icons, icons::IconFont, tokens};
 use jackdaw_widgets::file_browser::{FileBrowserItem, FileItemDoubleClicked};
 use jackdaw_widgets::tree_view::{
@@ -285,15 +286,19 @@ impl ProjectWindowState {
 
 /// Marker on the Project window's root node.
 #[derive(Component)]
+#[component(on_add = spawn_project_columns)]
 pub struct ProjectWindowPanel;
 
 /// Marker on the container the folder tree is built under.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 pub struct ProjectFolderTree;
 
 /// Marker on the container the file tiles are built under.
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 pub struct ProjectFileGrid;
+
+/// Narrowest a Project column drags to.
+const PROJECT_COLUMN_MIN: f32 = 120.0;
 
 /// Marker on the bar naming the folder the tiles are showing.
 #[derive(Component)]
@@ -366,7 +371,7 @@ impl Plugin for ProjectWindowPlugin {
                     read_search_field,
                     show_the_filter_and_the_search.after(read_search_field),
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_observer(on_folder_toggled)
             .add_observer(on_folder_disclosure_change)
@@ -469,10 +474,11 @@ fn read_search_field(
 /// operator drove reads the same as one a click drove.
 fn show_the_filter_and_the_search(
     state: Res<ProjectWindowState>,
-    mut menus: Query<&mut ComboBoxSelectedIndex, With<ProjectKindFilterMenu>>,
+    menus: Query<Entity, With<ProjectKindFilterMenu>>,
     fields: Query<(&TextEditValue, &Children), With<ProjectSearchInput>>,
     wrappers: Query<&TextEditWrapper>,
     mut editables: Query<&mut bevy::text::EditableText>,
+    mut commands: Commands,
 ) {
     if !state.is_changed() {
         return;
@@ -481,10 +487,8 @@ fn show_the_filter_and_the_search(
         .iter()
         .position(|filter| *filter == state.kind_filter)
         .unwrap_or(0);
-    for mut selected in &mut menus {
-        if selected.0 != index {
-            selected.0 = index;
-        }
+    for menu in &menus {
+        commands.queue(show_select_option(menu, index));
     }
     for (value, children) in &fields {
         if value.0 == state.search {
@@ -1797,7 +1801,7 @@ pub fn project_panel_content(icon_font: Handle<Font>) -> impl Bundle {
             ..default()
         },
         BackgroundColor(tokens::PANEL_BG),
-        children![project_toolbar(icon_font), project_columns()],
+        children![project_toolbar(icon_font)],
     )
 }
 
@@ -1842,14 +1846,15 @@ fn project_toolbar(icon_font: Handle<Font>) -> impl Bundle {
                         },
                         children![(
                             ProjectKindFilterMenu,
-                            ComboBoxSelectedIndex(0),
-                            combobox_with_selected(
-                                KindFilter::ALL
-                                    .iter()
-                                    .map(|filter| filter.label().to_string())
-                                    .collect::<Vec<String>>(),
-                                0,
-                            ),
+                            scene_bundle(bsn! {
+                                @FeathersSelect {
+                                    @options: list_rows_from_strings(
+                                        KindFilter::ALL.iter().map(|filter| filter.label()),
+                                        Some(0),
+                                    ),
+                                }
+                                Node { width: percent(100) }
+                            }),
                         )],
                     ),
                     (
@@ -1887,67 +1892,72 @@ fn assets_folder_button(icon_font: Handle<Font>) -> impl Bundle {
 }
 
 /// The two columns, with a handle between them the user can drag.
-fn project_columns() -> impl Bundle {
-    (
-        EditorEntity,
+/// The folder tree and the tiles, side by side behind a drag handle.
+fn project_columns() -> impl Scene {
+    bsn! {
+        @FeathersSplitPane
+        EditorEntity
         Node {
-            flex_direction: FlexDirection::Row,
             width: percent(100),
             flex_grow: 1.0,
             min_height: px(0.0),
             border: UiRect::top(px(1.0)),
-            ..default()
-        },
-        BorderColor::all(tokens::BORDER_SUBTLE),
-        panel_group(
-            0.12,
-            (
-                Spawn((
-                    panel(0.28),
-                    ProjectFolderTree,
-                    EditorEntity,
-                    Node {
-                        flex_direction: FlexDirection::Column,
-                        min_width: px(0.0),
-                        min_height: px(0.0),
-                        overflow: Overflow::scroll_y(),
-                        padding: UiRect::all(px(tokens::SPACING_SM)),
-                        ..default()
-                    },
-                )),
-                Spawn(panel_handle()),
-                Spawn((
-                    panel(0.72),
-                    ProjectFileGrid,
-                    EditorEntity,
-                    Node {
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        align_content: AlignContent::FlexStart,
-                        min_width: px(0.0),
-                        min_height: px(0.0),
-                        overflow: Overflow::scroll_y(),
-                        padding: UiRect::all(px(tokens::SPACING_SM)),
-                        row_gap: px(tokens::SPACING_XS),
-                        column_gap: px(tokens::SPACING_XS),
-                        ..default()
-                    },
-                    BorderColor::all(tokens::BORDER_SUBTLE),
-                )),
-            ),
-        ),
-    )
+        }
+        BorderColor::all(tokens::BORDER_SUBTLE)
+        on(split_pane_self_update)
+        Children [
+            @FeathersPane { @size: 0.28, @min_size: PROJECT_COLUMN_MIN }
+            ProjectFolderTree
+            EditorEntity
+            Node {
+                min_width: px(0.0),
+                min_height: px(0.0),
+                overflow: Overflow::scroll_y(),
+                padding: UiRect::all(px(tokens::SPACING_SM)),
+            }
+            --
+            @FeathersSplitPaneHandle
+            --
+            @FeathersPane { @size: 0.72, @min_size: PROJECT_COLUMN_MIN }
+            ProjectFileGrid
+            EditorEntity
+            Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                align_content: AlignContent::FlexStart,
+                min_width: px(0.0),
+                min_height: px(0.0),
+                overflow: Overflow::scroll_y(),
+                padding: UiRect::all(px(tokens::SPACING_SM)),
+                row_gap: px(tokens::SPACING_XS),
+                column_gap: px(tokens::SPACING_XS),
+            }
+            BorderColor::all(tokens::BORDER_SUBTLE)
+        ]
+    }
+}
+
+/// The columns are a scene, so they join the panel's bundle once it lands.
+fn spawn_project_columns(mut world: DeferredWorld, context: HookContext) {
+    world
+        .commands()
+        .spawn_scene(project_columns())
+        .insert(ChildOf(context.entity));
 }
 
 fn on_kind_filter_change(
-    event: On<ComboBoxChangeEvent>,
+    event: On<ValueChange<Entity>>,
     menus: Query<(), With<ProjectKindFilterMenu>>,
+    options: Query<&OptionIndex>,
     mut state: ResMut<ProjectWindowState>,
 ) {
-    if !menus.contains(event.entity) {
+    if !menus.contains(event.source) {
         return;
     }
-    let Some(filter) = KindFilter::ALL.get(event.selected).copied() else {
+    let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+        return;
+    };
+    let Some(filter) = KindFilter::ALL.get(selected).copied() else {
         return;
     };
     if state.kind_filter != filter {

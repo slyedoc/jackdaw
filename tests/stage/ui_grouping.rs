@@ -78,7 +78,7 @@ fn authored_scene(app: &mut App) -> (Entity, Entity, Entity) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let first = child(app, root, "First", 200.0, 100.0, 400.0, 200.0);
     let second = child(app, root, "Second", 400.0, 200.0, 400.0, 200.0);
     settle(app);
@@ -109,7 +109,7 @@ fn child(
             ChildOf(parent),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     entity
 }
 
@@ -323,7 +323,7 @@ fn ungroup_carries_out_a_child_that_is_not_a_node() {
         .world_mut()
         .spawn((Name::new("Marker"), ChildOf(container)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), marker);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), marker);
     settle(&mut app);
 
     jackdaw::selection::select_only(app.world_mut(), container);
@@ -435,7 +435,7 @@ fn scene_with_a_bystander(app: &mut App) -> (Entity, Entity, Entity, Entity) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let first = child(app, root, "First", 100.0, 100.0, 200.0, 100.0);
     let bystander = child(app, root, "Bystander", 400.0, 100.0, 200.0, 100.0);
     let last = child(app, root, "Last", 700.0, 100.0, 200.0, 100.0);
@@ -563,7 +563,7 @@ fn column_child(app: &mut App, parent: Entity, name: &str) -> Entity {
             ChildOf(parent),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     entity
 }
 

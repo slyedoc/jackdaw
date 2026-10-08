@@ -469,6 +469,6 @@ pub(super) fn plugin(app: &mut App) {
                 record_edited_fields,
                 refresh_timeline_readouts,
             )
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
 }

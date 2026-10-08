@@ -34,6 +34,10 @@ pub fn set_open_project_assets_dir(dir: Option<PathBuf>) {
     }
 }
 
+/// Serializes the tests that point the process-global mirror somewhere.
+#[cfg(test)]
+pub(crate) static MIRROR_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Keep [`open_project_assets_dir`] in step with the resource.
 pub(crate) fn mirror_open_project(
     project: Option<Res<ProjectRoot>>,
@@ -348,4 +352,74 @@ pub fn touch_recent(root: &Path, name: &str) {
     recent.projects.truncate(10);
 
     save_recent_projects(&recent);
+}
+
+/// Open `root` as the editor's project: its `.jackdaw/project.json` (written fresh if it has
+/// none), and the tabs it was last left with, reopened one a frame once the editor is up. The
+/// host app's asset server must read from `root/assets`.
+pub fn open_project(world: &mut World, root: impl Into<PathBuf>) {
+    let root = root.into();
+    let config = load_project_config(&root).unwrap_or_else(|| create_default_project(&root));
+    let paths = config
+        .last_open_tabs
+        .iter()
+        .map(|rel| root.join(rel))
+        .filter(|abs| {
+            let found = abs.is_file();
+            if !found {
+                warn!("Persisted tab not found, skipping: {}", abs.display());
+            }
+            found
+        })
+        .collect();
+    let active = config.last_active_tab;
+    world.insert_resource(ProjectRoot::new(root, config));
+    world.insert_resource(PendingTabOpens {
+        paths,
+        active,
+        named: false,
+    });
+}
+
+/// What the footer calls the tabs a project reopens with.
+const TAB_OPEN_PHASE: &str = "tab open";
+
+/// The tabs an opening project still has to reopen. Spawning one costs a frame on a scene of any
+/// size, so they open one a frame with the footer naming the next.
+#[derive(Resource)]
+pub(crate) struct PendingTabOpens {
+    paths: std::collections::VecDeque<PathBuf>,
+    /// The tab the project was last left on.
+    active: usize,
+    /// Whether the footer has had a frame to name the next one.
+    named: bool,
+}
+
+pub(crate) fn open_pending_tabs(world: &mut World) {
+    let Some(next) = world.resource::<PendingTabOpens>().paths.front().cloned() else {
+        let pending = world
+            .remove_resource::<PendingTabOpens>()
+            .expect("checked above");
+        let tabs = world.resource::<crate::scenes::Scenes>().tabs.len();
+        if tabs > 0 {
+            crate::scenes::swap::swap_active_tab(world, pending.active.min(tabs - 1));
+        }
+        crate::status_bar::finish_phase(world, TAB_OPEN_PHASE);
+        return;
+    };
+    if !world.resource::<PendingTabOpens>().named {
+        world.resource_mut::<PendingTabOpens>().named = true;
+        let name = next
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+            .unwrap_or_else(|| next.display().to_string());
+        crate::status_bar::begin_phase(world, TAB_OPEN_PHASE, format!("Opening {name}"));
+        return;
+    }
+    {
+        let mut pending = world.resource_mut::<PendingTabOpens>();
+        pending.paths.pop_front();
+        pending.named = false;
+    }
+    crate::scenes::operators::scene_open_system(world, &next);
 }

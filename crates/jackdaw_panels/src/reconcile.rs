@@ -202,6 +202,8 @@ fn reconcile_split(world: &mut World, entity: Entity, node_id: NodeId, split: &D
         let child_node = || Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
+            min_width: Val::Px(0.0),
+            min_height: Val::Px(0.0),
             flex_direction: FlexDirection::Column,
             overflow: Overflow::clip(),
             ..default()
@@ -330,6 +332,7 @@ fn spawn_leaf_ui(world: &mut World, entity: Entity, leaf: &DockLeaf) {
                 },
                 Node {
                     flex_grow: 1.0,
+                    flex_basis: Val::Px(0.0),
                     width: Val::Percent(100.0),
                     min_height: Val::Px(0.0),
                     flex_direction: FlexDirection::Column,
@@ -459,21 +462,10 @@ fn set_host_visible(world: &mut World, entity: Entity, visible: bool) {
         any_changed = true;
     }
 
-    // Flag the host's Panel component as changed so `recalculate_group`
-    // redistributes sibling widths this frame. The host may carry one
-    // of two Panel types: `jackdaw_widgets::split_panel::Panel` on
-    // editor-spawned outer hosts, or `jackdaw_panels::split::Panel` on
-    // reconciler-spawned split children. Only one is present; try both.
-    if any_changed {
-        if let Some(mut panel) = world
-            .entity_mut(entity)
-            .get_mut::<jackdaw_widgets::split_panel::Panel>()
-        {
-            panel.set_changed();
-        }
-        if let Some(mut panel) = world.entity_mut(entity).get_mut::<Panel>() {
-            panel.set_changed();
-        }
+    // Flag the host's Panel as changed so `recalculate_group`
+    // redistributes sibling widths this frame.
+    if any_changed && let Some(mut panel) = world.entity_mut(entity).get_mut::<Panel>() {
+        panel.set_changed();
     }
 }
 

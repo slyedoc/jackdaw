@@ -35,7 +35,7 @@ impl Plugin for AlignmentGuidesPlugin {
                 Update,
                 (cache_reference_coords, draw_alignment_guides)
                     .chain()
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

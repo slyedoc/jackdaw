@@ -41,7 +41,7 @@ fn run(app: &mut App, clause: &str) {
 /// An editor showing an outliner over two roots, the first with a child. The walk
 /// is added to `Update` here because entering `AppState::Editor` would stand the
 /// whole editor up around the panel under test.
-fn outliner_app() -> (App, Entity, Vec<Entity>, Entity) {
+fn outliner_app() -> (util::TestApp, Entity, Vec<Entity>, Entity) {
     let mut app = util::editor_test_app();
     {
         let mut windows = app
@@ -82,7 +82,7 @@ fn outliner_app() -> (App, Entity, Vec<Entity>, Entity) {
                 .world_mut()
                 .spawn((Name::new(name), Node::default()))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+            jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
             entity
         })
         .collect();
@@ -90,7 +90,7 @@ fn outliner_app() -> (App, Entity, Vec<Entity>, Entity) {
         .world_mut()
         .spawn((Name::new("Leaf"), Node::default(), ChildOf(roots[0])))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), child);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), child);
     settle(&mut app);
     (app, panel, roots, child)
 }

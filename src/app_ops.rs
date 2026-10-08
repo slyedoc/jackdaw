@@ -8,8 +8,7 @@ use jackdaw_api::prelude::*;
 
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<AppOpenExtensionsOp>()
-        .register_operator::<AppOpenKeybindsOp>()
-        .register_operator::<AppGoHomeOp>();
+        .register_operator::<AppOpenKeybindsOp>();
 }
 
 #[operator(
@@ -36,16 +35,3 @@ pub(crate) fn app_open_keybinds(
     OperatorResult::Finished
 }
 
-#[operator(id = "app.go_home", label = "Home", allows_undo = false)]
-pub(crate) fn app_go_home(_: In<OperatorParameters>, mut commands: Commands) -> OperatorResult {
-    commands.queue(|world: &mut World| {
-        // Leaving clears the live scene, so unsaved work raises the same dialog
-        // quitting does.
-        if crate::scenes::confirm_dialog::leave_project_or_confirm(world) {
-            world
-                .resource_mut::<NextState<crate::AppState>>()
-                .set(crate::AppState::ProjectSelect);
-        }
-    });
-    OperatorResult::Finished
-}

@@ -7,13 +7,11 @@ use crate::util;
 
 use bevy::asset::{Asset, Assets};
 use bevy::prelude::*;
-use bevy::ui_widgets::ValueChange;
+use bevy::ui_widgets::{Activate, ValueChange};
 use jackdaw::definition_assets::{DefinitionAssetEdit, OpenDefinition};
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::operator::{CallOperatorSettings, ExecutionContext};
 use jackdaw_commands::CommandHistory;
-use jackdaw_feathers::button::ButtonClickEvent;
-use jackdaw_feathers::tooltip::Tooltip;
 
 #[derive(Reflect, Clone, Default, PartialEq, Debug)]
 #[reflect(Default)]
@@ -30,7 +28,7 @@ struct MobDef {
 }
 
 /// An editor showing the inspector, with a mob definition open in it.
-fn app_with_open_definition() -> (App, tempfile::TempDir) {
+fn app_with_open_definition() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut app = util::editor_test_app();
     app.init_asset::<MobDef>();
@@ -91,31 +89,7 @@ fn all_entities(app: &mut App) -> Vec<Entity> {
 }
 
 fn field_widget(app: &mut App, field_path: &str) -> Entity {
-    let type_path = MobDef::type_path();
-    let found = all_entities(app).into_iter().find(|entity| {
-        jackdaw::inspector::field_edited_by(app.world(), *entity) == Some((type_path, field_path))
-    });
-    found.unwrap_or_else(|| {
-        let paths: Vec<String> = all_entities(app)
-            .into_iter()
-            .filter_map(|entity| {
-                jackdaw::inspector::field_edited_by(app.world(), entity)
-                    .map(|(known, field)| format!("{known}.{field}"))
-            })
-            .collect();
-        panic!("no control on the inspector writes `{field_path}`; it writes {paths:?}")
-    })
-}
-
-fn add_button(app: &mut App) -> Entity {
-    all_entities(app)
-        .into_iter()
-        .find(|entity| {
-            app.world()
-                .get::<Tooltip>(*entity)
-                .is_some_and(|tip| tip.title == "Add an item to the list")
-        })
-        .expect("the list field offers an Add")
+    util::inspector_widget(app, MobDef::type_path(), field_path)
 }
 
 #[test]
@@ -244,8 +218,8 @@ fn the_list_controls_add_a_row_to_the_definitions_list() {
     let (mut app, _tmp) = app_with_open_definition();
     assert!(open_mob(&app).loot.is_empty());
 
-    let add = add_button(&mut app);
-    app.world_mut().trigger(ButtonClickEvent { entity: add });
+    let add = util::list_add_button(&mut app);
+    app.world_mut().trigger(Activate { entity: add });
     for _ in 0..10 {
         app.update();
     }
@@ -255,9 +229,9 @@ fn the_list_controls_add_a_row_to_the_definitions_list() {
         1,
         "Add put one entry on the definition's list"
     );
-    let row = field_widget(&mut app, "loot[0].weight");
     assert!(
-        jackdaw::inspector::field_edited_by(app.world(), row).is_some(),
+        jackdaw::inspector::field_widget(app.world_mut(), MobDef::type_path(), "loot[0].weight")
+            .is_some(),
         "and the card rebuilt with a row for it",
     );
 }

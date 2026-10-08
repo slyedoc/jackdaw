@@ -8,7 +8,7 @@
 
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
-use bevy::reflect::ReflectFromReflect;
+use bevy::feathers_inspector::InspectorRoot;
 use jackdaw_api::op::Operator as _;
 use jackdaw_api::prelude::AssetKinds;
 use jackdaw_feathers::{
@@ -21,11 +21,6 @@ use jackdaw_widgets::collapsible::CollapsibleHeader;
 use crate::definition_assets::{AssetSaveOp, DefinitionAssetEdit};
 
 use super::component_display::{ComponentDisplaySpec, spawn_component_display};
-
-/// What a definition card puts in its body: a reflected value the editor can walk.
-enum CardBody {
-    Reflected(Box<dyn Reflect>),
-}
 
 /// Marks the card a definition puts up: it stands for a whole file, so no
 /// category tab files it or hides it.
@@ -72,17 +67,13 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
     let label = registered
         .as_ref()
         .map_or_else(|| kind.clone(), |definition| definition.label.clone());
-    let body = match definition_snapshot(world, source, &type_path) {
-        Some(value) => CardBody::Reflected(value),
-        None => {
-            bevy::log::warn_once!(
-                "the editor has no registration for {type_path}, which {kind} files hold"
-            );
-            return;
-        }
+    let Some(root) = definition_root(world, &path, &type_path) else {
+        bevy::log::warn_once!(
+            "the editor has no registration for {type_path}, which {kind} files hold"
+        );
+        return;
     };
 
-    let registry = world.resource::<AppTypeRegistry>().clone();
     let icon_font = world.resource::<IconFont>().0.clone();
     let editor_font = world.resource::<EditorFont>().0.clone();
     let mut collapse_state =
@@ -115,28 +106,7 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
         card
     };
 
-    match body {
-        CardBody::Reflected(value) => {
-            let mut state: SystemState<(Commands, Query<&Name>)> = SystemState::new(world);
-            let Ok((mut commands, names)) = state.get_mut(world) else {
-                return;
-            };
-            super::reflect_fields::spawn_reflected_fields(
-                &mut commands,
-                card.body,
-                value.as_ref(),
-                0,
-                String::new(),
-                source,
-                &type_path,
-                &names,
-                &registry,
-                &editor_font,
-                &icon_font,
-            );
-            state.apply(world);
-        }
-    }
+    bevy::feathers_inspector::build_body(world, root, card.body);
 
     let file = crate::asset_index::absolute_path(world, &path);
     if let Some(references) = super::file_card::spawn_references(world, inspector, &file) {
@@ -145,15 +115,17 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
     spawn_save_action(world, card.section, source, dirty);
 }
 
-/// The definition's value, owned, so the field rows can be spawned while the
-/// world is borrowed for commands.
-fn definition_snapshot(world: &World, source: Entity, type_path: &str) -> Option<Box<dyn Reflect>> {
-    let registry = world.resource::<AppTypeRegistry>().read();
-    let value = crate::definition_assets::definition_value(world, source, type_path, &registry)?;
-    registry
-        .get_with_type_path(type_path)?
-        .data::<ReflectFromReflect>()?
-        .from_reflect(value.as_partial_reflect())
+/// The definition's asset, as the inspector addresses it.
+fn definition_root(world: &World, path: &std::path::Path, type_path: &str) -> Option<InspectorRoot> {
+    let handle = world
+        .get_resource::<crate::asset_index::AssetIndex>()?
+        .get(path)?
+        .value
+        .handle()?;
+    Some(InspectorRoot::Asset {
+        asset_id: handle.id(),
+        type_id: crate::definition_assets::registered_type_id(world, type_path)?,
+    })
 }
 
 /// The header's unsaved-edits marker, following the definition it names.

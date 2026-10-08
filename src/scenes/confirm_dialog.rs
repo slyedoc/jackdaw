@@ -424,7 +424,6 @@ pub(crate) fn apply_confirm_quit_action(world: &mut World, action: ConfirmQuitBu
 /// open the next time the launcher is reached, and the wording flag would
 /// outlive the question it belonged to.
 fn disarm_leave(world: &mut World) {
-    world.remove_resource::<crate::project_select::PendingAutoOpen>();
     if let Some(mut pending) = world.get_resource_mut::<PendingQuit>() {
         pending.leaving_project = false;
     }
@@ -457,7 +456,7 @@ fn confirmed_leave(world: &mut World, leaving_project: bool) {
         world.resource_mut::<PendingQuit>().leaving_project = false;
         world
             .resource_mut::<NextState<crate::AppState>>()
-            .set(crate::AppState::ProjectSelect);
+            .set(crate::AppState::Off);
         return;
     }
     world
@@ -606,6 +605,7 @@ mod apply_confirm_dialog_action_tests {
         world.init_resource::<jackdaw_commands::CommandHistory>();
         world.init_resource::<crate::scene_io::SceneDirtyState>();
         world.init_resource::<SceneFilePath>();
+        world.init_resource::<AppTypeRegistry>();
 
         let mut tab = SceneTab::new_untitled(1);
         tab.path = Some(path);
@@ -660,10 +660,10 @@ mod apply_confirm_dialog_action_tests {
         assert!(pending.leaving_project, "the wording follows this flag");
     }
 
-    /// A save that could not happen leaves nothing armed: a project pick left behind would
-    /// have the next Home relaunch into that project instead of reaching the launcher.
+    /// A save that could not happen leaves nothing armed: the work stays unsaved and the
+    /// question is gone.
     #[test]
-    fn a_failed_save_disarms_the_project_pick_and_the_wording() {
+    fn a_failed_save_disarms_the_wording() {
         let mut world = world_with_dirty_tab_at(std::path::PathBuf::from("/nowhere/zone.bsn"));
         // Untitled, so there is no path to save it to.
         world.resource_mut::<Scenes>().tabs[0].path = None;
@@ -671,19 +671,8 @@ mod apply_confirm_dialog_action_tests {
             active: true,
             leaving_project: true,
         });
-        world.insert_resource(crate::project_select::PendingAutoOpen {
-            path: std::path::PathBuf::from("/projects/beta"),
-            skip_build: false,
-        });
-
         apply_confirm_quit_action(&mut world, ConfirmQuitButton::SaveAll);
 
-        assert!(
-            world
-                .get_resource::<crate::project_select::PendingAutoOpen>()
-                .is_none(),
-            "a pick nobody confirmed must not survive to fire later",
-        );
         let pending = world.resource::<PendingQuit>();
         assert!(!pending.active);
         assert!(!pending.leaving_project);

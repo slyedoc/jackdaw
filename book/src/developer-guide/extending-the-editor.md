@@ -4,11 +4,11 @@ Jackdaw has two deliberate extension seams.
 
 ## Custom standalone editors
 
-`jackdaw_editor` exposes the same Bevy plugin group used by the official GUI:
+`jackdaw` exposes the same Bevy plugin group used by the official GUI:
 
 ```rust
 use bevy::prelude::*;
-use jackdaw_editor::prelude::*;
+use jackdaw::prelude::*;
 
 fn main() -> AppExit {
     App::new()

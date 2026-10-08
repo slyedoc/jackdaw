@@ -11,7 +11,7 @@
 //!   where fields stack down a dock-panel sidebar.
 //! - [`spawn_scrub_chip`]: a compact inline label and value chip sized to its
 //!   content, sitting beside other chips on the options bar's single wrapping
-//!   row. Built on jackdaw's `ScrubNumberInput`; see that type's docs for what
+//!   row. Built on jackdaw's `FeathersNumberInput`; see that type's docs for what
 //!   a native widget does not cover.
 //!
 //! Neither shows its description as a permanent line: both attach it as a
@@ -27,9 +27,8 @@ use bevy::text::FontSource;
 use bevy::ui::Checked;
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::icons::FeathersDefaultFont;
-use jackdaw_feathers::number_input::{
-    NumberInputPrecision, ScrubNumberInput, ScrubNumberInputValue, SoftLimit,
-};
+use bevy::feathers::controls::{NumberInputPrecision, FeathersNumberInput, SoftLimit};
+use bevy::ui_widgets::NumericValue;
 pub(super) use jackdaw_feathers::slider_row::FieldKind;
 use jackdaw_feathers::slider_row::SliderRowProps;
 use jackdaw_feathers::tokens;
@@ -120,7 +119,7 @@ pub(super) fn spawn_slider_row<C: Component>(
 }
 
 /// A compact inline label and value chip sized to its content: a
-/// `ScrubNumberInput` tagged with `field`, sitting beside sibling chips on one
+/// `FeathersNumberInput` tagged with `field`, sitting beside sibling chips on one
 /// options-bar row. Same binding, tooltip and [`FieldKind`] contract as
 /// [`spawn_slider_row`], different container: no `width: 100%`, so the bar's
 /// `FlexDirection::Row` lays chips out side by side rather than one full-width
@@ -166,7 +165,7 @@ pub(super) fn spawn_scrub_chip<C: Component>(
 
     commands
         .spawn_scene(bsn! {
-            @ScrubNumberInput
+            @FeathersNumberInput
             Node {
                 width: px(SCRUB_CHIP_INPUT_WIDTH),
                 height: px(22.0),
@@ -174,8 +173,8 @@ pub(super) fn spawn_scrub_chip<C: Component>(
             }
         })
         .insert((
-            ScrubNumberInputValue::F32(value),
-            SoftLimit::f32(soft_range),
+            NumericValue::F32(value),
+            SoftLimit::f32(soft_range.start..=soft_range.end),
             NumberInputPrecision(kind.precision()),
             field,
             ChildOf(chip),

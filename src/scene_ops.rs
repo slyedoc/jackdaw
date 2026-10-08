@@ -15,8 +15,7 @@ use crate::core_extension::CoreExtensionInputContext;
 pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
     ctx.register_operator::<SceneSaveOp>()
         .register_operator::<SceneSaveAsOp>()
-        .register_operator::<SceneSaveSelectionAsPrefabOp>()
-        .register_operator::<SceneOpenRecentOp>();
+        .register_operator::<SceneSaveSelectionAsPrefabOp>();
 
     ctx.bind_operator::<CoreExtensionInputContext, SceneSaveOp>([
         PresetInput::key("KeyS").ctrl_or_super()
@@ -94,13 +93,3 @@ pub(crate) fn scene_save_selection_as_prefab(
     OperatorResult::Finished
 }
 
-#[operator(id = "scene.open_recent", label = "Open Recent...")]
-pub(crate) fn scene_open_recent(
-    _: In<OperatorParameters>,
-    mut commands: Commands,
-) -> OperatorResult {
-    commands.queue(|world: &mut World| {
-        crate::open_recent_dialog(world);
-    });
-    OperatorResult::Finished
-}

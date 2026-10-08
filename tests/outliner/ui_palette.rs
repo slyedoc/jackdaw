@@ -6,6 +6,7 @@ use bevy::picking::cursor::EntityCursor;
 
 use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::prelude::*;
+use jackdaw::scene_io::SceneEntity;
 use jackdaw::add_entity_picker::{
     UI_SECTION_PREFIX, WIDGET_ACTION_PREFIX, add_menu_rows, collect_add_menu_items,
 };
@@ -22,7 +23,7 @@ use jackdaw_feathers::menu_bar::{
 use jackdaw_scene_types::UiSceneRoot;
 
 /// Force the widget extension on: an on-disk extension config may leave it off.
-fn palette_app() -> App {
+fn palette_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     jackdaw_api_internal::lifecycle::enable_extension(app.world_mut(), "jackdaw.ui_palette");
     app.update();
@@ -35,15 +36,12 @@ fn open_ui_scene(world: &mut World) -> Entity {
     let root = world
         .spawn((Name::new("UiRoot"), UiSceneRoot::default(), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
+    jackdaw::scene_io::adopt_entity(world, root);
     root
 }
 
 fn ast_holds(world: &World, entity: Entity) -> bool {
-    world
-        .resource::<jackdaw_bsn::SceneBsnAst>()
-        .ast_for(entity)
-        .is_some()
+    world.get::<SceneEntity>(entity).is_some()
 }
 
 #[test]
@@ -414,7 +412,7 @@ fn a_selection_outside_the_ui_scene_falls_back_to_the_scene_root() {
     let root = open_ui_scene(world);
 
     let elsewhere = world.spawn((Name::new("Cube"), Transform::default())).id();
-    jackdaw::scene_io::register_entity_in_ast(world, elsewhere);
+    jackdaw::scene_io::adopt_entity(world, elsewhere);
     world.resource_mut::<Selection>().entities = vec![elsewhere];
 
     let button = instantiate_widget(world, "ui.button").expect("the UI scene still accepts it");
@@ -584,7 +582,7 @@ fn a_child_registered_a_frame_later_still_gets_its_row() {
         "nothing to show yet: the document has never heard of it",
     );
 
-    jackdaw::scene_io::register_entity_in_ast(world, late);
+    jackdaw::scene_io::adopt_entity(world, late);
     app.update();
 
     let world = app.world_mut();
@@ -622,7 +620,7 @@ fn a_derived_child_stays_rowless_across_later_registrations() {
     let sibling = world
         .spawn((Name::new("Authored"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, sibling);
+    jackdaw::scene_io::adopt_entity(world, sibling);
     app.update();
     app.update();
 
@@ -670,7 +668,7 @@ fn disclosure_of(world: &World, row: Entity) -> Option<Entity> {
 }
 
 /// An outliner with one open UI scene and one panel showing it.
-fn outliner_app() -> (App, Entity) {
+fn outliner_app() -> (util::TestApp, Entity) {
     let mut app = palette_app();
     let world = app.world_mut();
     let root = open_ui_scene(world);
@@ -699,7 +697,7 @@ fn a_row_that_gains_a_child_becomes_expandable() {
     let child = world
         .spawn((Name::new("Panel"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, child);
+    jackdaw::scene_io::adopt_entity(world, child);
     app.update();
 
     let world = app.world_mut();
@@ -739,7 +737,7 @@ fn a_row_that_loses_its_last_child_stops_advertising_children() {
     let child = world
         .spawn((Name::new("Panel"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, child);
+    jackdaw::scene_io::adopt_entity(world, child);
     app.update();
 
     let world = app.world_mut();
@@ -902,7 +900,7 @@ fn a_created_button_carries_the_feathers_styling_set() {
 }
 
 /// Save the open document, then load it into a fresh editor.
-fn round_trip(app: &mut App) -> App {
+fn round_trip(app: &mut App) -> util::TestApp {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("ui.bsn");
     let text = jackdaw::scene_io::emit_bsn_scene_with_inline_assets(app.world_mut(), dir.path());
@@ -1045,7 +1043,7 @@ fn a_bound_slider_settles_when_it_also_self_updates() {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), slider);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), slider);
     app.update();
 
     app.world_mut().trigger(ValueChange {
@@ -1105,10 +1103,7 @@ fn a_pressed_button_saves_its_resting_colour() {
     // Re-register while held down: the capture a paste or a late registration
     // performs, snapshotting whatever the live components say.
     let world = app.world_mut();
-    world
-        .resource_mut::<jackdaw_bsn::SceneBsnAst>()
-        .remove_entity_node(button);
-    jackdaw::scene_io::register_entity_in_ast(world, button);
+    jackdaw::scene_io::adopt_entity(world, button);
 
     let text = jackdaw::scene_io::emit_bsn_scene_with_inline_assets(
         app.world_mut(),
@@ -1173,12 +1168,6 @@ fn a_reloaded_text_input_keeps_its_text() {
         .expect("the palette's input carries a text value")
         .0 = "Ada Lovelace".to_string();
     let typed = app.world().get::<TextValue>(input).cloned().unwrap();
-    jackdaw::commands::sync_component_to_ast(
-        app.world_mut(),
-        input,
-        "jackdaw_widgets_runtime::TextValue",
-        &typed,
-    );
     app.update();
 
     let mut reloaded = round_trip(&mut app);
@@ -1240,12 +1229,6 @@ fn a_marker_write_binding_survives_the_round_trip() {
         as_percent: false,
     }]);
     app.world_mut().entity_mut(button).insert(authored.clone());
-    jackdaw::commands::sync_component_to_ast(
-        app.world_mut(),
-        button,
-        "jackdaw_bind::types::Bindings",
-        &authored,
-    );
     app.update();
 
     let mut reloaded = round_trip(&mut app);
@@ -1462,14 +1445,8 @@ fn each_added_widget_gets_a_name_of_its_own() {
         .collect();
     assert_eq!(live, vec!["Button", "Button2", "Button3"]);
 
-    // The document records the names too, so a save and reload keep them apart.
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let saved: Vec<String> = added
-        .iter()
-        .filter_map(|&entity| ast.ast_for(entity).and_then(|node| ast.get_name(node)))
-        .map(str::to_owned)
-        .collect();
-    assert_eq!(saved, live);
+    // The live entities are the document, so a save writes them apart too.
+    assert!(added.iter().all(|&entity| ast_holds(app.world(), entity)));
 }
 
 /// Click the row `row`, standing for `source`, the way the tree view's
@@ -1671,14 +1648,14 @@ fn an_add_beside_a_selected_leaf_is_its_sibling() {
     );
 
     // And the document holds that order, so a save and a reload keep it.
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let root_node = ast.ast_for(root).expect("the root is in the document");
-    let authored: Vec<Option<Entity>> = ast
-        .get_children_ast(root_node)
-        .into_iter()
-        .map(|node| ast.ecs_for_ast(node))
+    let authored: Vec<Entity> = app
+        .world()
+        .get::<Children>(root)
+        .expect("the root holds its children")
+        .iter()
+        .filter(|&child| ast_holds(app.world(), child))
         .collect();
-    assert_eq!(authored, vec![Some(panel), Some(after)]);
+    assert_eq!(authored, vec![panel, after]);
 }
 
 /// A Column selected takes the next widget in; that widget then takes the one
@@ -1737,7 +1714,7 @@ fn a_row_withheld_for_its_name_arrives_when_the_name_does() {
 
     // Document first, name second: the reverse of the clip and load shape.
     let late = world.spawn((Node::default(), ChildOf(root))).id();
-    jackdaw::scene_io::register_entity_in_ast(world, late);
+    jackdaw::scene_io::adopt_entity(world, late);
     app.update();
     app.update();
 

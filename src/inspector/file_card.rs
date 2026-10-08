@@ -52,7 +52,7 @@ pub(super) fn plugin(app: &mut App) {
             drop_a_file_the_selection_left,
             rebuild_on_preview_change,
         )
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     );
 }
 

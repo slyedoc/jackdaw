@@ -9,15 +9,14 @@ use crate::util;
 use bevy::prelude::*;
 use bevy::ui_widgets::ValueChange;
 use jackdaw::selection::Selection;
-use jackdaw_feathers::button::ButtonClickEvent;
-use jackdaw_feathers::tooltip::Tooltip;
+use bevy::ui_widgets::Activate;
 use jackdaw_widgets_runtime::{Dropdown, DropdownOption, Progress};
 
 const PROGRESS: &str = "jackdaw_widgets_runtime::Progress";
 const DROPDOWN: &str = "jackdaw_widgets_runtime::Dropdown";
 
 /// A selected, document-tracked entity carrying `widget`.
-fn app_with(widget: impl Bundle) -> (App, Entity) {
+fn app_with(widget: impl Bundle) -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     app.world_mut()
         .spawn(jackdaw::layout::inspector_components_content(default()));
@@ -25,7 +24,7 @@ fn app_with(widget: impl Bundle) -> (App, Entity) {
         .world_mut()
         .spawn((Name::new("widget"), Node::default(), widget))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     let world = app.world_mut();
     world.resource_scope(|world, mut selection: Mut<Selection>| {
         let mut commands = world.commands();
@@ -38,40 +37,12 @@ fn app_with(widget: impl Bundle) -> (App, Entity) {
     (app, entity)
 }
 
-fn all_entities(app: &mut App) -> Vec<Entity> {
-    app.world_mut()
-        .query::<Entity>()
-        .iter(app.world())
-        .collect()
-}
-
-/// The control on the inspector that writes `field_path` of `type_path`.
 fn field_widget(app: &mut App, type_path: &str, field_path: &str) -> Entity {
-    all_entities(app)
-        .into_iter()
-        .find(|entity| {
-            jackdaw::inspector::field_edited_by(app.world(), *entity)
-                == Some((type_path, field_path))
-        })
-        .unwrap_or_else(|| panic!("no control on the inspector writes `{field_path}`"))
+    util::inspector_widget(app, type_path, field_path)
 }
 
 fn has_field_widget(app: &mut App, type_path: &str, field_path: &str) -> bool {
-    all_entities(app).into_iter().any(|entity| {
-        jackdaw::inspector::field_edited_by(app.world(), entity) == Some((type_path, field_path))
-    })
-}
-
-/// The button that adds one item to a list field.
-fn add_button(app: &mut App) -> Entity {
-    all_entities(app)
-        .into_iter()
-        .find(|entity| {
-            app.world()
-                .get::<Tooltip>(*entity)
-                .is_some_and(|tip| tip.title == "Add an item to the list")
-        })
-        .expect("the list field offers an Add")
+    jackdaw::inspector::field_widget(app.world_mut(), type_path, field_path).is_some()
 }
 
 fn option_rows(app: &mut App) -> usize {
@@ -119,8 +90,8 @@ fn a_dropdown_lists_its_options_and_adding_one_regenerates_the_chrome() {
     );
     assert!(has_field_widget(&mut app, DROPDOWN, "options[1]"));
 
-    let add = add_button(&mut app);
-    app.world_mut().trigger(ButtonClickEvent { entity: add });
+    let add = util::list_add_button(&mut app);
+    app.world_mut().trigger(Activate { entity: add });
     for _ in 0..10 {
         app.update();
     }

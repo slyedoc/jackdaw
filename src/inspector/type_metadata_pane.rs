@@ -59,7 +59,7 @@ struct PreviewPickTask {
 pub(super) fn plugin(app: &mut App) {
     app.add_observer(on_type_metadata_commit).add_systems(
         Update,
-        (poll_preview_pick, update_preview_thumbnails).run_if(in_state(crate::AppState::Editor)),
+        (poll_preview_pick, update_preview_thumbnails).run_if(crate::editor_active),
     );
 }
 

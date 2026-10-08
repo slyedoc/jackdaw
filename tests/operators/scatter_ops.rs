@@ -4,7 +4,6 @@
 //! groups a generated scene already holds as entities.
 
 use crate::util;
-use bevy_aurora::material::AuroraMaterial;
 
 use bevy::prelude::*;
 use jackdaw::boot_ops::{SELECTION_FALLBACK_OPS, run_op_clause};
@@ -30,7 +29,7 @@ fn run(app: &mut App, clause: &str) {
 /// A scene with one terrain that has a document to store scatter in. The sidecar
 /// path is minted here: the editor's own system is gated on a state a headless
 /// test never enters.
-fn scene_with_a_terrain() -> (App, Entity) {
+fn scene_with_a_terrain() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     run(&mut app, "scene.new");
     run(&mut app, "entity.add.terrain");
@@ -422,109 +421,6 @@ fn paint_a_corner_of_the_mask(app: &mut App, terrain: Entity, value: u16) {
     app.update();
 }
 
-fn stored_materials(app: &App, terrain: Entity) -> std::collections::BTreeMap<String, String> {
-    let data_path = app
-        .world()
-        .get::<jackdaw_scene_types::Terrain>(terrain)
-        .expect("a terrain")
-        .data_path
-        .clone();
-    let store = app.world().resource::<jackdaw::terrain::TerrainDataStore>();
-    let data = store.get(&data_path).expect("a document");
-    data.scatter
-        .assets
-        .iter()
-        .find(|entry| entry.asset == "kit/Tree.gltf")
-        .map(|entry| entry.materials.clone())
-        .unwrap_or_default()
-}
-
-fn a_known_material(app: &mut App, path: &str) {
-    let handle = app
-        .world_mut()
-        .resource_mut::<Assets<AuroraMaterial>>()
-        .add(AuroraMaterial::default());
-    let mut references = app
-        .world_mut()
-        .remove_resource::<jackdaw_bsn::BsnProjectAssets>()
-        .unwrap_or_else(|| jackdaw_bsn::BsnProjectAssets(Default::default()));
-    references.0.insert(path.to_string(), handle.untyped());
-    app.world_mut().insert_resource(references);
-}
-
-#[test]
-fn a_models_material_overrides_follow_it_into_stored_scatter_and_back_out() {
-    let (mut app, terrain) = scene_with_a_terrain();
-    let (group, model) = hand_authored_group(&mut app);
-    let overrides = jackdaw_scene_types::MaterialOverrides {
-        materials: [("Leaves".to_string(), "materials/pine.bsn".to_string())]
-            .into_iter()
-            .collect(),
-    };
-    app.world_mut().entity_mut(model).insert(overrides.clone());
-    app.world_mut().resource_mut::<Selection>().entities = vec![group];
-    run(&mut app, "terrain.scatter.adopt");
-
-    assert_eq!(stored_materials(&app, terrain), overrides.materials);
-
-    run(
-        &mut app,
-        "terrain.scatter.promote key=Scatter_Trees index=0",
-    );
-    let mut query = app
-        .world_mut()
-        .query::<(&GltfSource, &jackdaw_scene_types::MaterialOverrides)>();
-    let (_, promoted) = query
-        .iter(app.world())
-        .find(|(source, _)| source.path == "kit/Tree.gltf")
-        .expect("the promoted model carries the overrides");
-    assert_eq!(promoted, &overrides);
-}
-
-#[test]
-fn a_stored_models_material_override_is_one_undo_entry() {
-    let (mut app, terrain) = scene_with_a_terrain();
-    let (group, _) = hand_authored_group(&mut app);
-    app.world_mut().resource_mut::<Selection>().entities = vec![group];
-    run(&mut app, "terrain.scatter.adopt");
-    a_known_material(&mut app, "materials/bark.bsn");
-
-    let before = app.world().resource::<CommandHistory>().undo_stack.len();
-    run(
-        &mut app,
-        "terrain.scatter.palette.material asset=kit/Tree.gltf name=Bark material=materials/bark.bsn",
-    );
-    assert_eq!(
-        stored_materials(&app, terrain)
-            .get("Bark")
-            .map(String::as_str),
-        Some("materials/bark.bsn")
-    );
-    assert_eq!(
-        app.world().resource::<CommandHistory>().undo_stack.len(),
-        before + 1
-    );
-
-    run(&mut app, "history.undo");
-    assert!(stored_materials(&app, terrain).is_empty());
-}
-
-#[test]
-fn a_stored_material_override_naming_no_material_is_refused() {
-    let (mut app, terrain) = scene_with_a_terrain();
-    let (group, _) = hand_authored_group(&mut app);
-    app.world_mut().resource_mut::<Selection>().entities = vec![group];
-    run(&mut app, "terrain.scatter.adopt");
-
-    let result = run_op_clause(
-        app.world_mut(),
-        "terrain.scatter.palette.material asset=kit/Tree.gltf name=Bark material=materials/none.bsn",
-    )
-    .expect("the clause dispatches");
-    assert_eq!(result, OperatorResult::Cancelled);
-    assert!(stored_materials(&app, terrain).is_empty());
-}
-
 fn stored_placements(app: &App, terrain: Entity) -> Vec<(String, Vec3, f32, f32)> {
     let data_path = app
         .world()
@@ -561,8 +457,7 @@ fn an_imported_layout_lands_exactly_where_it_says_as_one_undo_entry() {
     std::fs::write(
         project.path().join("layout.json"),
         r#"[
-            {"asset": "kit/Tree.gltf", "x": 1.5, "y": 0.5, "z": 2.5, "yaw": 90.0, "scale": 1.2,
-             "materials": {"Leaves": "materials/pine.bsn"}},
+            {"asset": "kit/Tree.gltf", "x": 1.5, "y": 0.5, "z": 2.5, "yaw": 90.0, "scale": 1.2},
             {"asset": "kit/Bush.gltf", "x": 3.0, "y": 0.25, "z": 1.0},
             {"asset": "kit/Tree.gltf", "x": 2.0, "y": 0.5, "z": 3.0, "yaw": -45.0, "scale": 0.8}
         ]"#,
@@ -586,13 +481,6 @@ fn an_imported_layout_lands_exactly_where_it_says_as_one_undo_entry() {
     assert!((tree.2 - 90.0_f32.to_radians()).abs() < 1e-4);
     assert!((tree.3 - 1.2).abs() < 1e-4);
     assert_eq!(stored_groups(&app, terrain), vec![("woods".to_string(), 3)]);
-    assert_eq!(
-        stored_materials(&app, terrain)
-            .get("Leaves")
-            .map(String::as_str),
-        Some("materials/pine.bsn"),
-        "the file's overrides reach the palette entry"
-    );
     assert_eq!(
         app.world().resource::<CommandHistory>().undo_stack.len(),
         before + 1

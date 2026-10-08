@@ -504,24 +504,25 @@ pub struct ViewportFocus(pub Vec3);
 /// Carry [`ViewportFocus`] along with a camera the pointer is flying, keeping
 /// its distance ahead of the camera.
 ///
-/// Runs in `Last` so it reads the transform the camera controller left, not the
-/// one it is about to replace.
+/// Runs in `Last` so it reads the transform the camera controller left.
 pub(crate) fn track_pointer_focus(
-    nav: Res<jackdaw_camera::CameraNavInput>,
-    cameras: Query<(Entity, &Transform, Option<&ViewportFocus>), With<MainViewportCamera>>,
+    fly: Res<crate::viewport::CameraFlyActive>,
+    cameras: Query<(Entity, Ref<Transform>, Option<&ViewportFocus>), With<MainViewportCamera>>,
     mut commands: Commands,
 ) {
-    let flying = nav.fly_active && (nav.look_delta != Vec2::ZERO || nav.move_axes != Vec3::ZERO);
-    if !flying && nav.zoom_ticks == 0.0 {
+    if !fly.0 {
         return;
     }
     for (entity, transform, focus) in &cameras {
+        if !transform.is_changed() {
+            continue;
+        }
         let distance = focus
             .map(|ViewportFocus(point)| transform.translation.distance(*point))
             .filter(|d| d.is_finite() && *d > 0.01);
         let point = match distance {
             Some(distance) => transform.translation + transform.forward().as_vec3() * distance,
-            None => orbit_focus(transform, None, FRAME_SELECTED_MIN_DIST),
+            None => orbit_focus(&transform, None, FRAME_SELECTED_MIN_DIST),
         };
         commands.entity(entity).insert(ViewportFocus(point));
     }

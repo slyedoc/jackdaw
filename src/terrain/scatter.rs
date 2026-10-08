@@ -5,7 +5,6 @@
 //! transform produced; a re-run replaces instances whose live `Transform`
 //! still equals the recorded one and preserves the ones the user moved.
 
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use bevy::ecs::system::SystemParam;
@@ -44,7 +43,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
-                sync_scatter_fields.run_if(in_state(crate::AppState::Editor)),
+                sync_scatter_fields.run_if(crate::editor_active),
                 poll_layout_pick.run_if(resource_exists::<LayoutPick>),
             ),
         )
@@ -62,8 +61,6 @@ pub(crate) fn add_to_extension(ctx: &mut ExtensionContext) {
         .register_operator::<TerrainScatterAssetAddOp>()
         .register_operator::<TerrainScatterAssetRemoveOp>()
         .register_operator::<TerrainScatterAssetToggleOp>()
-        .register_operator::<TerrainScatterAssetMaterialOp>()
-        .register_operator::<TerrainScatterPaletteMaterialOp>()
         .register_operator::<TerrainScatterPaletteAssetOp>()
         .register_operator::<TerrainScatterImportOp>()
         .register_operator::<TerrainScatterImportPickOp>()
@@ -87,8 +84,6 @@ pub struct ScatterAsset {
     pub path: String,
     /// Whether this entry takes part in the next run.
     pub active: bool,
-    /// Material asset path each placement's parts wear in place of their own, by glTF material name.
-    pub materials: BTreeMap<String, String>,
 }
 
 impl ScatterAsset {
@@ -157,27 +152,7 @@ impl TerrainScatterState {
             .collect()
     }
 
-    /// The overrides the panel holds for each model path that has any.
-    fn asset_materials(&self) -> BTreeMap<String, BTreeMap<String, String>> {
-        self.assets
-            .iter()
-            .filter(|asset| !asset.materials.is_empty())
-            .map(|asset| (asset.path.clone(), asset.materials.clone()))
-            .collect()
-    }
-}
 
-/// `Name=path` pairs separated by `;`, as a model's material overrides.
-fn parse_materials(text: &str) -> Option<BTreeMap<String, String>> {
-    text.split(';')
-        .map(str::trim)
-        .filter(|pair| !pair.is_empty())
-        .map(|pair| {
-            let (name, path) = pair.split_once('=')?;
-            let (name, path) = (name.trim(), path.trim());
-            (!name.is_empty() && !path.is_empty()).then(|| (name.to_string(), path.to_string()))
-        })
-        .collect()
 }
 
 /// What the last run did, shown in the panel and logged.
@@ -393,11 +368,6 @@ pub(crate) fn terrain_scatter_group_select(
     allows_undo = false,
     params(
         path(String, doc = "Model path. Defaults to the panel's asset field."),
-        materials(
-            String,
-            doc = "Material overrides as Name=path pairs separated by ';', keyed by the model's \
-                   material names."
-        ),
     )
 )]
 pub(crate) fn terrain_scatter_asset_add(
@@ -411,15 +381,7 @@ pub(crate) fn terrain_scatter_asset_add(
     if path.is_empty() || state.assets.iter().any(|asset| asset.path == path) {
         return OperatorResult::Cancelled;
     }
-    let materials = match params.as_str("materials") {
-        Some(text) => parse_materials(text)?,
-        None => BTreeMap::new(),
-    };
-    state.assets.push(ScatterAsset {
-        path,
-        active: true,
-        materials,
-    });
+    state.assets.push(ScatterAsset { path, active: true });
     state.asset_draft.clear();
     OperatorResult::Finished
 }
@@ -444,108 +406,6 @@ pub(crate) fn terrain_scatter_asset_remove(
     OperatorResult::Finished
 }
 
-/// Set or clear one material override on a scatter palette entry.
-#[operator(
-    id = "terrain.scatter.asset.material",
-    label = "Set Scatter Asset Material",
-    description = "Make a palette entry's placements wear a material asset in place of one of \
-                   the model's own materials.",
-    allows_undo = false,
-    params(
-        index(i64, doc = "Palette index."),
-        name(String, doc = "The model's material name."),
-        material(String, doc = "Material asset path. Empty takes the override off."),
-    )
-)]
-pub(crate) fn terrain_scatter_asset_material(
-    params: In<OperatorParameters>,
-    mut state: ResMut<TerrainScatterState>,
-) -> OperatorResult {
-    let index = usize::try_from(params.as_int("index")?).ok()?;
-    let name = params.as_str("name")?.trim().to_string();
-    if name.is_empty() {
-        return OperatorResult::Cancelled;
-    }
-    let asset = state.assets.get_mut(index)?;
-    match params
-        .as_str("material")
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-    {
-        Some(path) => {
-            asset.materials.insert(name, path.to_string());
-        }
-        None => {
-            asset.materials.remove(&name);
-        }
-    }
-    OperatorResult::Finished
-}
-
-/// Set or clear one material override on a model a terrain's stored scatter draws.
-#[operator(
-    id = "terrain.scatter.palette.material",
-    label = "Set Stored Scatter Material",
-    description = "Make every stored placement of a model on a terrain wear a material asset in \
-                   place of one of the model's own materials, as one undo entry.",
-    allows_undo = false,
-    params(
-        terrain(String, doc = "Terrain name. Defaults to the selected terrain."),
-        asset(String, doc = "Model path as the terrain's stored scatter names it."),
-        name(String, doc = "The model's material name."),
-        material(String, doc = "Material asset path. Empty takes the override off."),
-    )
-)]
-pub(crate) fn terrain_scatter_palette_material(
-    params: In<OperatorParameters>,
-    world: &mut World,
-) -> OperatorResult {
-    let id = "terrain.scatter.palette.material";
-    let Some(terrain) = resolve_terrain(world, params.as_str("terrain")) else {
-        warn_caller(world, format!("{id}: no terrain resolved"));
-        return OperatorResult::Cancelled;
-    };
-    let Some(data_path) = world
-        .get::<jackdaw_scene_types::Terrain>(terrain)
-        .map(|terrain| terrain.data_path.clone())
-    else {
-        return OperatorResult::Cancelled;
-    };
-    let (Some(asset), Some(name)) = (
-        params
-            .as_str("asset")
-            .map(str::trim)
-            .filter(|s| !s.is_empty()),
-        params
-            .as_str("name")
-            .map(str::trim)
-            .filter(|s| !s.is_empty()),
-    ) else {
-        warn_caller(world, format!("{id}: name the asset and the material name"));
-        return OperatorResult::Cancelled;
-    };
-    let material = params
-        .as_str("material")
-        .map(str::trim)
-        .filter(|path| !path.is_empty());
-    if let Some(path) = material
-        && jackdaw_runtime::material_of_reference(world, path).is_none()
-    {
-        warn_caller(
-            world,
-            format!("{id}: {path} names no material this project holds"),
-        );
-        return OperatorResult::Cancelled;
-    }
-    match scatter_data::set_palette_material(world, &data_path, asset, name, material) {
-        Ok(_) => OperatorResult::Finished,
-        Err(reason) => {
-            warn_caller(world, format!("{id}: {}", reason.message()));
-            OperatorResult::Cancelled
-        }
-    }
-}
-
 /// Point a model a terrain's stored scatter draws at another model or a prefab.
 #[operator(
     id = "terrain.scatter.palette.asset",
@@ -562,11 +422,6 @@ pub(crate) fn terrain_scatter_palette_material(
         to(
             String,
             doc = "Model or prefab path to draw instead, relative to the assets directory."
-        ),
-        keep_materials(
-            bool,
-            doc = "Keep the entry's own material overrides, laid over what the new asset wears. \
-                   Defaults to false, so a prefab dresses its placements itself."
         ),
     )
 )]
@@ -599,8 +454,7 @@ pub(crate) fn terrain_scatter_palette_asset(
         );
         return OperatorResult::Cancelled;
     };
-    let keep = params.as_bool("keep_materials").unwrap_or(false);
-    match scatter_data::set_palette_asset(world, &data_path, &asset, &to, keep) {
+    match scatter_data::set_palette_asset(world, &data_path, &asset, &to) {
         Ok(_) => OperatorResult::Finished,
         Err(reason) => {
             warn_caller(world, format!("{id}: {}", reason.message()));
@@ -621,9 +475,6 @@ struct ImportedPlacement {
     yaw: f32,
     #[serde(default = "unit_scale")]
     scale: f32,
-    /// Material overrides for this placement's model, by glTF material name.
-    #[serde(default)]
-    materials: BTreeMap<String, String>,
 }
 
 fn unit_scale() -> f32 {
@@ -640,7 +491,7 @@ fn unit_scale() -> f32 {
     params(
         path(
             String,
-            doc = "JSON file of [{asset, x, y, z, yaw, scale, materials}], world space, yaw in \
+            doc = "JSON file of [{asset, x, y, z, yaw, scale}], world space, yaw in \
                    degrees; relative to the project or absolute inside it. Defaults to the \
                    one the Scatter panel has picked."
         ),
@@ -726,7 +577,6 @@ pub(crate) fn terrain_scatter_import(
         .rotation
         .to_euler(EulerRot::YXZ);
     let mut assets: Vec<String> = Vec::new();
-    let mut materials: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
     let mut pending = Vec::with_capacity(listed.len());
     for placement in listed {
         let asset = match assets.iter().position(|known| *known == placement.asset) {
@@ -736,11 +586,6 @@ pub(crate) fn terrain_scatter_import(
                 assets.len() - 1
             }
         };
-        if !placement.materials.is_empty() {
-            materials
-                .entry(placement.asset.clone())
-                .or_insert(placement.materials);
-        }
         pending.push(scatter_data::PendingPlacement {
             position: terrain_inverse.transform_point3(Vec3::new(
                 placement.x,
@@ -753,7 +598,7 @@ pub(crate) fn terrain_scatter_import(
         });
     }
     let asked_for = pending.len();
-    match scatter_data::stamp(world, &data_path, &key, &assets, &materials, pending) {
+    match scatter_data::stamp(world, &data_path, &key, &assets, pending) {
         Ok(stored) => {
             let skipped = asked_for - stored;
             let note = if skipped > 0 {
@@ -1368,7 +1213,6 @@ fn run_scatter(world: &mut World, params: &OperatorParameters) {
                 seed,
                 terrain: terrain_entity,
                 assets,
-                materials: state.asset_materials(),
                 placements,
             },
         );
@@ -1385,13 +1229,11 @@ fn run_scatter(world: &mut World, params: &OperatorParameters) {
              stands upright; promote a placement to tilt it",
         );
     }
-    let materials = state.asset_materials();
     let stored = match scatter_data::stamp(
         world,
         &terrain.data_path,
         &key,
         &assets,
-        &materials,
         pending,
     ) {
         Ok(stored) => stored,
@@ -1421,7 +1263,6 @@ struct StampRequest {
     seed: u64,
     terrain: Entity,
     assets: Vec<String>,
-    materials: BTreeMap<String, BTreeMap<String, String>>,
     placements: Vec<jackdaw_terrain::Placement>,
 }
 
@@ -1480,7 +1321,6 @@ fn stamp(world: &mut World, request: StampRequest) {
         seed,
         terrain,
         assets,
-        materials,
         placements,
     } = request;
 
@@ -1527,12 +1367,6 @@ fn stamp(world: &mut World, request: StampRequest) {
             generated: transform,
         };
         let slot = slot.clone();
-        let overrides =
-            materials
-                .get(&path)
-                .map(|materials| jackdaw_scene_types::MaterialOverrides {
-                    materials: materials.clone(),
-                });
         cmds.push(Box::new(SpawnEntity {
             spawned: None,
             spawn_fn: Box::new(move |world: &mut World| {
@@ -1546,7 +1380,6 @@ fn stamp(world: &mut World, request: StampRequest) {
                     &name,
                     transform,
                     provenance.clone(),
-                    overrides.clone(),
                 )
             }),
             label: "Scatter instance".to_string(),
@@ -1640,10 +1473,6 @@ fn promote_placement(
             .unwrap_or("scatter")
     );
     let asset = promoted.asset.clone();
-    let overrides =
-        (!promoted.materials.is_empty()).then(|| jackdaw_scene_types::MaterialOverrides {
-            materials: promoted.materials.clone(),
-        });
     let transform = promoted.transform;
     let mut commands: Vec<Box<dyn EditorCommand>> = vec![Box::new(SpawnEntity {
         spawned: None,
@@ -1660,7 +1489,6 @@ fn promote_placement(
                     seed: 0,
                     generated: transform,
                 },
-                overrides.clone(),
             )
         }),
         label: "Promote Placement".to_string(),
@@ -1761,20 +1589,6 @@ fn spawn_group(world: &mut World, key: &str, terrain: Entity) -> Entity {
 
 /// Spawn one instance with the component shape a browser drop produces,
 /// plus its provenance marker.
-/// The material overrides the models under `group` carry, by model path.
-fn model_materials(world: &World, group: Entity) -> BTreeMap<String, BTreeMap<String, String>> {
-    world
-        .get::<Children>(group)
-        .into_iter()
-        .flat_map(RelationshipTarget::iter)
-        .filter_map(|child| {
-            let asset = world.get::<GltfSource>(child)?.path.clone();
-            let overrides = world.get::<jackdaw_scene_types::MaterialOverrides>(child)?;
-            Some((asset, overrides.materials.clone()))
-        })
-        .collect()
-}
-
 fn spawn_instance(
     world: &mut World,
     parent: Entity,
@@ -1782,7 +1596,6 @@ fn spawn_instance(
     name: &str,
     transform: Transform,
     provenance: ScatterInstance,
-    overrides: Option<jackdaw_scene_types::MaterialOverrides>,
 ) -> Entity {
     let asset_path = crate::entity_ops::to_asset_path(path);
     let scene = world
@@ -1801,9 +1614,6 @@ fn spawn_instance(
             ChildOf(parent),
         ))
         .id();
-    if let Some(overrides) = overrides {
-        world.entity_mut(entity).insert(overrides);
-    }
     crate::scene_io::adopt_entity(world, entity);
     entity
 }
@@ -2024,8 +1834,7 @@ fn adopt_group(world: &mut World, entity: Entity, terrain_name: Option<&str>, ke
         .get::<jackdaw_scene_types::Terrain>(terrain)
         .map(|t| t.data_path.clone())
         .unwrap_or_default();
-    let materials = model_materials(world, entity);
-    let adopted = match scatter_data::adopt(world, &data_path, &key, entity, models, &materials) {
+    let adopted = match scatter_data::adopt(world, &data_path, &key, entity, models) {
         Ok(adopted) => adopted,
         Err(reason) => {
             set_report(
@@ -2248,23 +2057,6 @@ pub(super) fn spawn_scatter_ui(
     }
     spawn_add_tile(commands, grid, TerrainScatterAssetAddOp::ID);
     spawn_path_field(commands, parent, &state.asset_draft);
-    for asset in state
-        .assets
-        .iter()
-        .filter(|asset| !asset.materials.is_empty())
-    {
-        let worn: Vec<String> = asset
-            .materials
-            .iter()
-            .map(|(name, path)| format!("{name} wears {path}"))
-            .collect();
-        spawn_hint(
-            commands,
-            parent,
-            &format!("{}: {}", asset.stem(), worn.join(", ")),
-        );
-    }
-
     // --- Mask ---
     let empty: &[jackdaw_scene_types::TerrainChannel] = &[];
     let channels = terrain.map(|t| t.channels.as_slice()).unwrap_or(empty);
@@ -2771,12 +2563,10 @@ mod tests {
                 ScatterAsset {
                     path: "kit/Tree.gltf".to_string(),
                     active: true,
-                    materials: BTreeMap::new(),
                 },
                 ScatterAsset {
                     path: "kit/Bush.gltf".to_string(),
                     active: false,
-                    materials: BTreeMap::new(),
                 },
             ],
             ..default()
@@ -2789,7 +2579,6 @@ mod tests {
         let asset = ScatterAsset {
             path: "kit/nature/CommonTree_1.gltf".to_string(),
             active: true,
-            materials: BTreeMap::new(),
         };
         assert_eq!(asset.stem(), "CommonTree_1");
     }
@@ -3032,7 +2821,6 @@ mod tests {
             .init_resource::<TerrainScatterState>()
             .init_resource::<TerrainScatterReport>()
             .init_resource::<CommandHistory>()
-            .init_resource::<jackdaw_bsn::SceneBsnAst>()
             .init_resource::<TerrainDataStore>();
         app
     }
@@ -3281,7 +3069,6 @@ mod tests {
             "Hill.terrain-0.jdterrain",
             "woods",
             &["kit/Tree.gltf".to_string()],
-            &BTreeMap::new(),
             placements,
         )
         .expect("a document to store into");
@@ -3315,7 +3102,6 @@ mod tests {
                 "Hill.terrain-0.jdterrain",
                 key,
                 &assets,
-                &BTreeMap::new(),
                 vec![super::scatter_data::PendingPlacement {
                     position: Vec3::new(1.0, 0.0, 1.0),
                     yaw: 0.0,

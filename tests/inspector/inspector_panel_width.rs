@@ -29,7 +29,7 @@ const UNIT_DROPDOWN_FLOOR: f32 = 34.0;
 /// The inspector panel mounted in a dock leaf of a fixed width, with a
 /// `Node`-carrying entity selected so the card dispatch has something to
 /// build. Returns the leaf and the card body.
-fn panel_with_a_node_card() -> (App, Entity, Entity) {
+fn panel_with_a_node_card() -> (util::TestApp, Entity, Entity) {
     let mut app = util::editor_test_app();
     let leaf = app
         .world_mut()
@@ -52,7 +52,7 @@ fn panel_with_a_node_card() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((Name::new("ui"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     let world = app.world_mut();
     world.resource_scope(|world, mut selection: Mut<Selection>| {
         let mut commands = world.commands();
@@ -198,7 +198,7 @@ fn a_unit_dropdown_still_reads_with_a_wide_title_on_the_list() {
         .into_iter()
         .filter(|entity| {
             app.world()
-                .get::<jackdaw_feathers::combobox::EditorComboBox>(*entity)
+                .get::<bevy::feathers::controls::FeathersSelect>(*entity)
                 .is_some()
         })
         .filter(|entity| {

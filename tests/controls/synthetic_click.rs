@@ -61,6 +61,7 @@ fn a_synthetic_click_activates_the_button_under_it() {
             .expect("headless apps still have a primary window");
         window.resolution = WindowResolution::new(1600, 1000);
     }
+    util::ui_camera(&mut app);
     let entity = app
         .world_mut()
         .spawn((
@@ -102,6 +103,7 @@ fn a_click_beside_the_button_activates_nothing() {
             .expect("headless apps still have a primary window");
         window.resolution = WindowResolution::new(1600, 1000);
     }
+    util::ui_camera(&mut app);
     app.world_mut().spawn((
         button(ButtonProps::new("Toggle Wireframe")),
         ButtonOperatorCall::new(TOGGLE_WIREFRAME),

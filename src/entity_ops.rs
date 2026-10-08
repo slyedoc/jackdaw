@@ -2560,6 +2560,9 @@ mod asset_path_tests {
     /// set, clear and the system driving it are one test rather than three.
     #[test]
     fn an_open_project_resolves_asset_paths_without_touching_the_disk() {
+        let _mirror = crate::project::MIRROR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::project::set_open_project_assets_dir(Some(std::path::PathBuf::from(
             "/jackdaw-no-such-project/assets",
         )));

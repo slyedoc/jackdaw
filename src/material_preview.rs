@@ -34,7 +34,7 @@ impl Plugin for MaterialPreviewPlugin {
                 update_active_preview_material,
                 update_preview_shape,
             )
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
     }
 }

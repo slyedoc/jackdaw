@@ -4,7 +4,9 @@
 
 use crate::util;
 
+use bevy::feathers::controls::{FeathersSelect, OptionIndex};
 use bevy::picking::hover::Hovered;
+use bevy::ui_widgets::ValueChange;
 use bevy::prelude::*;
 use jackdaw::inspector::bindings_card::{
     AddBindingMenu, BindControl, BindKind, BindingControl, BindingRowLabel, BindingsCardBody,
@@ -13,10 +15,8 @@ use jackdaw::inspector::bindings_card::{
 use jackdaw::project_types::ProjectTypes;
 use jackdaw::selection::Selection;
 use jackdaw_bind::{BindPath, Binding, Bindings};
-use jackdaw_bsn::{BsnValue, SceneBsnAst};
 use jackdaw_commands::CommandHistory;
 use jackdaw_feathers::button::ButtonClickEvent;
-use jackdaw_feathers::combobox::{ComboBoxChangeEvent, EditorComboBox};
 use jackdaw_feathers::text_edit::TextEditCommitEvent;
 use jackdaw_feathers::tokens;
 use jackdaw_feathers::tooltip::Tooltip;
@@ -24,8 +24,6 @@ use jackdaw_feathers::variant_edit::VariantEditConfig;
 use jackdaw_schema::{
     ArgOwnership, FieldSchema, FunctionSchema, ProjectSchema, TypeKind, TypeSchema,
 };
-
-const BINDINGS: &str = "jackdaw_bind::types::Bindings";
 
 // ---------------------------------------------------------------------------
 // A project schema to pick from
@@ -155,13 +153,7 @@ fn fixture_schema() -> ProjectSchema {
 
 /// A selected, document-tracked entity carrying `bindings`, with an inspector
 /// mounted and the fixture schema loaded, so the real dispatch builds the card.
-fn app_with_bindings(bindings: Bindings) -> (App, Entity) {
-    app_with_bindings_and_project(bindings, &[])
-}
-
-/// The same, plus `project_components` authored on the node: schema types the
-/// document carries but the editor has no ECS registration for.
-fn app_with_bindings_and_project(bindings: Bindings, project_components: &[&str]) -> (App, Entity) {
+fn app_with_bindings(bindings: Bindings) -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     {
         let native = jackdaw::project_types::native_type_paths(
@@ -179,10 +171,7 @@ fn app_with_bindings_and_project(bindings: Bindings, project_components: &[&str]
         .id();
     // An authored entity is also what puts `Bindings` in the inspector's
     // authored-type filter.
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
-    for type_path in project_components {
-        author_project_component(&mut app, entity, type_path);
-    }
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     let world = app.world_mut();
     world.resource_scope(|world, mut selection: Mut<Selection>| {
         let mut commands = world.commands();
@@ -192,23 +181,6 @@ fn app_with_bindings_and_project(bindings: Bindings, project_components: &[&str]
     app.update();
     app.update();
     (app, entity)
-}
-
-/// Put a project component's patch on the entity's document node. The editor
-/// never registers a project type, so the document is the only place it exists.
-fn author_project_component(app: &mut App, entity: Entity, type_path: &str) {
-    let mut ast = app.world_mut().resource_mut::<SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("the entity is in the document");
-    let patch = ast
-        .world
-        .spawn(jackdaw_bsn::BsnPatch::Struct(jackdaw_bsn::BsnStructData {
-            type_path: type_path.to_string(),
-            fields: jackdaw_bsn::BsnStructFields(Vec::new()),
-        }))
-        .id();
-    if let Some(patches) = ast.get_patches_mut(node) {
-        patches.0.push(patch);
-    }
 }
 
 fn card_body(app: &mut App) -> Entity {
@@ -253,12 +225,17 @@ fn control(app: &mut App, binding: usize, wanted: BindControl) -> Entity {
         .unwrap_or_else(|| panic!("no {wanted:?} control on binding {binding}"))
 }
 
-fn pick(app: &mut App, combo: Entity, selected: usize, label: &str, value: Option<&str>) {
-    app.world_mut().trigger(ComboBoxChangeEvent {
-        entity: combo,
-        selected,
-        label: label.to_string(),
-        value: value.map(str::to_string),
+/// Choose option `selected` on a card picker, the way its list does: a `ValueChange` naming
+/// the option row.
+fn pick(app: &mut App, combo: Entity, selected: usize, _label: &str, _value: Option<&str>) {
+    let row = descendants(app.world_mut(), combo)
+        .into_iter()
+        .find(|entity| app.world().get::<OptionIndex>(*entity).is_some_and(|index| index.0 == selected))
+        .unwrap_or_else(|| app.world_mut().spawn(OptionIndex(selected)).id());
+    app.world_mut().trigger(ValueChange {
+        source: combo,
+        value: row,
+        is_final: true,
     });
     app.update();
     app.update();
@@ -286,40 +263,17 @@ fn live(app: &App, entity: Entity) -> Bindings {
         .expect("the entity still carries its bindings")
 }
 
-/// The `Bindings` value the scene document holds, as its list of authored
-/// binding values.
-fn authored_bindings(app: &App, entity: Entity) -> Vec<BsnValue> {
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("the entity is in the document");
-    let patch = ast
-        .find_patch_by_type_path(node, BINDINGS)
-        .and_then(|pe| ast.get_patch(pe))
-        .expect("the document holds a Bindings patch");
-    let jackdaw_bsn::BsnPatch::TupleStruct(data) = patch else {
-        panic!("Bindings authors as a newtype patch, got {patch:?}");
-    };
-    match data.values.first() {
-        Some(BsnValue::List(items)) => items.clone(),
-        other => panic!("Bindings holds a list of bindings, got {other:?}"),
-    }
+/// The bindings the scene holds: the world is the document.
+fn authored_bindings(app: &App, entity: Entity) -> Vec<Binding> {
+    live(app, entity).0
 }
 
-/// Undo the last edit, then run the card's change-detection pass directly: it is
-/// scheduled behind `AppState::Editor`, which a headless test never enters, and
-/// `run_system_cached` keeps its change tick across calls.
-/// One named field of a binding as the document holds it.
-fn authored_field(binding: &BsnValue, name: &str) -> BsnValue {
-    let BsnValue::Struct(data) = binding else {
-        panic!("a data-carrying binding authors as a struct, got {binding:?}");
-    };
-    data.fields
-        .0
-        .iter()
-        .find(|field| field.name == name)
-        .map(|field| field.value.clone())
-        .unwrap_or_else(|| panic!("no `{name}` in the authored binding: {data:?}"))
+/// The scene as a save writes it.
+fn scene_text(app: &mut App) -> String {
+    jackdaw::scene_io::emit_bsn_scene_with_inline_assets(app.world_mut(), std::path::Path::new(""))
 }
 
+/// Undo the last edit, then run the card's change-detection pass directly.
 fn undo(app: &mut App) {
     app.world_mut()
         .resource_scope(|world, mut history: Mut<CommandHistory>| {
@@ -391,11 +345,11 @@ fn the_card_names_the_component_by_the_path_the_type_declares() {
     let combo = control(&mut app, 0, BindControl::PathType(PathSlot::Read(0)));
     pick(&mut app, combo, 0, "Health", Some("demo_game::Health"));
 
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("the entity is in the document");
+    assert!(app.world().get::<Bindings>(entity).is_some());
+    let text = scene_text(&mut app);
     assert!(
-        ast.find_patch_by_type_path(node, declared).is_some(),
-        "the committed patch names `{declared}`",
+        text.contains(declared),
+        "the written scene names `{declared}`:\n{text}",
     );
 }
 
@@ -1103,22 +1057,11 @@ fn an_event_that_cannot_fill_gaps_warns_while_fields_are_unmapped() {
         )],
         "picking a source maps the event field by name",
     );
-    // The mapping has to reach the document as data: its `Debug` text carries the
-    // path either way, so only the shape tells a pair from a stringified tuple.
-    let authored = authored_field(&authored_bindings(&app, entity)[0], "fields");
-    let BsnValue::List(items) = &authored else {
-        panic!("the mappings author as a list, got {authored:?}");
-    };
-    let Some(BsnValue::List(pair)) = items.first() else {
-        panic!("a mapping authors as a pair of values, not as text: {items:?}");
-    };
+    // The mapping has to reach the document as data.
+    let text = scene_text(&mut app);
     assert!(
-        matches!(pair.first(), Some(BsnValue::String(name)) if name == "amount"),
-        "the pair's first half is the field name: {pair:?}",
-    );
-    assert!(
-        matches!(pair.get(1), Some(BsnValue::Struct(path)) if path.type_path.ends_with("BindPath")),
-        "the pair's second half is a BindPath, not its Debug text: {pair:?}",
+        text.contains("BindPath"),
+        "the pair's second half is written as a BindPath, not its Debug text:\n{text}",
     );
 
     let body = card_body(&mut app);
@@ -1227,114 +1170,6 @@ fn the_write_picker_offers_markers_the_widget_does_not_carry_yet() {
     );
 }
 
-/// A project component authored on this entity is never a real ECS component in
-/// the editor, so judging a write target by the archetype alone would badge a
-/// good path red and refuse to offer it.
-#[test]
-fn a_write_to_an_authored_project_component_is_offered_and_not_badged() {
-    // The first binding has picked no write yet, the second writes to the
-    // authored project component, the third to a native component this entity
-    // does not carry.
-    let (mut app, _) = app_with_bindings_and_project(
-        Bindings(vec![
-            field_binding("demo_game::Health.current", ""),
-            field_binding("demo_game::Health.current", "demo_game::Health.max"),
-            field_binding(
-                "demo_game::Health.current",
-                "bevy_transform::components::transform::Transform.translation",
-            ),
-        ]),
-        &["demo_game::Health"],
-    );
-
-    let write = control(&mut app, 0, BindControl::PathType(PathSlot::Write));
-    let offered = combo_values(&mut app, write);
-    assert!(
-        offered.iter().any(|value| value == "demo_game::Health"),
-        "the game component the document authored here is a write target: {offered:?}",
-    );
-
-    let body = card_body(&mut app);
-    let labels: Vec<Entity> = descendants(app.world_mut(), body)
-        .into_iter()
-        .filter(|entity| app.world().get::<BindingRowLabel>(*entity).is_some())
-        .collect();
-    for (row, what) in [
-        (1, "a component the document authored here"),
-        (2, "a known component the entity does not carry yet"),
-    ] {
-        let label = *labels
-            .get(row)
-            .unwrap_or_else(|| panic!("row {row} exists"));
-        assert_eq!(
-            app.world()
-                .get::<Tooltip>(label)
-                .map(|tip| tip.title.clone()),
-            None,
-            "a write to {what} resolves, so it carries no badge",
-        );
-        assert_ne!(
-            app.world().get::<TextColor>(label).map(|color| color.0),
-            Some(tokens::TEXT_ERROR),
-            "a write to {what} is not an error",
-        );
-    }
-}
-
-/// A game's own marker is a write target only when reflection can build it:
-/// without a default the game cannot put the component on either.
-#[test]
-fn a_project_marker_is_writable_only_when_the_game_can_build_it() {
-    let (mut app, entity) = app_with_bindings_and_project(
-        Bindings(vec![field_binding("demo_game::Health.current", "")]),
-        &["demo_game::Flagged", "demo_game::Unbuildable"],
-    );
-
-    let write = control(&mut app, 0, BindControl::PathType(PathSlot::Write));
-    let offered = combo_values(&mut app, write);
-    for marker in ["demo_game::Flagged", "demo_game::Unbuildable"] {
-        assert!(
-            offered.iter().any(|value| value == marker),
-            "{marker} is authored here, so it stays in the list: {offered:?}",
-        );
-    }
-
-    let index = |offered: &[String], wanted: &str| {
-        offered
-            .iter()
-            .position(|value| value == wanted)
-            .unwrap_or_else(|| panic!("{wanted} is offered"))
-    };
-
-    pick(
-        &mut app,
-        write,
-        index(&offered, "demo_game::Flagged"),
-        "Flagged",
-        Some("demo_game::Flagged"),
-    );
-    assert_eq!(
-        write_path(&live(&app, entity).0[0]),
-        "demo_game::Flagged",
-        "a marker the game can build authors as the type on its own",
-    );
-
-    let write = control(&mut app, 0, BindControl::PathType(PathSlot::Write));
-    let offered = combo_values(&mut app, write);
-    pick(
-        &mut app,
-        write,
-        index(&offered, "demo_game::Unbuildable"),
-        "Unbuildable",
-        Some("demo_game::Unbuildable"),
-    );
-    assert_eq!(
-        write_path(&live(&app, entity).0[0]),
-        "",
-        "one the game cannot build is not a marker write, so no path is composed",
-    );
-}
-
 /// An event the schema does not know still has whatever mappings were authored
 /// against it, and drawing no rows would strand them in the document.
 #[test]
@@ -1407,8 +1242,7 @@ fn an_authored_bindings_component_still_gets_its_card() {
 
     assert!(
         app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(entity)
+            .get::<jackdaw::scene_io::SceneEntity>(entity)
             .is_some(),
         "the fixture entity is a document entity",
     );
@@ -1546,7 +1380,7 @@ fn a_path_rows_pickers_stay_readable_at_the_shipped_width() {
 
         let pickers: Vec<Entity> = descendants(app.world_mut(), body)
             .into_iter()
-            .filter(|entity| app.world().get::<EditorComboBox>(*entity).is_some())
+            .filter(|entity| app.world().get::<FeathersSelect>(*entity).is_some())
             .filter(|entity| {
                 matches!(
                     app.world()

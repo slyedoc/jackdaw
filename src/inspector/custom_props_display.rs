@@ -206,29 +206,25 @@ pub(super) fn spawn_custom_properties_display(
                 );
             }
             PropertyValue::Color(val) => {
-                let srgba = val.to_srgba();
-                let rgba = [srgba.red, srgba.green, srgba.blue, srgba.alpha];
                 let commit_name = name.clone();
                 // Commit once on the final settle so a drag is one undo entry.
-                super::reflect_fields::spawn_color_picker(
-                    commands,
-                    row,
-                    rgba,
-                    prop_name,
-                    0.0,
-                    move |world, rgba, is_final| {
-                        if !is_final {
+                commands
+                    .spawn_scene(bevy::feathers_inspector::color_picker(*val))
+                    .insert(ChildOf(row))
+                    .observe(move |change: On<bevy::ui_widgets::ValueChange<Color>>, mut commands: Commands| {
+                        if !change.is_final {
                             return;
                         }
-                        let color = Color::srgba(rgba[0], rgba[1], rgba[2], rgba[3]);
-                        apply_custom_property_with_undo(
-                            world,
-                            source_entity,
-                            &commit_name,
-                            PropertyValue::Color(color),
-                        );
-                    },
-                );
+                        let (name, color) = (commit_name.clone(), change.value);
+                        commands.queue(move |world: &mut World| {
+                            apply_custom_property_with_undo(
+                                world,
+                                source_entity,
+                                &name,
+                                PropertyValue::Color(color),
+                            );
+                        });
+                    });
             }
             PropertyValue::Entity(val) => {
                 // Entity values are read-only in the Custom Properties UI

@@ -13,15 +13,11 @@ use jackdaw::commands::CommandHistory;
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::operator::{CallOperatorSettings, ExecutionContext};
-use jackdaw_bsn::{BsnValue, SceneBsnAst};
 use jackdaw_scene_types::PropertyValue;
 
 use crate::util;
 
-/// The component a mesh wears its material on, the field the document carries
-/// it under, and the name the row answers to.
-const MESH_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial3d";
-const HANDLE_FIELD: &str = "0";
+/// The name the row answers to.
 const MATERIAL_FIELD: &str = "material";
 
 fn fixture_dir() -> PathBuf {
@@ -49,7 +45,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 
 /// An editor holding two material files, showing a mesh entity the document
 /// knows about.
-fn app_with_mesh() -> (App, tempfile::TempDir, Entity) {
+fn app_with_mesh() -> (util::TestApp, tempfile::TempDir, Entity) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
         fixture_dir().join("jackdaw.toml"),
@@ -92,7 +88,7 @@ fn app_with_mesh() -> (App, tempfile::TempDir, Entity) {
             AuroraMaterial3d(Handle::<AuroraMaterial>::default()),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     app.world_mut().resource_mut::<Selection>().entities = vec![entity];
     settle(&mut app);
     (app, tmp, entity)
@@ -140,11 +136,13 @@ fn row_text(app: &mut App, row: Entity) -> Vec<String> {
     found
 }
 
-/// What the document says the entity's material is.
-fn authored_material(app: &App, entity: Entity) -> Option<BsnValue> {
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(entity)?;
-    jackdaw_bsn::get_bsn_field(ast, node, MESH_MATERIAL, HANDLE_FIELD)
+/// The material file the entity's material names, as the scene would write it.
+fn authored_material(app: &App, entity: Entity) -> Option<String> {
+    app.world()
+        .get::<AuroraMaterial3d>(entity)?
+        .0
+        .path()
+        .map(|path| path.path().to_string_lossy().replace('\\', "/"))
 }
 
 fn undo(app: &mut App) {
@@ -185,14 +183,14 @@ fn a_mesh_entity_shows_the_material_it_wears_and_a_pick_assigns_it() {
     );
     assert_eq!(
         authored_material(&app, entity),
-        Some(BsnValue::String("materials/slate.bsn".to_string())),
+        Some("materials/slate.bsn".to_string()),
         "and the scene carries the path",
     );
 
     undo(&mut app);
     assert_ne!(
         authored_material(&app, entity),
-        Some(BsnValue::String("materials/slate.bsn".to_string())),
+        Some("materials/slate.bsn".to_string()),
         "undo puts the scene back",
     );
 }
@@ -255,7 +253,7 @@ fn clearing_a_mesh_material_takes_the_override_out_of_the_scene() {
     undo(&mut app);
     assert_eq!(
         authored_material(&app, entity),
-        Some(BsnValue::String("materials/slate.bsn".to_string())),
+        Some("materials/slate.bsn".to_string()),
         "and undo puts the override back",
     );
 }

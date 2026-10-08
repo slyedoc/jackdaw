@@ -8,7 +8,9 @@ use crate::util;
 use std::path::Path;
 
 use bevy::picking::hover::Hovered;
+use bevy::feathers_inspector::{InspectorEdits, InspectorRoot};
 use bevy::prelude::*;
+use bevy::reflect::ParsedPath;
 use bevy::ui_widgets::ValueChange;
 use jackdaw::preview_context::{
     self, PREVIEW_CONTEXT_WINDOW_ID, PreviewAvailability, PreviewField, PreviewFieldKind,
@@ -18,7 +20,6 @@ use jackdaw::project_types::ProjectTypes;
 use jackdaw::selection::Selection;
 use jackdaw_bind::{BindContext, BindFailures, BindPath, Binding, Bindings};
 use jackdaw_commands::CommandHistory;
-use jackdaw_feathers::number_input::ScrubNumberInput;
 use jackdaw_panels::registry::WindowRegistry;
 use jackdaw_scene_types::UiSceneRoot;
 use jackdaw_schema::{FieldSchema, ProjectSchema, TypeKind, TypeSchema};
@@ -46,7 +47,7 @@ struct HealthBar {
 /// A health-bar scene in the document: a fill whose width reads
 /// `Vitals.ratio`, a caption that formats `Vitals.current`, and a veil whose
 /// visibility follows `Vitals.alive`.
-fn health_bar_app() -> (App, HealthBar) {
+fn health_bar_app() -> (util::TestApp, HealthBar) {
     let mut app = util::editor_test_app();
     app.register_type::<Vitals>();
 
@@ -96,7 +97,7 @@ fn health_bar_app() -> (App, HealthBar) {
         .id();
 
     for entity in [root, fill, label, veil] {
-        jackdaw::scene_io::register_entity_in_ast(world, entity);
+        jackdaw::scene_io::adopt_entity(world, entity);
     }
     app.update();
     (
@@ -152,8 +153,8 @@ fn spawn_bound_scene(world: &mut World, name: &str) -> (Entity, Entity) {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
     (root, fill)
 }
 
@@ -385,8 +386,8 @@ fn a_schema_only_type_previews_as_a_disabled_row() {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
 
     preview_context::set_preview(app.world_mut(), true);
     app.update();
@@ -669,7 +670,7 @@ fn a_binding_added_mid_session_is_put_back_and_guarded() {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), second);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), second);
     app.update();
     app.update();
 
@@ -924,9 +925,8 @@ fn an_edit_to_a_bound_property_is_refused_mid_preview() {
         "the gesture is put back where the user found it, not committed",
     );
 
-    // The inspector's own width row, driven the way the widget drives it.
-    let row = spawn_width_field(&mut app, bar.fill);
-    scrub_number(&mut app, row, 42.0);
+    // The inspector's own width row, written the way its widget writes.
+    inspector_width_edit(&mut app, bar.fill, 42.0);
 
     assert_eq!(
         document(&mut app),
@@ -942,8 +942,7 @@ fn an_edit_to_a_bound_property_is_refused_mid_preview() {
     // Not vacuous: the same row commits once the session is over.
     preview_context::set_preview(app.world_mut(), false);
     app.update();
-    let row = spawn_width_field(&mut app, bar.fill);
-    scrub_number(&mut app, row, 42.0);
+    inspector_width_edit(&mut app, bar.fill, 42.0);
     assert_ne!(
         document(&mut app),
         authored,
@@ -996,54 +995,17 @@ fn deleting_a_bound_widget_mid_preview_undoes_to_the_authored_value() {
     );
 }
 
-/// The inspector's `Val` row for a `Node`'s width, as the inspector builds it.
-fn spawn_width_field(app: &mut App, entity: Entity) -> Entity {
-    let parent = app.world_mut().spawn(Node::default()).id();
-    let world = app.world_mut();
-    let row = {
-        let mut commands = world.commands();
-        jackdaw::inspector::val_field::spawn_val_field(
-            &mut commands,
-            parent,
-            "width",
-            Val::Px(10.0),
-            0,
-            "width".to_string(),
-            entity,
-            "bevy_ui::ui_node::Node",
-        )
+/// An edit of `entity`'s `Node.width` from the inspector, through the route the inspector's
+/// widgets write by.
+fn inspector_width_edit(app: &mut App, entity: Entity, width: f32) {
+    let edits = app.world().resource::<InspectorEdits>().0;
+    let root = InspectorRoot::Component {
+        entity,
+        type_id: std::any::TypeId::of::<Node>(),
     };
-    world.flush();
+    let path = ParsedPath::parse("width").expect("a field path");
+    edits(app.world_mut(), &root, &path, &Val::Px(width), true);
     app.update();
-    row
-}
-
-fn scrub_number(app: &mut App, row: Entity, value: f64) {
-    let input = descendants(app.world_mut(), row)
-        .into_iter()
-        .find(|entity| app.world().get::<ScrubNumberInput>(*entity).is_some())
-        .expect("the val row has a number input");
-    app.world_mut().trigger(ValueChange {
-        source: input,
-        value,
-        is_final: true,
-    });
-    app.update();
-}
-
-fn descendants(world: &mut World, root: Entity) -> Vec<Entity> {
-    let mut out = Vec::new();
-    let mut stack = vec![root];
-    let mut query = world.query::<&Children>();
-    while let Some(entity) = stack.pop() {
-        if entity != root {
-            out.push(entity);
-        }
-        if let Ok(children) = query.get(world, entity) {
-            stack.extend(children.iter());
-        }
-    }
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,7 +1083,7 @@ struct CharCreateForm {
 }
 
 /// A previewing editor whose one scene reads `read`.
-fn previewing(read: &str, register: impl FnOnce(&mut App)) -> App {
+fn previewing(read: &str, register: impl FnOnce(&mut App)) -> util::TestApp {
     let mut app = util::editor_test_app();
     register(&mut app);
     let world = app.world_mut();
@@ -1141,8 +1103,8 @@ fn previewing(read: &str, register: impl FnOnce(&mut App)) -> App {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
     preview_context::set_preview(app.world_mut(), true);
     app.update();
     app
@@ -1185,7 +1147,7 @@ fn schema_type(type_path: &str, kind: TypeKind, fields: &[(&str, &str)]) -> Type
 
 /// A previewing editor that knows `schema` as project types and nothing of
 /// those types natively, with one scene reading `read`.
-fn previewing_schema(schema: ProjectSchema, read: &str) -> App {
+fn previewing_schema(schema: ProjectSchema, read: &str) -> util::TestApp {
     let mut app = util::editor_test_app();
     {
         let native = jackdaw::project_types::native_type_paths(
@@ -1212,8 +1174,8 @@ fn previewing_schema(schema: ProjectSchema, read: &str) -> App {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
     preview_context::set_preview(app.world_mut(), true);
     app.update();
     app
@@ -1564,8 +1526,8 @@ fn a_previewing_scene_cannot_write_a_resource_the_editor_holds() {
             ]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
 
     preview_context::set_preview(app.world_mut(), true);
     app.update();
@@ -1640,7 +1602,7 @@ fn a_widget_edit_during_preview_cannot_write_a_resource_the_editor_holds() {
         ))
         .id();
     for entity in [root, volume, class] {
-        jackdaw::scene_io::register_entity_in_ast(world, entity);
+        jackdaw::scene_io::adopt_entity(world, entity);
     }
 
     preview_context::set_preview(app.world_mut(), true);
@@ -1871,7 +1833,7 @@ const AUTHORED_OPACITY: f32 = 0.25;
 const PREVIEWED_OPACITY: f64 = 0.75;
 
 struct PortraitScene {
-    app: App,
+    app: util::TestApp,
     /// The scene file the tab saves to.
     path: std::path::PathBuf,
     /// Kept so the temp directory outlives the test.
@@ -1907,7 +1869,7 @@ fn portrait_scene() -> PortraitScene {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
+    jackdaw::scene_io::adopt_entity(world, root);
 
     let mut tab = jackdaw::scenes::SceneTab::new_untitled(1);
     tab.path = Some(path.clone());

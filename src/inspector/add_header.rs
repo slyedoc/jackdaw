@@ -1,9 +1,10 @@
 use avian3d::prelude::RigidBody;
+use bevy::feathers::controls::{FeathersSelect, OptionIndex, list_rows_from_strings};
 use bevy::prelude::*;
+use bevy::ui_widgets::ValueChange;
 use jackdaw_avian_integration::AvianCollider;
 use jackdaw_feathers::{
     button::{ButtonOperatorCall, ButtonProps, ButtonSize, ButtonVariant, button},
-    combobox::{ComboBoxChangeEvent, ComboBoxOptionData, combobox_with_selected},
     tokens,
 };
 
@@ -301,21 +302,26 @@ fn spawn_material_header(world: &mut World, host: Entity) {
     // material to the current selection via `ApplyMaterialDefToFaces`.
     // When the registry is empty the combobox is still shown (with a
     // placeholder) so the layout is stable.
-    let options: Vec<ComboBoxOptionData> = if entries.is_empty() {
-        vec![ComboBoxOptionData::new("(none)")]
+    let options: Vec<String> = if entries.is_empty() {
+        vec!["(none)".to_string()]
     } else {
-        entries
-            .iter()
-            .map(|(name, _)| ComboBoxOptionData::new(name.clone()))
-            .collect()
+        entries.iter().map(|(name, _)| name.clone()).collect()
     };
 
     let handles_for_observe = entries.clone();
     commands
-        .spawn((combobox_with_selected(options, selected), ChildOf(row)))
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(options, Some(selected)) }
+            Node { width: percent(100) }
+        })
+        .insert(ChildOf(row))
         .observe(
-            move |event: On<ComboBoxChangeEvent>, mut commands: Commands| {
-                let idx = event.selected;
+            move |event: On<ValueChange<Entity>>,
+                  options: Query<&OptionIndex>,
+                  mut commands: Commands| {
+                let Ok(&OptionIndex(idx)) = options.get(event.value) else {
+                    return;
+                };
                 if let Some((_, handle)) = handles_for_observe.get(idx) {
                     commands.trigger(ApplyMaterialDefToFaces {
                         material: crate::worn_material::WornMaterial::Standard(handle.clone()),

@@ -658,6 +658,7 @@ fn load_export_app(scene_text: &str) -> Result<App, String> {
     app.add_plugins(bevy::transform::TransformPlugin);
     app.add_plugins(bevy::asset::AssetPlugin::default());
     app.add_plugins(bevy::world_serialization::WorldSerializationPlugin);
+    app.add_plugins(bevy::scene::ScenePlugin);
     app.add_plugins(jackdaw_runtime::JackdawPlugin);
     app.register_type::<Name>();
     app.register_type::<Transform>();
@@ -1000,6 +1001,7 @@ fn collect_placements(
 #[cfg(test)]
 mod tests {
     use bevy::prelude::*;
+    use bevy::bsn_asset::{WriteSettings, write_scene_roots_under_text};
 
     use super::*;
 
@@ -1206,7 +1208,9 @@ mod tests {
             Terrain::default(),
             ChildOf(parent),
         ));
-        let scene = jackdaw_bsn::serialize_to_bsn(source.world());
+        let scene =
+            write_scene_roots_under_text(source.world_mut(), None, &[parent], &WriteSettings::default())
+                .expect("the scene writes");
 
         let loaded = load_export_app(&scene).expect("scene reloads through the export shell");
         let world = loaded.world();

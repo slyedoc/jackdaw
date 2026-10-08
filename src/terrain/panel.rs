@@ -4,6 +4,11 @@
 //! Separate from the Components inspector so PCG and authoring parameters live
 //! with the feature they configure rather than the object they act on.
 
+use bevy::feathers::controls::{
+    ColorInputValue, FeathersColorInput, FeathersSelect, OptionIndex, color_input_self_update,
+    list_rows_from_strings,
+};
+use bevy::ui_widgets::NumericValue;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::Checked;
@@ -11,9 +16,7 @@ use bevy::ui_widgets::{SliderValue, ValueChange};
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::{
     button::{self, ButtonOperatorCall, ButtonProps, ButtonVariant},
-    combobox::{self, ComboBoxChangeEvent},
     icons::{EditorFontItalic, Icon, IconFont},
-    number_input::ScrubNumberInputValue,
     panel_card::PanelCardCollapseState,
     tab_strip::{self, TabStripItem, TabStripOrientation},
     text_edit::{TextEditCommitEvent, TextEditProps, text_edit},
@@ -69,7 +72,7 @@ pub(super) fn plugin(app: &mut App) {
                 sync_autoterrain_fields,
             )
                 .chain()
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         )
         .add_observer(on_shape_scrub_change)
         .add_observer(on_import_scrub_change)
@@ -1250,20 +1253,22 @@ fn spawn_detail_color(
         ))
         .id();
     spawn_hint(commands, row, label);
+    let initial = Color::srgb(color[0], color[1], color[2]);
     commands
-        .spawn((
-            jackdaw_feathers::color_picker::color_picker(
-                jackdaw_feathers::color_picker::ColorPickerProps::new()
-                    .with_color([color[0], color[1], color[2], 1.0]),
-            ),
+        .spawn_scene(bsn! {
+            @FeathersColorInput
+            ColorInputValue({initial})
+            on(color_input_self_update)
+        })
+        .insert((
             Tooltip::title(label.to_string()).with_description(tooltip.to_string()),
             Hovered::default(),
             ChildOf(row),
         ))
         .observe(
-            move |event: On<jackdaw_feathers::color_picker::ColorPickerChangeEvent>,
-                  mut commands: Commands| {
-                let [r, g, b, _] = event.color;
+            move |event: On<ValueChange<Color>>, mut commands: Commands| {
+                let c = event.value.to_srgba();
+                let (r, g, b) = (c.red, c.green, c.blue);
                 commands
                     .operator(TerrainDetailSetOp::ID)
                     .param("field", field)
@@ -1838,15 +1843,21 @@ fn spawn_generation_section(
         },
         ChildOf(noise_row),
     ));
+    let noise = gen_state.settings.noise_type.index();
     commands
-        .spawn((
-            combobox::combobox_with_selected(noise_options, gen_state.settings.noise_type.index()),
-            ChildOf(noise_row),
-        ))
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(noise_options, Some(noise)) }
+            Node { width: percent(100) }
+        })
+        .insert(ChildOf(noise_row))
         .observe(
-            |event: On<ComboBoxChangeEvent>, mut gen_state: ResMut<TerrainGenerateState>| {
-                gen_state.settings.noise_type =
-                    jackdaw_terrain::NoiseType::from_index(event.selected);
+            |event: On<ValueChange<Entity>>,
+             options: Query<&OptionIndex>,
+             mut gen_state: ResMut<TerrainGenerateState>| {
+                let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+                    return;
+                };
+                gen_state.settings.noise_type = jackdaw_terrain::NoiseType::from_index(selected);
             },
         );
 
@@ -2244,33 +2255,32 @@ fn spawn_import_image_row(
             ChildOf(target),
         ));
     } else {
-        let mut options: Vec<combobox::ComboBoxOptionData> = targets
-            .iter()
-            .map(|(target, caption)| {
-                combobox::ComboBoxOptionData::new(caption.clone()).with_value(target.clone())
-            })
-            .collect();
+        let mut captions: Vec<String> = targets.iter().map(|(_, caption)| caption.clone()).collect();
+        let mut values: Vec<String> = targets.iter().map(|(target, _)| target.clone()).collect();
         let selected = match targets
             .iter()
             .position(|(target, _)| *target == image.target)
         {
             Some(at) => at,
             None => {
-                options.push(
-                    combobox::ComboBoxOptionData::new(format!("{} (missing)", image.target))
-                        .with_value(image.target.clone()),
-                );
-                options.len() - 1
+                captions.push(format!("{} (missing)", image.target));
+                values.push(image.target.clone());
+                values.len() - 1
             }
         };
         commands
-            .spawn((
-                combobox::combobox_with_selected(options, selected),
-                ChildOf(target),
-            ))
+            .spawn_scene(bsn! {
+                @FeathersSelect { @options: list_rows_from_strings(captions, Some(selected)) }
+                Node { width: percent(100) }
+            })
+            .insert(ChildOf(target))
             .observe(
-                move |event: On<ComboBoxChangeEvent>, mut commands: Commands| {
-                    if let Some(target) = event.value.clone() {
+                move |event: On<ValueChange<Entity>>,
+                      options: Query<&OptionIndex>,
+                      mut commands: Commands| {
+                    if let Ok(&OptionIndex(selected)) = options.get(event.value)
+                        && let Some(target) = values.get(selected).cloned()
+                    {
                         aim_import_image(&mut commands, kind, row, target);
                     }
                 },
@@ -2350,7 +2360,7 @@ fn on_import_scrub_change(
     };
     commands
         .entity(source)
-        .insert(ScrubNumberInputValue::F32(value));
+        .insert(NumericValue::F32(value));
     match field {
         ImportField::Min => import_state.min = value,
         ImportField::Max => import_state.max = value,
@@ -2400,7 +2410,7 @@ fn on_gen_value_change(
 /// (`on_gen_value_change` marks the resource changed on each one), so the fill
 /// and digits track the gesture rather than snapping into place on release.
 ///
-/// No focus guard: unlike `ScrubNumberInput`, `FeathersSlider` has no
+/// No focus guard: unlike `FeathersNumberInput`, `FeathersSlider` has no
 /// editable-text descendant a resync could clobber mid-type.
 fn sync_gen_fields(
     gen_state: Res<TerrainGenerateState>,
@@ -2440,7 +2450,7 @@ fn sync_gen_fields(
 /// Write path for the Shape section's extent chips.
 ///
 /// Two cadences on one gesture. The widget does not self-update (see
-/// `ScrubNumberInput`), so the chip is re-inserted on every tick or the digits
+/// `FeathersNumberInput`), so the chip is re-inserted on every tick or the digits
 /// freeze at their pre-drag value while the pointer moves. The document write
 /// is gated on `is_final`: a commit syncs the scene document, flags a full
 /// rebuild and leaves a history entry, none of which belongs on a drag frame.
@@ -2458,7 +2468,7 @@ fn on_shape_scrub_change(
     // Every tick, final or not: this is what the user reads while dragging.
     commands
         .entity(source)
-        .insert(ScrubNumberInputValue::F32(value));
+        .insert(NumericValue::F32(value));
     if !event.is_final {
         return;
     }
@@ -2489,7 +2499,7 @@ fn sync_shape_fields(
         let value = terrain.cell_size;
         commands
             .entity(entity)
-            .insert(ScrubNumberInputValue::F32(value));
+            .insert(NumericValue::F32(value));
     }
 }
 
@@ -2977,7 +2987,6 @@ mod tests {
             writer.register::<jackdaw_scene_types::Terrain>();
             writer.register::<jackdaw_scene_types::SceneNodeId>();
         }
-        world.init_resource::<jackdaw_bsn::SceneBsnAst>();
         world.init_resource::<crate::commands::CommandHistory>();
         let mut store = TerrainDataStore::default();
         store.insert(
@@ -3001,7 +3010,7 @@ mod tests {
             entities: vec![terrain],
         });
         let chip = world
-            .spawn((ShapeField::CellSize, ScrubNumberInputValue::F32(1.0)))
+            .spawn((ShapeField::CellSize, NumericValue::F32(1.0)))
             .id();
         app.add_observer(on_shape_scrub_change);
         (app, chip, terrain)
@@ -3040,9 +3049,9 @@ mod tests {
         });
         app.update();
 
-        let synced = app.world().get::<ScrubNumberInputValue>(chip).unwrap();
+        let synced = app.world().get::<NumericValue>(chip).unwrap();
         assert!(
-            matches!(synced, ScrubNumberInputValue::F32(v) if (v - 3.0).abs() < 1e-3),
+            matches!(synced, NumericValue::F32(v) if (v - 3.0).abs() < 1e-3),
             "the chip must show the value being dragged, got {synced:?}"
         );
         assert_eq!(
@@ -3098,7 +3107,7 @@ mod tests {
         app.add_observer(on_shape_scrub_change);
         let entity = app
             .world_mut()
-            .spawn((ShapeField::CellSize, ScrubNumberInputValue::F32(1.0)))
+            .spawn((ShapeField::CellSize, NumericValue::F32(1.0)))
             .id();
 
         for value in [3.0, 2.5] {
@@ -3110,9 +3119,9 @@ mod tests {
             app.update();
         }
 
-        let synced = app.world().get::<ScrubNumberInputValue>(entity).unwrap();
+        let synced = app.world().get::<NumericValue>(entity).unwrap();
         assert!(
-            matches!(synced, ScrubNumberInputValue::F32(v) if (v - 2.5).abs() < 1e-3),
+            matches!(synced, NumericValue::F32(v) if (v - 2.5).abs() < 1e-3),
             "every tick moves the chip, got {synced:?}"
         );
     }
@@ -3126,7 +3135,7 @@ mod tests {
         app.add_observer(on_shape_scrub_change);
         let entity = app
             .world_mut()
-            .spawn((ShapeField::CellSize, ScrubNumberInputValue::F32(1.0)))
+            .spawn((ShapeField::CellSize, NumericValue::F32(1.0)))
             .id();
 
         app.world_mut().trigger(ValueChange::<f32> {
@@ -3136,9 +3145,9 @@ mod tests {
         });
         app.update();
 
-        let synced = app.world().get::<ScrubNumberInputValue>(entity).unwrap();
+        let synced = app.world().get::<NumericValue>(entity).unwrap();
         assert!(
-            matches!(synced, ScrubNumberInputValue::F32(v) if (v - MIN_CELL_SIZE).abs() < 1e-3),
+            matches!(synced, NumericValue::F32(v) if (v - MIN_CELL_SIZE).abs() < 1e-3),
             "a drag below the floor shows the floor, got {synced:?}"
         );
     }

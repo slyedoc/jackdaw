@@ -18,7 +18,7 @@ pub(super) fn plugin(app: &mut App) {
             sync_terrain_surface,
         )
             .chain()
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     );
 }
 

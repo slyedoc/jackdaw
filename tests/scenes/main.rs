@@ -10,7 +10,6 @@ mod util;
 mod animation_graph_document;
 mod asset_ingest;
 mod bsn_round_trip;
-mod bsn_scene_fixpoint;
 mod external_reload;
 mod headless;
 mod integration;

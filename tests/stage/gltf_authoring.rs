@@ -63,17 +63,17 @@ fn gltf_source_derives_world_asset_root_and_stays_out_of_the_document() {
         app.world().get::<WorldAssetRoot>(entity).is_some(),
         "the observer should have derived WorldAssetRoot from GltfSource"
     );
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("GLB must be in the document");
-    assert!(
-        ast.find_patch_by_type_path(node, WorldAssetRoot::type_path())
-            .is_none(),
-        "the derived handle must not be written into the document"
+    let text = jackdaw::scene_io::emit_bsn_scene_with_inline_assets(
+        app.world_mut(),
+        std::path::Path::new(""),
     );
     assert!(
-        ast.find_patch_by_type_path(node, jackdaw_scene_types::GltfSource::type_path())
-            .is_some(),
-        "GltfSource is the authored truth and must be in the document"
+        !text.contains(WorldAssetRoot::type_path()),
+        "the derived handle must not be written into the document:\n{text}"
+    );
+    assert!(
+        text.contains(jackdaw_scene_types::GltfSource::type_path()),
+        "GltfSource is the authored truth and must be in the document:\n{text}"
     );
 }
 

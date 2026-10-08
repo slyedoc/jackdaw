@@ -45,7 +45,7 @@ fn scene(app: &mut App) -> (Entity, Vec<Entity>) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let children: Vec<Entity> = ["First", "Second"]
         .into_iter()
         .enumerate()
@@ -65,7 +65,7 @@ fn scene(app: &mut App) -> (Entity, Vec<Entity>) {
                     ChildOf(root),
                 ))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+            jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
             entity
         })
         .collect();

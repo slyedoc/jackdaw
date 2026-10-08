@@ -265,7 +265,7 @@ mod tests {
         let text = asset_file_text(ITEM_TYPE, "#torch\nmy_game::content::ItemDef { }\n");
         assert!(text.starts_with("// jackdaw "), "got:\n{text}");
         assert_eq!(
-            jackdaw_bsn::read_asset_header(&text).as_deref(),
+            bsn_files::read_asset_header(&text).as_deref(),
             Some(ITEM_TYPE)
         );
         assert!(
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn a_scene_whose_root_holds_an_asset_type_is_still_a_scene() {
+    fn a_root_holding_an_asset_type_and_children_is_a_root_file() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = write(
             tmp.path(),
@@ -316,8 +316,8 @@ mod tests {
         );
         assert_eq!(
             read_asset_kind(&path, &kinds()),
-            AssetFileKind::Scene,
-            "a root with a hierarchy under it spawns entities, whatever it holds"
+            AssetFileKind::Prefab,
+            "a named root with a hierarchy under it is a root file, whatever it holds"
         );
     }
 
@@ -335,22 +335,6 @@ mod tests {
                 type_path: ITEM_TYPE.to_string()
             }
         );
-    }
-
-    #[test]
-    fn a_prefab_marker_on_the_root_outranks_a_header_naming_an_asset() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let path = write(
-            tmp.path(),
-            "Cube1.bsn",
-            &asset_file_text(
-                ITEM_TYPE,
-                "jackdaw::prefab::components::Prefab\n\
-                 #Cube1\n\
-                 bevy_camera::visibility::Visibility::Inherited\n",
-            ),
-        );
-        assert_eq!(read_asset_kind(&path, &kinds()), AssetFileKind::Prefab);
     }
 
     #[test]
@@ -483,34 +467,6 @@ mod tests {
             !is_prefab(&broken, &kinds()),
             "a parse failure is not a prefab"
         );
-    }
-
-    #[test]
-    fn a_legacy_prefab_document_is_still_known_by_its_first_entity() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let prefab = write(
-            tmp.path(),
-            "p.jsn",
-            r#"{
-                "scene": [{
-                    "components": {
-                        "jackdaw::prefab::components::Prefab": null,
-                        "bevy_ecs::name::Name": "p"
-                    }
-                }]
-            }"#,
-        );
-        assert!(is_prefab(&prefab, &kinds()));
-
-        let scene = write(
-            tmp.path(),
-            "s.jsn",
-            r#"{ "scene": [{ "components": { "bevy_ecs::name::Name": "root" } }] }"#,
-        );
-        assert!(!is_prefab(&scene, &kinds()));
-
-        let garbage = write(tmp.path(), "g.jsn", "not json at all");
-        assert!(!is_prefab(&garbage, &kinds()));
     }
 
     #[test]

@@ -33,7 +33,7 @@ struct Painted {
     material: Handle<AuroraMaterial>,
 }
 
-fn editor_with_outfits() -> (App, tempfile::TempDir) {
+fn editor_with_outfits() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mut app = util::editor_test_app();
     app.init_asset::<OutfitDef>();
@@ -345,75 +345,6 @@ fn material_apply_takes_the_path_of_a_material_file() {
     );
 }
 
-#[test]
-fn a_reference_resolves_to_the_material_it_names_after_that_file_turns_binary() {
-    let (mut app, tmp) = editor_with_outfits();
-    file_material(&mut app, "materials/slate.material.bsn");
-    let filed = tmp.path().join("assets/materials/slate.material.bsn");
-
-    call(
-        &mut app,
-        "file.convert_to_binary",
-        &[("path", filed.to_string_lossy().into_owned().into())],
-    );
-    jackdaw::asset_index::rescan_asset_index(app.world_mut());
-    app.update();
-
-    assert!(!filed.exists(), "the text file gave way to its twin");
-    assert!(
-        tmp.path()
-            .join("assets/materials/slate.material.bsb")
-            .exists()
-    );
-    assert!(
-        round_trip_scene(&mut app, &tmp, "materials/slate.material.bsn")
-            .contains("materials/slate.material.bsn"),
-        "the reference the scene was written with still names the asset it found"
-    );
-}
-
-#[test]
-fn converting_a_document_a_tab_has_open_is_refused() {
-    let (mut app, tmp) = editor_with_outfits();
-    file_material(&mut app, "materials/slate.material.bsn");
-    round_trip_scene(&mut app, &tmp, "materials/slate.material.bsn");
-    let open = tmp.path().join("assets/zone.bsn");
-    app.world_mut()
-        .resource_mut::<jackdaw::scenes::Scenes>()
-        .push_tab(jackdaw::scenes::SceneTab {
-            path: Some(open.clone()),
-            display_name: "zone".to_string(),
-            dirty: false,
-            kind: jackdaw::scenes::TabKind::Scene,
-            content: jackdaw::scenes::TabContent::Scene(None),
-            view_state: jackdaw::scenes::ViewState::default(),
-            history: jackdaw::commands::CommandHistory::default(),
-            terrain_data_store: jackdaw::terrain::TerrainDataStore::default(),
-            navmesh: jackdaw::terrain::navmesh_bake::TabNavmesh::default(),
-            history_depth_at_last_check: 0,
-            refusal: None,
-        });
-
-    let result = app
-        .world_mut()
-        .operator("file.convert_to_binary")
-        .settings(CallOperatorSettings {
-            execution_context: ExecutionContext::Invoke,
-            creates_history_entry: true,
-        })
-        .param("path", open.to_string_lossy().into_owned())
-        .call()
-        .expect("the operator dispatched");
-    app.update();
-
-    assert_eq!(result, OperatorResult::Cancelled);
-    assert!(
-        open.exists(),
-        "the file the tab is written back to is still there"
-    );
-    assert!(!tmp.path().join("assets/zone.bsb").exists());
-}
-
 fn open_outfit(app: &App) -> OutfitDef {
     let value =
         jackdaw::definition_assets::open_definition_value(app.world()).expect("an asset is open");
@@ -434,7 +365,7 @@ fn outfit_path(app: &App, relative: &str) -> PathBuf {
 fn file_outfit(app: &mut App, relative: &str, material: &str) -> PathBuf {
     let path = outfit_path(app, relative);
     std::fs::create_dir_all(path.parent().expect("a parent")).expect("the directory is made");
-    let name = jackdaw_bsn::path_stem(&path);
+    let name = jackdaw::bsn_files::path_stem(&path);
     let body = format!(
         "#{name}\n{} {{ material: \"{material}\" }}\n",
         OutfitDef::type_path()
@@ -535,30 +466,6 @@ fn dialog_description(app: &App) -> String {
         .find_map(|entity| entity.get::<jackdaw_feathers::dialog::DialogChoices>())
         .and_then(|choices| choices.description.clone())
         .expect("a dialog is up")
-}
-
-#[test]
-fn a_reference_resolves_to_the_document_held_as_binary() {
-    let (mut app, _tmp) = editor_with_outfits();
-    file_material(&mut app, "materials/slate.material.bsn");
-    file_outfit(
-        &mut app,
-        "content/outfits/ranger.bsn",
-        "materials/slate.material.bsn",
-    );
-    let material = outfit_path(&app, "materials/slate.material.bsn");
-    let binary = jackdaw_bsn::convert_to_binary(&material).expect("the material converts");
-    jackdaw::asset_index::rescan_asset_index(app.world_mut());
-
-    assert!(
-        binary.is_file(),
-        "the material is held in the binary form alone"
-    );
-    assert_eq!(
-        referrers(&app, "materials/slate.material.bsb"),
-        vec![PathBuf::from("content/outfits/ranger.bsn")],
-        "the outfit still points at the material it spells as text"
-    );
 }
 
 #[test]

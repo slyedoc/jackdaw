@@ -42,7 +42,7 @@ pub(super) fn plugin(app: &mut App) {
                 sync_navmesh_overlay,
             )
                 .chain()
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         )
         .add_systems(OnExit(crate::AppState::Editor), drop_running_bake);
 }
@@ -1992,6 +1992,7 @@ mod tests {
         let entity = app
             .world_mut()
             .spawn((
+                crate::scene_io::SceneEntity,
                 jackdaw_scene_types::Terrain {
                     resolution: side,
                     size: Vec2::splat(side as f32),
@@ -2028,7 +2029,6 @@ mod tests {
                         asset: "models/grass.glb".to_string(),
                         obstacle: false,
                         cull_distance: 0.0,
-                        materials: Default::default(),
                     },
                     ScatterPaletteEntry::new("models/pebble.gltf"),
                 ],
@@ -2409,6 +2409,7 @@ mod tests {
                 .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
             world
                 .spawn((
+                    crate::scene_io::SceneEntity,
                     AuroraMesh3d(mesh),
                     Transform::default(),
                     GlobalTransform::default(),
@@ -2437,6 +2438,7 @@ mod tests {
             .resource_mut::<Assets<AuroraMesh>>()
             .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
         world.spawn((
+            crate::scene_io::SceneEntity,
             AuroraMesh3d(mesh.clone()),
             Transform::default(),
             GlobalTransform::default(),
@@ -2702,6 +2704,7 @@ mod tests {
             .add(AuroraMesh::from_shape(Cuboid::from_length(side)));
         world
             .spawn((
+                crate::scene_io::SceneEntity,
                 AuroraMesh3d(mesh),
                 Transform::default(),
                 GlobalTransform::default(),
@@ -2739,6 +2742,7 @@ mod tests {
         let mut world = world_with_terrain(&dir);
         let group = world
             .spawn((
+                crate::scene_io::SceneEntity,
                 Transform::default(),
                 GlobalTransform::default(),
                 jackdaw_scene_types::NavmeshExclude,
@@ -3022,6 +3026,7 @@ mod tests {
                     .insert(other, document);
                 let entity = world
                     .spawn((
+                        crate::scene_io::SceneEntity,
                         jackdaw_scene_types::Terrain {
                             resolution: 64,
                             size: Vec2::splat(64.0),
@@ -3152,6 +3157,7 @@ mod tests {
             .resource_mut::<Assets<AuroraMesh>>()
             .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
         let mut cube = world.spawn((
+            crate::scene_io::SceneEntity,
             AuroraMesh3d(mesh),
             Transform::default(),
             GlobalTransform::default(),
@@ -3197,8 +3203,9 @@ mod tests {
         let mesh = world
             .resource_mut::<Assets<AuroraMesh>>()
             .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
-        let parent = world.spawn((Transform::default(), Visibility::Hidden)).id();
+        let parent = world.spawn((crate::scene_io::SceneEntity, Transform::default(), Visibility::Hidden)).id();
         world.spawn((
+            crate::scene_io::SceneEntity,
             AuroraMesh3d(mesh),
             Transform::default(),
             GlobalTransform::default(),
@@ -3220,6 +3227,7 @@ mod tests {
         // A handle to an asset that never arrives stands in for the first
         // frames after a scene opens.
         world.spawn((
+            crate::scene_io::SceneEntity,
             AuroraMesh3d(Handle::<AuroraMesh>::default()),
             Transform::default(),
             GlobalTransform::default(),

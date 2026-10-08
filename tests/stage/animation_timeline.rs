@@ -27,7 +27,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 
 /// An editor with this repository's assets open, which is where the animated
 /// glTF the library indexes lives.
-fn editor_on_the_test_project() -> App {
+fn editor_on_the_test_project() -> util::TestApp {
     let mut app = util::editor_test_app();
     app.world_mut()
         .insert_resource(jackdaw::project::ProjectRoot {
@@ -58,7 +58,7 @@ fn entity_with_a_clip(app: &mut App) -> Entity {
         .world_mut()
         .spawn((Name::new("Cube"), Transform::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), target);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), target);
     jackdaw::selection::select_only(app.world_mut(), target);
     app.update();
     call(

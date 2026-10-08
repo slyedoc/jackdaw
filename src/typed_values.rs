@@ -265,3 +265,13 @@ mod tests {
         assert!((hex.blue - channels.blue).abs() < 1e-4, "{hex:?}");
     }
 }
+
+pub(crate) fn reflect_to_json(
+    value: &dyn PartialReflect,
+    registry: &bevy::reflect::TypeRegistry,
+) -> Option<serde_json::Value> {
+    serde_json::to_value(bevy::reflect::serde::TypedReflectSerializer::new(
+        value, registry,
+    ))
+    .ok()
+}

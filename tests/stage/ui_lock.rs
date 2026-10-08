@@ -69,7 +69,7 @@ fn root(app: &mut App) -> Entity {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     root
 }
 
@@ -97,7 +97,7 @@ fn child(
             ChildOf(parent),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     entity
 }
 

@@ -13,7 +13,7 @@ use jackdaw_widgets::tree_view::{TreeNode, TreeRowContent, TreeRowLabel};
 
 /// An open UI scene, named `name`, shown in an outliner `width` logical
 /// pixels wide.
-fn outliner_app(width: f32, name: &str) -> (App, Entity) {
+fn outliner_app(width: f32, name: &str) -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     let world = app.world_mut();
     let root = world
@@ -23,7 +23,7 @@ fn outliner_app(width: f32, name: &str) -> (App, Entity) {
             Node::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
+    jackdaw::scene_io::adopt_entity(world, root);
     world.spawn((
         HierarchyTreeContainer,
         Node {

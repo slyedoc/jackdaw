@@ -95,7 +95,8 @@ fn snapshot_notices_editor_state_changes() {
     *world.resource_mut::<GizmoSpace>() = GizmoSpace::Local;
     world.resource_mut::<SnapSettings>().grid_power = 3;
     world.resource_mut::<OverlaySettings>().show_bounding_boxes = true;
-    world.resource_mut::<PhysicsOverlayConfig>().show_colliders = false;
+    let mut physics = world.resource_mut::<PhysicsOverlayConfig>();
+    physics.show_hierarchy_arrows = !physics.show_hierarchy_arrows;
 
     let after = world
         .resource_scope(|world, snapshotter: Mut<ActiveSnapshotter>| snapshotter.0.capture(world));

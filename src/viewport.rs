@@ -14,7 +14,8 @@ use wgpu_types::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 
 use crate::infinite_grid::{InfiniteGrid, InfiniteGridPlugin};
 use jackdaw_api_internal::keymap::PresetInput;
-use jackdaw_camera::{JackdawCameraPlugin, JackdawCameraSettings};
+use bevy_enhanced_input::prelude::ContextActivity;
+use jackdaw_camera::{EditorCamera, JackdawCameraPlugin, editor_camera};
 use path_slash::PathExt as _;
 
 use bevy::ecs::system::SystemParam;
@@ -331,7 +332,7 @@ impl Plugin for ViewportPlugin {
             .add_systems(
                 Update,
                 disable_camera_on_dialog
-                    .run_if(in_state(crate::AppState::Editor))
+                    .run_if(crate::editor_active)
                     .run_if(not(crate::no_dialog_open)),
             )
             .add_systems(OnExit(crate::AppState::Editor), end_fly)
@@ -464,7 +465,7 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
             // Order-independent transparency, MSAA and FXAA were the raster back end's;
             // the tracer resolves transparency by tracing through it and antialiases with
             // DLSS Ray Reconstruction.
-            JackdawCameraSettings::default(),
+            editor_camera(),
             ViewportConfig::default(),
             ViewportGrid(grid),
         ))
@@ -883,9 +884,16 @@ fn end_fly(mut fly: ResMut<CameraFlyActive>) {
 
 /// Enable/disable camera controls based on viewport hover, modal state, etc.
 /// Force-disable camera controls when any dialog is open.
-fn disable_camera_on_dialog(mut camera_query: Query<&mut JackdawCameraSettings>) {
-    for mut settings in &mut camera_query {
-        settings.enabled = false;
+fn disable_camera_on_dialog(
+    cameras: Query<(Entity, &ContextActivity<EditorCamera>)>,
+    mut commands: Commands,
+) {
+    for (entity, activity) in &cameras {
+        if **activity {
+            commands
+                .entity(entity)
+                .insert(ContextActivity::<EditorCamera>::INACTIVE);
+        }
     }
 }
 
@@ -936,7 +944,8 @@ pub(crate) fn update_active_viewport(
     >,
     nodes: Query<(&ComputedNode, &UiGlobalTransform)>,
     mut active: ResMut<ActiveViewport>,
-    mut camera_query: Query<(Entity, &mut JackdawCameraSettings)>,
+    cameras: Query<(Entity, &ContextActivity<EditorCamera>)>,
+    mut commands: Commands,
     modal: Res<crate::modal_transform::ModalTransformState>,
     input_focus: Res<bevy::input_focus::InputFocus>,
     blockers: Query<(), With<crate::BlocksCameraInput>>,
@@ -1007,17 +1016,19 @@ pub(crate) fn update_active_viewport(
     let target_camera = active.camera;
     let fly_engaged = fly_state.0;
 
-    for (entity, mut settings) in &mut camera_query {
+    for (entity, activity) in &cameras {
         let is_target = target_camera == Some(entity);
         let should_enable = inputs_clear && (is_target && (hovered_world || fly_engaged));
-        if settings.enabled != should_enable {
-            settings.enabled = should_enable;
+        if **activity != should_enable {
+            commands
+                .entity(entity)
+                .insert(ContextActivity::<EditorCamera>::new(should_enable));
         }
     }
 }
 
 /// Run the viewport hover pass once, outside the schedule. For tests, whose app
-/// sits in `AppState::ProjectSelect` where the scheduled pass never runs.
+/// sits in `AppState::Off` where the scheduled pass never runs.
 pub fn run_active_viewport_update(world: &mut World) {
     if let Err(error) = world.run_system_cached(update_active_viewport) {
         warn!("viewport hover pass could not run: {error}");
@@ -1129,7 +1140,7 @@ pub(crate) fn viewport_focus_selected(
     active: Res<ActiveViewport>,
     selection: Res<Selection>,
     selected_transforms: Query<&GlobalTransform, With<Selected>>,
-    mut camera_query: Query<&mut Transform, With<JackdawCameraSettings>>,
+    mut camera_query: Query<&mut Transform, With<EditorCamera>>,
 ) -> OperatorResult {
     let primary = selection.primary()?;
     let global_tf = selected_transforms.get(primary)?;
@@ -1159,7 +1170,7 @@ fn slot_param(params: &OperatorParameters) -> Option<usize> {
 pub(crate) fn viewport_bookmark_save(
     params: In<OperatorParameters>,
     active: Res<ActiveViewport>,
-    mut cameras: Query<(&Transform, &mut ViewportConfig), With<JackdawCameraSettings>>,
+    mut cameras: Query<(&Transform, &mut ViewportConfig), With<EditorCamera>>,
 ) -> OperatorResult {
     let slot = slot_param(&params)?;
     let camera_entity = active.camera?;
@@ -1181,7 +1192,7 @@ pub(crate) fn viewport_bookmark_save(
 pub(crate) fn viewport_bookmark_load(
     params: In<OperatorParameters>,
     active: Res<ActiveViewport>,
-    mut cameras: Query<(&mut Transform, &ViewportConfig), With<JackdawCameraSettings>>,
+    mut cameras: Query<(&mut Transform, &ViewportConfig), With<EditorCamera>>,
 ) -> OperatorResult {
     let slot = slot_param(&params)?;
     let camera_entity = active.camera?;

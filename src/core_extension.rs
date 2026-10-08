@@ -184,7 +184,6 @@ impl JackdawExtension for JackdawCoreExtension {
             .register_operator::<crate::WindowResetLayoutOp>()
             .register_operator::<crate::MenuOpenOp>()
             .register_operator::<crate::MenuHoverOp>()
-            .register_operator::<crate::ProjectOpenRecentOp>()
             .register_operator::<crate::PreviewSetOp>();
         ctx.register_operator::<crate::ClipDeleteKeyframesOp>()
             .register_operator::<crate::ClipTimelineStepLeftOp>()
@@ -251,7 +250,6 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::edit_mode_ops::add_to_extension(ctx);
         crate::entity_ops::add_to_extension(ctx);
         crate::environment_ops::add_to_extension(ctx);
-        crate::material_overrides::add_to_extension(ctx);
         crate::ui_align::add_to_extension(ctx);
         crate::ui_grouping::add_to_extension(ctx);
         crate::ui_layout_presets::add_to_extension(ctx);

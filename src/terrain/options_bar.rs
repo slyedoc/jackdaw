@@ -4,6 +4,10 @@
 //! Tool *selection* lives in the left-edge palette (`palette.rs`); this bar
 //! shows the active tool's own fields and is hidden in Select mode.
 
+use bevy::feathers::controls::{
+    ColorInputValue, FeathersColorInput, FeathersSelect, OptionIndex, color_input_self_update,
+    list_rows_from_strings,
+};
 use bevy::input_focus::InputFocus;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
@@ -12,8 +16,6 @@ use bevy::ui_widgets::ValueChange;
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::{
     button::{self, ButtonProps, ButtonVariant},
-    combobox::{self, ComboBoxChangeEvent},
-    number_input::is_focused_for_editing,
     tokens,
     tooltip::Tooltip,
 };
@@ -40,7 +42,7 @@ pub(super) fn plugin(app: &mut App) {
             sync_overlay_blend_swatches,
         )
             .chain()
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     )
     .add_observer(on_scrub_value_change)
     .add_observer(on_terrain_checkbox_value_change);
@@ -471,19 +473,22 @@ fn spawn_region_fields(
         .position(|mode| *mode == view.visibility)
         .unwrap_or(0);
     commands
-        .spawn((
-            combobox::combobox_with_selected(
-                RegionVisibility::ALL
-                    .iter()
-                    .map(|mode| mode.label().to_string())
-                    .collect::<Vec<_>>(),
-                selected,
-            ),
-            ChildOf(parent),
-        ))
-        .observe(|event: On<ComboBoxChangeEvent>, mut commands: Commands| {
+        .spawn_scene(bsn! {
+            @FeathersSelect {
+                @options: list_rows_from_strings(
+                    RegionVisibility::ALL.iter().map(|mode| mode.label()),
+                    Some(selected),
+                ),
+            }
+            Node { width: percent(100) }
+        })
+        .insert(ChildOf(parent))
+        .observe(|event: On<ValueChange<Entity>>, options: Query<&OptionIndex>, mut commands: Commands| {
+            let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+                return;
+            };
             let mode = RegionVisibility::ALL
-                .get(event.selected)
+                .get(selected)
                 .copied()
                 .unwrap_or_default();
             commands
@@ -526,20 +531,21 @@ fn spawn_paint_target_picker(commands: &mut Commands, parent: Entity, domain: Pa
         PaintDomain::Detail => 3,
     };
     commands
-        .spawn((
-            combobox::combobox_with_selected(
-                vec![
-                    "Scatter Masks".to_string(),
-                    "Textures".to_string(),
-                    "Color".to_string(),
-                    "Detail".to_string(),
-                ],
-                selected,
-            ),
-            ChildOf(parent),
-        ))
-        .observe(|event: On<ComboBoxChangeEvent>, mut commands: Commands| {
-            let target = match event.selected {
+        .spawn_scene(bsn! {
+            @FeathersSelect {
+                @options: list_rows_from_strings(
+                    ["Scatter Masks", "Textures", "Color", "Detail"],
+                    Some(selected),
+                ),
+            }
+            Node { width: percent(100) }
+        })
+        .insert(ChildOf(parent))
+        .observe(|event: On<ValueChange<Entity>>, options: Query<&OptionIndex>, mut commands: Commands| {
+            let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+                return;
+            };
+            let target = match selected {
                 1 => "textures",
                 2 => "color",
                 3 => "detail",
@@ -617,22 +623,18 @@ fn spawn_color_paint_bar(
         Hovered::default(),
     ));
     let [r, g, b] = paint.tint_color;
+    let initial = Color::srgb_u8(r, g, b);
     commands
-        .spawn((
-            jackdaw_feathers::color_picker::color_picker(
-                jackdaw_feathers::color_picker::ColorPickerProps::new().with_color([
-                    f32::from(r) / 255.0,
-                    f32::from(g) / 255.0,
-                    f32::from(b) / 255.0,
-                    1.0,
-                ]),
-            ),
-            ChildOf(swatch),
-        ))
+        .spawn_scene(bsn! {
+            @FeathersColorInput
+            ColorInputValue({initial})
+            on(color_input_self_update)
+        })
+        .insert(ChildOf(swatch))
         .observe(
-            |event: On<jackdaw_feathers::color_picker::ColorPickerChangeEvent>,
-             mut commands: Commands| {
-                let [r, g, b, _] = event.color;
+            |event: On<ValueChange<Color>>, mut commands: Commands| {
+                let c = event.value.to_srgba();
+                let (r, g, b) = (c.red, c.green, c.blue);
                 commands
                     .operator(TerrainPaintTintOp::ID)
                     .param("r", f64::from(r))
@@ -1286,7 +1288,7 @@ fn sync_brush_fields(
                 continue;
             }
             world.entity_mut(entity).insert(
-                jackdaw_feathers::number_input::ScrubNumberInputValue::F32(value),
+                bevy::ui_widgets::NumericValue::F32(value),
             );
         }
     });
@@ -1328,7 +1330,7 @@ fn sync_texture_opacity_field(
                 continue;
             }
             world.entity_mut(entity).insert(
-                jackdaw_feathers::number_input::ScrubNumberInputValue::F32(value),
+                bevy::ui_widgets::NumericValue::F32(value),
             );
         }
     });
@@ -1442,4 +1444,18 @@ mod tests {
         after.texture_signature.as_mut().unwrap().base_material = Some("grass".into());
         assert_ne!(before, after);
     }
+}
+
+/// Whether the focused entity is a text entry inside `root` (a number field being typed in).
+fn is_focused_for_editing(world: &World, root: Entity, focus: Option<Entity>) -> bool {
+    fn walk(world: &World, entity: Entity, focus: Option<Entity>) -> bool {
+        if focus == Some(entity) && world.get::<bevy::text::EditableText>(entity).is_some() {
+            return true;
+        }
+        let Some(children) = world.get::<Children>(entity) else {
+            return false;
+        };
+        children.iter().any(|child| walk(world, child, focus))
+    }
+    walk(world, root, focus)
 }

@@ -27,21 +27,21 @@ fn panel_over_a_branch(app: &mut App) -> (Entity, Entity, Vec<Entity>, Entity) {
 
     let world = app.world_mut();
     let branch = world.spawn((Name::new("Branch"), Node::default())).id();
-    jackdaw::scene_io::register_entity_in_ast(world, branch);
+    jackdaw::scene_io::adopt_entity(world, branch);
     let children: Vec<Entity> = ["First", "Second", "Third"]
         .into_iter()
         .map(|name| {
             let child = world
                 .spawn((Name::new(name), Node::default(), ChildOf(branch)))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(world, child);
+            jackdaw::scene_io::adopt_entity(world, child);
             child
         })
         .collect();
     let grandchild = world
         .spawn((Name::new("Leaf"), Node::default(), ChildOf(children[0])))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, grandchild);
+    jackdaw::scene_io::adopt_entity(world, grandchild);
     app.update();
     (panel, branch, children, grandchild)
 }

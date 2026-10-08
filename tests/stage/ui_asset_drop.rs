@@ -67,7 +67,7 @@ fn scene(app: &mut App) -> (Entity, Entity, Entity) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let picture = app
         .world_mut()
         .spawn((
@@ -84,7 +84,7 @@ fn scene(app: &mut App) -> (Entity, Entity, Entity) {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), picture);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), picture);
     let container = app
         .world_mut()
         .spawn((
@@ -100,7 +100,7 @@ fn scene(app: &mut App) -> (Entity, Entity, Entity) {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), container);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), container);
     settle(app);
     (root, picture, container)
 }

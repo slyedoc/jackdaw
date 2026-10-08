@@ -12,8 +12,6 @@ mod bindings_link;
 mod definition_card;
 mod inspector_panel_width;
 mod inspector_preview_guard;
-mod inspector_val;
-mod map_fields;
 mod material_row;
 mod new_asset_list;
 mod scene_data_cards;

@@ -9,7 +9,7 @@ use jackdaw::commands::CommandHistory;
 use jackdaw::hierarchy::{HierarchyShowAll, HierarchyTreeContainer};
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
-use jackdaw_bsn::SceneBsnAst;
+use jackdaw::scene_io::SceneEntity;
 use jackdaw_widgets::tree_view::{TreeIndex, TreeNode, TreeRowChildren, TreeRowInserted};
 
 /// Run one clause the way a chord runs it. `creates_history_entry`, which a
@@ -40,14 +40,14 @@ fn column_of_three(app: &mut App) -> (Entity, Vec<Entity>) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, column);
+    jackdaw::scene_io::adopt_entity(world, column);
     let children: Vec<Entity> = ["First", "Second", "Third"]
         .into_iter()
         .map(|name| {
             let child = world
                 .spawn((Name::new(name), Node::default(), ChildOf(column)))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(world, child);
+            jackdaw::scene_io::adopt_entity(world, child);
             child
         })
         .collect();
@@ -69,14 +69,12 @@ fn ecs_order(world: &World, parent: Entity) -> Vec<String> {
 }
 
 fn document_order(world: &World, parent: Entity) -> Vec<String> {
-    let ast = world.resource::<SceneBsnAst>();
-    let Some(node) = ast.ast_for(parent) else {
-        return Vec::new();
-    };
-    ast.get_children_ast(node)
+    world
+        .get::<Children>(parent)
         .into_iter()
-        .filter_map(|child| ast.ecs_for_ast(child))
-        .filter_map(|entity| world.get::<Name>(entity))
+        .flat_map(|children| children.iter())
+        .filter(|&child| world.get::<SceneEntity>(child).is_some())
+        .filter_map(|child| world.get::<Name>(child))
         .map(|name| name.as_str().to_string())
         .collect()
 }
@@ -413,19 +411,19 @@ fn a_drop_carrying_a_parent_and_its_child_moves_the_subtree_once() {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, column);
+    jackdaw::scene_io::adopt_entity(world, column);
     let parent = world
         .spawn((Name::new("Parent"), Node::default(), ChildOf(column)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, parent);
+    jackdaw::scene_io::adopt_entity(world, parent);
     let child = world
         .spawn((Name::new("Child"), Node::default(), ChildOf(parent)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, child);
+    jackdaw::scene_io::adopt_entity(world, child);
     let last = world
         .spawn((Name::new("Last"), Node::default(), ChildOf(column)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, last);
+    jackdaw::scene_io::adopt_entity(world, last);
     app.update();
     assert_eq!(document_order(app.world(), column), vec!["Parent", "Last"]);
 
@@ -574,7 +572,7 @@ struct Gap {
 }
 
 /// An Outliner panel wide enough for three indents, at `scale`.
-fn drop_depth_app(scale: f32) -> App {
+fn drop_depth_app(scale: f32) -> util::TestApp {
     let mut app = util::editor_test_app();
     app.world_mut().insert_resource(HierarchyShowAll(true));
     // What the editor is laid out at on a hidpi screen: a laid-out node's figures
@@ -597,19 +595,19 @@ fn drop_depth_app(scale: f32) -> App {
 fn nest_of_three(app: &mut App) -> Nest {
     let world = app.world_mut();
     let outer = world.spawn((Name::new("Outer"), Node::default())).id();
-    jackdaw::scene_io::register_entity_in_ast(world, outer);
+    jackdaw::scene_io::adopt_entity(world, outer);
     let middle = world
         .spawn((Name::new("Middle"), Node::default(), ChildOf(outer)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, middle);
+    jackdaw::scene_io::adopt_entity(world, middle);
     let leaf = world
         .spawn((Name::new("Leaf"), Node::default(), ChildOf(middle)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, leaf);
+    jackdaw::scene_io::adopt_entity(world, leaf);
     // A sibling of the outermost row, so "after Outer" is a place that can
     // be told apart from "inside it".
     let outsider = world.spawn((Name::new("Outsider"), Node::default())).id();
-    jackdaw::scene_io::register_entity_in_ast(world, outsider);
+    jackdaw::scene_io::adopt_entity(world, outsider);
     app.update();
 
     let panel = app

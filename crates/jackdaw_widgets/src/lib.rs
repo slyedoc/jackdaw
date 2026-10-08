@@ -3,7 +3,6 @@ pub mod context_menu;
 pub mod file_browser;
 pub mod menu_bar;
 pub mod radial_menu;
-pub mod split_panel;
 pub mod tree_view;
 
 pub use radial_menu::{
@@ -19,7 +18,6 @@ pub struct EditorWidgetsPlugins;
 impl PluginGroup for EditorWidgetsPlugins {
     fn build(self) -> bevy::app::PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(split_panel::SplitPanelPlugin)
             .add(tree_view::TreeViewPlugin)
             .add(context_menu::ContextMenuPlugin)
             .add(file_browser::FileBrowserPlugin)

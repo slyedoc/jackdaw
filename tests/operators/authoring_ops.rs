@@ -9,12 +9,12 @@ use jackdaw::boot_ops::{
     EntityParam, SELECTION_FALLBACK_OPS, parse_run_ops, resolve_entity_params, run_op_clause,
 };
 use jackdaw::commands::CommandHistory;
-use jackdaw::scene_io::SceneFilePath;
+use jackdaw::instances::AuthoredUiSceneRoot;
+use jackdaw::scene_io::{SceneEntity, SceneFilePath, adopt_entity};
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::lifecycle::OperatorEntity;
 use jackdaw_bind::{BindPath, Binding, Bindings};
-use jackdaw_bsn::{BsnValue, SceneBsnAst};
 use jackdaw_scene_types::UiSceneRoot;
 
 const NODE: &str = "bevy_ui::ui_node::Node";
@@ -36,7 +36,7 @@ struct AuthoringHealth {
     alive: bool,
 }
 
-fn authoring_app() -> App {
+fn authoring_app() -> util::TestApp {
     let mut app = util::editor_test_app();
     app.register_type::<AuthoringMarker>();
     app.register_type::<AuthoringHealth>();
@@ -65,15 +65,9 @@ fn run_finished(app: &mut App, clause: &str) {
 
 fn ui_roots(world: &mut World) -> Vec<Entity> {
     world
-        .query_filtered::<Entity, jackdaw::prefab::AuthoredUiSceneRoot>()
+        .query_filtered::<Entity, AuthoredUiSceneRoot>()
         .iter(world)
         .collect()
-}
-
-fn authored(app: &App, entity: Entity, type_path: &str, field_path: &str) -> Option<BsnValue> {
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(entity)?;
-    jackdaw_bsn::get_bsn_field(ast, node, type_path, field_path)
 }
 
 /// Resolve one clause's entity parameters without dispatching, so a resolver
@@ -93,9 +87,14 @@ fn authored_node(app: &mut App, name: &str) -> Entity {
         .world_mut()
         .spawn((Name::new(name.to_string()), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    adopt_entity(app.world_mut(), entity);
     app.update();
     entity
+}
+
+/// Whether `entity` is part of the open scene, which is what a save writes.
+fn in_scene(app: &App, entity: Entity) -> bool {
+    app.world().get::<SceneEntity>(entity).is_some()
 }
 
 fn width(app: &App, entity: Entity) -> Option<Val> {
@@ -124,10 +123,7 @@ fn a_new_ui_scene_arrives_with_a_root_to_build_on() {
         "the root carries TabGroup, so the screen a script authors is keyboard-reachable"
     );
     assert!(
-        app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(root)
-            .is_some(),
+        in_scene(&app, root),
         "the root is in the document, so it survives a save"
     );
     assert_eq!(
@@ -211,16 +207,13 @@ fn a_component_lands_on_the_selection_when_the_clause_names_no_entity() {
         app.world().entity(target).contains::<AuthoringMarker>(),
         "component.add resolved no entity from the selection"
     );
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(target).expect("the empty is in the document");
+    let authored = util::authored_type_paths(app.world(), target);
     assert!(
-        ast.component_type_paths(node)
+        authored
             .iter()
             .any(|type_path| type_path == "operators::authoring_ops::AuthoringMarker"),
-        "the component is in the document, not only on the entity; document holds {:?}",
-        ast.component_type_paths(node)
+        "the component is authored, not only on the entity; authored {authored:?}"
     );
-
     run_finished(&mut app, "scene.save");
     let written = std::fs::read_to_string(&path).expect("the session saved");
     assert!(
@@ -237,7 +230,7 @@ fn a_component_lands_on_the_entity_a_clause_names() {
     run_finished(&mut app, "scene.new ui=true");
 
     let target = app.world_mut().spawn(Name::new("Target")).id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), target);
+    adopt_entity(app.world_mut(), target);
 
     run_finished(&mut app, "entity.add.empty");
     let selected = app
@@ -274,7 +267,7 @@ fn component_remove_takes_it_off_the_named_entity_again() {
         .world_mut()
         .spawn((Name::new("Target"), AuthoringMarker { value: 3 }))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), target);
+    adopt_entity(app.world_mut(), target);
     app.update();
 
     run_finished(
@@ -286,14 +279,11 @@ fn component_remove_takes_it_off_the_named_entity_again() {
         !app.world().entity(target).contains::<AuthoringMarker>(),
         "component.remove left the component on the named entity"
     );
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(target).expect("the named entity is tracked");
     assert!(
-        !ast.component_type_paths(node)
+        !util::authored_type_paths(app.world(), target)
             .iter()
             .any(|type_path| type_path == "operators::authoring_ops::AuthoringMarker"),
-        "component.remove left the component in the document; document holds {:?}",
-        ast.component_type_paths(node)
+        "component.remove left the component authored"
     );
 }
 
@@ -313,17 +303,6 @@ fn field_set_authors_the_document_as_one_undoable_edit() {
         app.world().get::<Node>(root).map(|node| node.width),
         Some(Val::Px(120.0)),
         "the live node did not move"
-    );
-    let Some(BsnValue::TupleStruct(data)) = authored(&app, root, NODE, "width") else {
-        panic!(
-            "the document holds no authored width; got {:?}",
-            authored(&app, root, NODE, "width")
-        );
-    };
-    assert!(
-        data.type_path.ends_with("Val::Px"),
-        "the document holds Val::Px; got {}",
-        data.type_path
     );
     assert_eq!(
         undo_depth(&app),
@@ -408,91 +387,6 @@ fn a_named_target_becomes_the_selection_so_a_cold_clause_lands() {
     );
 }
 
-/// An operator whose gate is not the selection never guesses from it:
-/// `prefab.apply_to_source` writes to disk, so a guessed target in an unattended
-/// run edits a file the author never pointed at.
-#[test]
-fn an_ungated_prefab_op_refuses_to_guess_its_target_from_the_selection() {
-    let mut app = authoring_app();
-    run_finished(&mut app, "scene.new");
-    let instance = authored_node(&mut app, "Instance");
-    jackdaw::selection::select_only(app.world_mut(), instance);
-    app.update();
-    let clause = "prefab.apply_to_source type_path=X field_path=y value_json=1";
-
-    let outcomes = resolve(&mut app, clause);
-
-    assert_eq!(
-        outcomes,
-        vec![EntityParam::NeedsAName {
-            param: "instance_entity"
-        }],
-        "the selection filled in a parameter for an operator that writes a file"
-    );
-    let line = outcomes[0]
-        .line("prefab.apply_to_source")
-        .expect("a refusal says why");
-    assert!(
-        line.contains("instance_entity=<Name>"),
-        "the refusal names the parameter to pass: {line}"
-    );
-    assert_eq!(run(&mut app, clause), OperatorResult::Cancelled);
-}
-
-/// Two entity parameters means no answer to which one is the target, so both are
-/// named explicitly and neither touches the selection.
-#[test]
-fn a_two_entity_op_takes_both_targets_by_name_and_neither_from_the_selection() {
-    let mut app = authoring_app();
-    run_finished(&mut app, "scene.new");
-    let child = authored_node(&mut app, "Child");
-    let drop_target = authored_node(&mut app, "Drop");
-    let elsewhere = authored_node(&mut app, "Elsewhere");
-    jackdaw::selection::select_only(app.world_mut(), elsewhere);
-    app.update();
-
-    let outcomes = resolve(
-        &mut app,
-        "prefab.unpack_child child_entity=Child drop_target_entity=Drop",
-    );
-
-    assert_eq!(
-        outcomes,
-        vec![
-            EntityParam::Named {
-                param: "child_entity",
-                name: "Child".to_string(),
-                entity: child,
-                entity_name: "Child".to_string(),
-            },
-            EntityParam::Named {
-                param: "drop_target_entity",
-                name: "Drop".to_string(),
-                entity: drop_target,
-                entity_name: "Drop".to_string(),
-            },
-        ]
-    );
-    assert_eq!(
-        app.world().resource::<Selection>().primary(),
-        Some(elsewhere),
-        "a multi-target operator moved the selection to one of its targets"
-    );
-
-    let omitted = resolve(&mut app, "prefab.unpack_child");
-    assert_eq!(
-        omitted,
-        vec![
-            EntityParam::NeedsAName {
-                param: "child_entity"
-            },
-            EntityParam::NeedsAName {
-                param: "drop_target_entity"
-            },
-        ]
-    );
-}
-
 /// A number where an entity belongs is an id, and an id the scene does not
 /// hold is refused rather than acted on against the selection.
 #[test]
@@ -531,7 +425,7 @@ fn an_id_no_entity_answers_to_is_refused_on_the_boot_path_too() {
 
 /// Every operator declaring an `Entity` parameter, and whether the resolver may
 /// fill it from the selection. Each is classified explicitly: left to a default,
-/// the prefab family would inherit one that writes files.
+/// a new operator would inherit one that may guess wrong.
 const ENTITY_PARAM_OPS: &[(&str, &[&str], bool)] = &[
     ("animation.toggle_keyframe", &["entity"], true),
     ("binding.add", &["entity"], true),
@@ -547,23 +441,8 @@ const ENTITY_PARAM_OPS: &[(&str, &[&str], bool)] = &[
     ("entity.snap_to_ground", &["entity"], false),
     ("field.set", &["entity"], true),
     ("hierarchy.rename_begin", &["entity"], true),
-    ("material.override", &["entity"], true),
     ("physics.disable", &["entity"], true),
     ("physics.enable", &["entity"], true),
-    ("prefab.apply_to_source", &["instance_entity"], false),
-    ("prefab.open_source", &["entity"], false),
-    ("prefab.pack", &["entity"], true),
-    ("prefab.pack_matching", &["entity"], true),
-    ("prefab.revert_all", &["instance_entity"], false),
-    ("prefab.revert_component", &["entity"], false),
-    ("prefab.revert_field", &["entity"], false),
-    ("prefab.spawn_instance", &["parent"], false),
-    ("prefab.unbundle_instance", &["instance_entity"], false),
-    (
-        "prefab.unpack_child",
-        &["child_entity", "drop_target_entity"],
-        false,
-    ),
     ("selection.select", &["entity"], false),
     ("terrain.scatter.adopt", &["entity"], true),
     ("viewport.capture", &["camera"], false),
@@ -746,10 +625,7 @@ fn a_second_new_ui_scene_in_a_session_still_arrives_with_its_root() {
     );
     assert_ne!(roots[0], first, "the second scene reused the first's root");
     assert!(
-        app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(roots[0])
-            .is_some(),
+        in_scene(&app, roots[0]),
         "the second scene's root is in its own document"
     );
     assert_eq!(
@@ -763,7 +639,7 @@ fn a_second_new_ui_scene_in_a_session_still_arrives_with_its_root() {
 
 /// Force the widget extension on: an on-disk config may leave it off, and
 /// `widget.add` needs definitions to name.
-fn widget_app() -> App {
+fn widget_app() -> util::TestApp {
     let mut app = authoring_app();
     jackdaw_api_internal::lifecycle::enable_extension(app.world_mut(), "jackdaw.ui_palette");
     app.update();
@@ -781,24 +657,6 @@ fn named(app: &mut App, wanted: &str) -> Entity {
         .collect();
     assert_eq!(found.len(), 1, "one entity named {wanted}, got {found:?}");
     found[0]
-}
-
-/// The bindings the scene document holds for `entity`: what survives a save, as
-/// opposed to what the ECS carries.
-fn authored_bindings(app: &App, entity: Entity) -> Vec<BsnValue> {
-    let ast = app.world().resource::<SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("the entity is in the document");
-    let patch = ast
-        .find_patch_by_type_path(node, "jackdaw_bind::types::Bindings")
-        .and_then(|patch| ast.get_patch(patch))
-        .expect("the document holds a Bindings patch");
-    let jackdaw_bsn::BsnPatch::TupleStruct(data) = patch else {
-        panic!("Bindings authors as a newtype patch, got {patch:?}");
-    };
-    match data.values.first() {
-        Some(BsnValue::List(items)) => items.clone(),
-        other => panic!("Bindings holds a list of bindings, got {other:?}"),
-    }
 }
 
 fn bindings_of(app: &App, entity: Entity) -> Vec<Binding> {
@@ -834,10 +692,7 @@ fn a_widget_clause_lands_a_widget_in_the_open_ui_scene() {
         "the widget did not land in the open UI scene"
     );
     assert!(
-        app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(button)
-            .is_some(),
+        in_scene(&app, button),
         "the widget is not in the document, so a save would lose it"
     );
     assert_eq!(
@@ -857,10 +712,7 @@ fn a_widget_clause_lands_a_widget_in_the_open_ui_scene() {
         "undo left the widget behind"
     );
     assert!(
-        app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(button)
-            .is_none(),
+        !in_scene(&app, button),
         "undo left the widget's node in the document"
     );
 }
@@ -896,7 +748,7 @@ fn a_parent_outside_the_ui_scene_hands_the_widget_to_the_root() {
         .world_mut()
         .spawn((Name::new("Cube"), Transform::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), elsewhere);
+    adopt_entity(app.world_mut(), elsewhere);
     app.update();
 
     run_finished(&mut app, "widget.add name=ui.button parent=Cube");
@@ -963,10 +815,9 @@ fn a_field_binding_is_authored_from_a_clause() {
         }],
         "the clause authored a different binding than the card would have"
     );
-    assert_eq!(
-        authored_bindings(&app, button).len(),
-        1,
-        "the binding is on the entity but not in the document"
+    assert!(
+        in_scene(&app, button),
+        "the bound widget is part of the scene, so a save keeps its binding"
     );
     assert_eq!(
         undo_depth(&app),
@@ -1290,21 +1141,13 @@ fn hand_author(app: &mut App, path: &std::path::Path) {
         write: BindPath::new("bevy_ui::ui_node::Node.width"),
         as_percent: true,
     }]);
-    world.entity_mut(panel).insert(bindings.clone());
-    jackdaw::commands::sync_component_to_ast(
-        world,
-        panel,
-        "jackdaw_bind::types::Bindings",
-        &bindings,
-    );
+    world.entity_mut(panel).insert(bindings);
     let label = named(app, "Label");
     let mut node = app
         .world_mut()
         .get_mut::<Node>(label)
         .expect("the label has a Node");
     node.height = Val::Px(24.0);
-    let node = node.clone();
-    jackdaw::commands::sync_component_to_ast(app.world_mut(), label, NODE, &node);
     // The active tab is what a save reads for its target; an untitled one sends
     // `save_scene` to the native Save As dialog.
     let mut scenes = app.world_mut().resource_mut::<jackdaw::scenes::Scenes>();
@@ -1378,8 +1221,11 @@ fn component_paths(app: &App, entity: Entity) -> Vec<String> {
 
 /// How many entities the open document holds. Counting live entities instead
 /// would count the editor's own chrome, which a frame tick spawns and drops.
-fn document_size(app: &App) -> usize {
-    app.world().resource::<SceneBsnAst>().ecs_to_ast.len()
+fn document_size(app: &mut App) -> usize {
+    app.world_mut()
+        .query_filtered::<(), With<SceneEntity>>()
+        .iter(app.world())
+        .count()
 }
 
 /// A name the registry does not answer to gets a refusal, not a `Finished` with
@@ -1388,13 +1234,13 @@ fn document_size(app: &App) -> usize {
 fn a_widget_name_that_names_no_definition_is_refused() {
     let mut app = widget_app();
     run_finished(&mut app, "scene.new ui=true");
-    let before = document_size(&app);
+    let before = document_size(&mut app);
 
     let result = run(&mut app, "widget.add name=ui.nope");
 
     assert_eq!(result, OperatorResult::Cancelled);
     assert_eq!(
-        document_size(&app),
+        document_size(&mut app),
         before,
         "a refused widget clause authored something anyway"
     );
@@ -1404,13 +1250,13 @@ fn a_widget_name_that_names_no_definition_is_refused() {
 fn a_widget_clause_with_no_ui_scene_to_put_it_in_is_refused() {
     let mut app = widget_app();
     run_finished(&mut app, "scene.new");
-    let before = document_size(&app);
+    let before = document_size(&mut app);
 
     let result = run(&mut app, "widget.add name=ui.button");
 
     assert_eq!(result, OperatorResult::Cancelled);
     assert_eq!(
-        document_size(&app),
+        document_size(&mut app),
         before,
         "a widget landed in a document with no UI scene"
     );

@@ -13,7 +13,7 @@ use jackdaw_api::prelude::OperatorResult;
 
 const TRANSFORM: &str = "bevy_transform::components::transform::Transform";
 
-fn app_with_a_block() -> (App, Entity) {
+fn app_with_a_block() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     app.world_mut()
         .spawn(jackdaw::layout::inspector_components_content(default()));
@@ -25,7 +25,7 @@ fn app_with_a_block() -> (App, Entity) {
         .world_mut()
         .spawn((Name::new("block"), Transform::from_xyz(0.0, 1.0, 0.0)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     let world = app.world_mut();
     world.resource_scope(|world, mut selection: Mut<Selection>| {
         let mut commands = world.commands();
@@ -39,13 +39,7 @@ fn app_with_a_block() -> (App, Entity) {
 }
 
 fn field(app: &mut App, path: &str) -> Entity {
-    let mut all = app.world_mut().query::<Entity>();
-    let entities: Vec<Entity> = all.iter(app.world()).collect();
-    entities
-        .into_iter()
-        .find(|entity| {
-            jackdaw::inspector::field_edited_by(app.world(), *entity) == Some((TRANSFORM, path))
-        })
+    jackdaw::inspector::field_widget(app.world_mut(), TRANSFORM, path)
         .unwrap_or_else(|| panic!("no row writes {path}"))
 }
 
@@ -218,7 +212,7 @@ struct Sign {
 
 const SIGN: &str = "inspector::typed_entry::Sign";
 
-fn app_with_a_sign() -> (App, Entity) {
+fn app_with_a_sign() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     app.register_type::<Sign>();
     app.world_mut()
@@ -236,7 +230,7 @@ fn app_with_a_sign() -> (App, Entity) {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     let world = app.world_mut();
     world.resource_scope(|world, mut selection: Mut<Selection>| {
         let mut commands = world.commands();
@@ -250,13 +244,7 @@ fn app_with_a_sign() -> (App, Entity) {
 }
 
 fn wording_row(app: &mut App) -> Entity {
-    let mut all = app.world_mut().query::<Entity>();
-    let entities: Vec<Entity> = all.iter(app.world()).collect();
-    entities
-        .into_iter()
-        .find(|entity| {
-            jackdaw::inspector::field_edited_by(app.world(), *entity) == Some((SIGN, "wording"))
-        })
+    jackdaw::inspector::field_widget(app.world_mut(), SIGN, "wording")
         .expect("the wording has a row")
 }
 

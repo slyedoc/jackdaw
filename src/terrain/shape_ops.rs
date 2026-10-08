@@ -190,7 +190,6 @@ mod tests {
             writer.register::<jackdaw_scene_types::Terrain>();
             writer.register::<jackdaw_scene_types::SceneNodeId>();
         }
-        world.init_resource::<jackdaw_bsn::SceneBsnAst>();
         world.insert_resource(CommandHistory::default());
         let mut store = TerrainDataStore::default();
         store.insert("zone.terrain-0.jdterrain".to_string(), document(span));

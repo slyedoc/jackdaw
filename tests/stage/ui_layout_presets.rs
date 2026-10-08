@@ -53,7 +53,7 @@ fn selected_node(app: &mut App) -> Entity {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     jackdaw::selection::select_only(app.world_mut(), entity);
     app.update();
     entity
@@ -376,7 +376,7 @@ fn seeded_scene(app: &mut App) -> (Entity, Entity) {
         .world_mut()
         .spawn((Name::new("Panel"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), panel_entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), panel_entity);
     app.world_mut().spawn((
         Name::new("Filler"),
         Node {
@@ -580,12 +580,12 @@ fn old_shaped_scene(app: &mut App) -> Entity {
             Node::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let panel_entity = app
         .world_mut()
         .spawn((Name::new("Panel"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), panel_entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), panel_entity);
     let filler = app
         .world_mut()
         .spawn((
@@ -599,7 +599,7 @@ fn old_shaped_scene(app: &mut App) -> Entity {
         ))
         .id();
     // Registered, unlike the seeded fixture's: this scene is saved and read back.
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), filler);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), filler);
     settle(app);
     root
 }
@@ -677,7 +677,7 @@ fn a_preset_places_against_whatever_reference_the_scene_states() {
         .world_mut()
         .spawn((Name::new("Panel"), Node::default(), ChildOf(root)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), panel_entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), panel_entity);
     app.world_mut().spawn((
         Name::new("Filler"),
         Node {
@@ -731,7 +731,7 @@ fn an_anchor_captures_a_padded_content_box_at_its_own_size_on_a_hidpi_screen() {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), panel_entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), panel_entity);
     app.world_mut().spawn((
         Name::new("Filler"),
         Node {

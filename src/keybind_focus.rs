@@ -86,7 +86,3 @@ pub(crate) fn disable_keyboard_input_when_typing(
     sources.keyboard = !focus.keyboard_is_spoken_for() && numeric.axis.is_none();
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-}

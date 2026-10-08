@@ -51,7 +51,7 @@ fn run(app: &mut App, clause: &str) {
 
 /// An editor with one outliner list, laid out at the top left of a window
 /// big enough to drag across.
-fn outliner_app() -> (App, Entity) {
+fn outliner_app() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     {
         let mut windows = app
@@ -94,14 +94,14 @@ fn column_of_three(app: &mut App, panel: Entity) -> Vec<Entity> {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, column);
+    jackdaw::scene_io::adopt_entity(world, column);
     let children: Vec<Entity> = ["First", "Second", "Third"]
         .into_iter()
         .map(|name| {
             let child = world
                 .spawn((Name::new(name), Node::default(), ChildOf(column)))
                 .id();
-            jackdaw::scene_io::register_entity_in_ast(world, child);
+            jackdaw::scene_io::adopt_entity(world, child);
             child
         })
         .collect();

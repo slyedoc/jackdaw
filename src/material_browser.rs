@@ -62,7 +62,7 @@ impl Plugin for MaterialBrowserPlugin {
                     update_preview_area,
                     poll_material_save_folder,
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             )
             .add_observer(handle_apply_material)
             .add_observer(handle_select_material_preview);
@@ -507,42 +507,12 @@ fn wear_on_meshes(world: &mut World, selected: &[Entity], chosen: WornMaterial) 
         .and_then(|index| index.by_handle(&chosen.untyped()))
         .map(|entry| entry.path.to_slash_lossy().into_owned());
     let mut group: Vec<Box<dyn EditorCommand>> = Vec::new();
-    let mut models = Vec::new();
-    let mut targets = Vec::new();
-    for &entity in selected {
-        if world.get::<Brush>(entity).is_some() {
-            continue;
-        }
-        let authored = world.get::<crate::scene_io::SceneEntity>(entity).is_some();
-        let model = crate::material_overrides::model_root(world, entity)
-            .filter(|root| *root == entity || !authored);
-        match model {
-            Some(root) => models.push((root, entity)),
-            None => {
-                if WornMaterial::of(world, entity).is_some_and(|worn| worn != chosen) {
-                    targets.push(entity);
-                }
-            }
-        }
-    }
-    for (root, picked) in models {
-        let Some(path) = named.as_deref() else {
-            warn!("material.apply: a placed model keeps only a material saved as an asset file");
-            continue;
-        };
-        let names = match world.get::<bevy::gltf::GltfMaterialName>(picked) {
-            Some(name) if picked != root => vec![name.0.clone()],
-            _ => crate::material_overrides::model_material_names(world, root),
-        };
-        let command =
-            crate::material_overrides::SetMaterialOverrides::new(world, root, &names, Some(path));
-        if command.is_noop() {
-            continue;
-        }
-        let mut command: Box<dyn EditorCommand> = Box::new(command);
-        command.execute(world);
-        group.push(command);
-    }
+    let targets: Vec<Entity> = selected
+        .iter()
+        .copied()
+        .filter(|&entity| world.get::<Brush>(entity).is_none())
+        .filter(|&entity| WornMaterial::of(world, entity).is_some_and(|worn| worn != chosen))
+        .collect();
     for entity in targets {
         let Some(command) = crate::inspector::material_row::WearMaterial::new(
             world,
@@ -1359,6 +1329,11 @@ mod tests {
     #[test]
     fn a_texture_set_in_any_folder_is_offered_unsaved_until_it_has_a_file() {
         let (mut app, tmp) = project_browser_app();
+        let _mirror = crate::project::MIRROR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Textures load by asset path, which the open project's mirror resolves.
+        crate::project::set_open_project_assets_dir(Some(tmp.path().join("assets")));
         let textures = tmp.path().join("assets/models/kit/bark");
         std::fs::create_dir_all(&textures).expect("the folder is made");
         for file in ["bark_albedo.png", "bark_normal.png", "bark_roughness.png"] {
@@ -1397,6 +1372,7 @@ mod tests {
             1,
             "the detected set must not sit beside the file it became",
         );
+        crate::project::set_open_project_assets_dir(None);
     }
 
     /// The panel lists what the index holds, so a material filed anywhere under

@@ -358,7 +358,7 @@ fn asset_field_json(
     if let Some(path) = crate::typed_values::asset_path_json(&registry, server, index, field) {
         return Some(path);
     }
-    crate::inspector::reflect_fields::reflect_to_json(field, &registry)
+    crate::typed_values::reflect_to_json(field, &registry)
 }
 
 /// Write one field of the asset at a path, and mark whatever card is editing

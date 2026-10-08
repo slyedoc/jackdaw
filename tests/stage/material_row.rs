@@ -13,7 +13,6 @@ use bevy::prelude::*;
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::operator::{CallOperatorSettings, ExecutionContext};
-use jackdaw_bsn::SceneBsnAst;
 use jackdaw_scene_types::PropertyValue;
 
 use crate::util;
@@ -44,7 +43,7 @@ fn call(app: &mut App, id: &'static str, params: &[(&'static str, PropertyValue)
 }
 
 /// An editor with one material file under its assets.
-fn editor_with_a_material() -> (App, tempfile::TempDir) {
+fn editor_with_a_material() -> (util::TestApp, tempfile::TempDir) {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::copy(
         fixture_dir().join("jackdaw.toml"),
@@ -82,10 +81,10 @@ fn editor_with_a_material() -> (App, tempfile::TempDir) {
 
 /// A mesh under an authored root with no document node of its own, which is
 /// what a model's parts are, selected and showing.
-fn app_with_unauthored_mesh() -> (App, tempfile::TempDir, Entity) {
+fn app_with_unauthored_mesh() -> (util::TestApp, tempfile::TempDir, Entity) {
     let (mut app, tmp) = editor_with_a_material();
     let root = app.world_mut().spawn(Name::new("lamp")).id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let part = app
         .world_mut()
         .spawn((
@@ -160,8 +159,7 @@ fn picking_a_material_for_such_a_mesh_dresses_it_without_authoring_it() {
     );
     assert!(
         app.world()
-            .resource::<SceneBsnAst>()
-            .ast_for(part)
+            .get::<jackdaw::scene_io::SceneEntity>(part)
             .is_none(),
         "and the scene still says nothing about a mesh it does not author",
     );
@@ -179,7 +177,7 @@ fn a_brush_takes_the_material_its_row_names_onto_its_faces() {
             Visibility::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), brush);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), brush);
     app.world_mut().resource_mut::<Selection>().entities = vec![brush];
     settle(&mut app);
 
@@ -225,7 +223,7 @@ fn a_brush_takes_the_material_the_apply_operator_names_by_path() {
             Visibility::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), brush);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), brush);
     app.world_mut().resource_mut::<Selection>().entities = vec![brush];
     settle(&mut app);
 

@@ -356,7 +356,7 @@ fn field_json(
     } else {
         component.reflect_path(field_path).ok()?
     };
-    crate::inspector::reflect_fields::reflect_to_json(field, &registry)
+    crate::typed_values::reflect_to_json(field, &registry)
 }
 
 /// One field of one component on a held entity, set from JSON as the inspector writes it.

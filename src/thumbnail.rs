@@ -122,7 +122,7 @@ pub(crate) fn plugin(app: &mut App) {
                 update_thumbnail_slots,
                 capture_pending_scene,
             )
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
 }
 
@@ -1361,40 +1361,6 @@ mod tests {
         );
     }
 
-    /// A prefab built out of other prefabs is photographed with the models
-    /// they bring, rather than as an empty frame.
-    #[test]
-    fn a_prefab_takes_the_models_the_prefab_it_names_brings() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let model = GltfSource::type_path();
-        std::fs::create_dir_all(dir.path().join("parts")).expect("a parts folder");
-        std::fs::write(
-            dir.path().join("parts/tree.bsn"),
-            format!(
-                "jackdaw::prefab::components::Prefab\n\
-                 jackdaw::prefab::components::PrefabEntityId(0)\n\
-                 {model} {{ path: \"models/tree.glb\", scene_index: 0 }}\n"
-            ),
-        )
-        .expect("the prefab is written");
-        std::fs::write(
-            dir.path().join("grove.bsn"),
-            "jackdaw::prefab::components::Prefab\n\
-             jackdaw::prefab::components::PrefabEntityId(0)\n\
-             jackdaw::prefab::components::IsA { source: \"parts/tree.bsn\", deleted: [] }\n",
-        )
-        .expect("the prefab is written");
-        let mut world = World::new();
-        let registry = AppTypeRegistry::default();
-        registry.write().register::<GltfSource>();
-        world.insert_resource(registry);
-        let root = world.spawn_empty().id();
-
-        let built = build_prefab_subject(&mut world, root, &dir.path().join("grove.bsn"));
-
-        assert!(built, "the prefab it names brings a model to photograph");
-    }
-
     #[test]
     fn a_failed_model_is_never_retried_at_the_same_mtime() {
         let mut cache = ThumbnailCache::default();
@@ -1608,56 +1574,6 @@ mod tests {
             drawn_images(&app, slot),
             1,
             "the tile draws the rendered material"
-        );
-    }
-
-    const PREFAB_WITH_A_MODEL: &str = r#"jackdaw::prefab::components::Prefab
-#lamp_post
-bevy_transform::components::transform::Transform
-bevy_ecs::hierarchy::Children [
-    #LampPost
-    jackdaw_scene_types::types::GltfSource {
-        path: "models/lantern.glb",
-        scene_index: 0,
-    }
-]
-"#;
-
-    const PREFAB_WITHOUT_A_MODEL: &str = r#"jackdaw::prefab::components::Prefab
-#marker
-bevy_transform::components::transform::Transform
-"#;
-
-    fn prefab_app() -> App {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, bevy::asset::AssetPlugin::default()))
-            .init_asset::<Image>()
-            .register_type::<Transform>()
-            .register_type::<GltfSource>();
-        app
-    }
-
-    /// A prefab is pictured by the models it names; one that names none has
-    /// nothing to photograph and keeps the icon it started with.
-    #[test]
-    fn a_prefab_with_meshes_gets_a_thumbnail_and_one_without_keeps_its_icon() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let with = temp.path().join("lamp_post.bsn");
-        let without = temp.path().join("marker.bsn");
-        std::fs::write(&with, PREFAB_WITH_A_MODEL).expect("the prefab is written");
-        std::fs::write(&without, PREFAB_WITHOUT_A_MODEL).expect("the prefab is written");
-
-        let mut app = prefab_app();
-        let root = app.world_mut().spawn(Transform::IDENTITY).id();
-        assert!(
-            build_prefab_subject(app.world_mut(), root, &with),
-            "the prefab names a model to photograph"
-        );
-
-        let bare = app.world_mut().spawn(Transform::IDENTITY).id();
-        assert!(
-            !build_prefab_subject(app.world_mut(), bare, &without),
-            "a prefab with no models keeps its icon"
         );
     }
 

@@ -41,7 +41,7 @@ fn run(app: &mut App, clause: &str) {
 }
 
 /// An editor with one outliner list and one named node in the document.
-fn outliner_app() -> (App, Entity, Entity) {
+fn outliner_app() -> (util::TestApp, Entity, Entity) {
     let mut app = util::editor_test_app();
     {
         let mut windows = app
@@ -70,7 +70,7 @@ fn outliner_app() -> (App, Entity, Entity) {
         .world_mut()
         .spawn((Name::new("Panel"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), node);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), node);
     settle(&mut app);
     (app, panel, node)
 }
@@ -118,7 +118,7 @@ fn f2_reaches_a_selection_whose_row_is_not_open_yet() {
         .world_mut()
         .spawn((Name::new("Child"), Node::default(), ChildOf(parent)))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), child);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), child);
     settle(&mut app);
     assert!(
         app.world()
@@ -294,12 +294,12 @@ fn a_long_row_name_is_cut_down_with_the_whole_of_it_in_a_tooltip() {
         .world_mut()
         .spawn((Name::new(long.to_string()), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), wordy);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), wordy);
     let brief = app
         .world_mut()
         .spawn((Name::new("Short"), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), brief);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), brief);
     settle(&mut app);
 
     let (shown, tooltip) = label_of(&mut app, panel, wordy);
@@ -337,7 +337,7 @@ fn resting_on_a_cut_label_shows_the_whole_name() {
         .world_mut()
         .spawn((Name::new(long.to_string()), Node::default()))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), wordy);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), wordy);
     settle(&mut app);
 
     let row = app

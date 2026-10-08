@@ -1,4 +1,13 @@
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
+use bevy::feathers::controls::{FeathersListRow, OptionIndex};
+use bevy::feathers::display::caption;
 use bevy::prelude::*;
+use bevy::ui::Selected;
+use lucide_icons::Icon;
+
+use crate::icons::icon_scene;
+use crate::tokens::TEXT_SIZE_PX;
 
 /// Attach `child` as a child of `parent` at `Commands` flush time,
 /// cleanly despawning `child` if `parent` has gone away by then.
@@ -130,6 +139,116 @@ pub fn find_ancestor<'a, C: Component>(
         }
     }
     None
+}
+
+/// A bundle that becomes `scene` once its entity lands, so feathers' scene
+/// widgets can sit in bundle trees (`children![]`, `Spawn`). The scene writes
+/// over the components it names, so layout belongs in the scene.
+pub fn scene_bundle(scene: impl Scene) -> impl Bundle {
+    PendingScene(Some(Box::new(scene)))
+}
+
+#[derive(Component)]
+#[component(on_add = apply_pending_scene)]
+struct PendingScene(Option<Box<dyn Scene>>);
+
+fn apply_pending_scene(mut world: DeferredWorld, context: HookContext) {
+    let entity = context.entity;
+    let Some(scene) = world
+        .get_mut::<PendingScene>(entity)
+        .and_then(|mut pending| pending.0.take())
+    else {
+        return;
+    };
+    world.commands().queue(move |world: &mut World| {
+        let Ok(mut target) = world.get_entity_mut(entity) else {
+            return;
+        };
+        target.remove::<PendingScene>();
+        if let Err(error) = target.apply_scene(scene) {
+            error!("a scene widget did not spawn: {error}");
+        }
+    });
+}
+
+/// Show option `index` on a `FeathersSelect` without a `ValueChange`: the
+/// caption follows the row's `Selected`. An index no row carries is ignored.
+pub fn show_select_option(select: Entity, index: usize) -> impl Command {
+    move |world: &mut World| {
+        let mut rows = Vec::new();
+        let mut stack = vec![select];
+        while let Some(entity) = stack.pop() {
+            if let Some(option) = world.get::<OptionIndex>(entity) {
+                rows.push((entity, option.0));
+            }
+            if let Some(children) = world.get::<Children>(entity) {
+                stack.extend(children.iter());
+            }
+        }
+        if !rows.iter().any(|&(_, option)| option == index) {
+            return;
+        }
+        for (row, option) in rows {
+            let selected = world.get::<Selected>(row).is_some();
+            if option == index && !selected {
+                world.entity_mut(row).insert(Selected);
+            } else if option != index && selected {
+                world.entity_mut(row).remove::<Selected>();
+            }
+        }
+    }
+}
+
+/// `FeathersSelect` rows like `list_rows_from_strings`, each with an optional
+/// leading icon. The icon sits a level down so the caption stays the first text
+/// the select copies into its button.
+pub fn option_rows_with_icons(
+    options: impl IntoIterator<Item = (String, Option<Icon>)>,
+    selected: Option<usize>,
+) -> Box<dyn SceneList> {
+    Box::new(
+        options
+            .into_iter()
+            .enumerate()
+            .map(|(index, (label, icon))| -> Box<dyn SceneList> {
+                let glyph = icon.map(|icon| {
+                    bsn_list! {
+                        Node Children [ @icon_scene(icon.unicode(), TEXT_SIZE_PX) ]
+                    }
+                });
+                if Some(index) == selected {
+                    bsn! {
+                        @FeathersListRow
+                        Selected
+                        OptionIndex(index)
+                        Node { column_gap: px(6.0) }
+                        Children [ {glyph} -- @caption(label) ]
+                    }
+                    .into()
+                } else {
+                    bsn! {
+                        @FeathersListRow
+                        OptionIndex(index)
+                        Node { column_gap: px(6.0) }
+                        Children [ {glyph} -- @caption(label) ]
+                    }
+                    .into()
+                }
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// The option a `FeathersSelect` is showing.
+pub fn shown_select_option(
+    select: Entity,
+    children: &Query<&Children>,
+    rows: &Query<&OptionIndex, With<Selected>>,
+) -> Option<usize> {
+    children
+        .iter_descendants(select)
+        .find_map(|row| rows.get(row).ok())
+        .map(|option| option.0)
 }
 
 #[cfg(test)]

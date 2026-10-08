@@ -720,24 +720,25 @@ fn reference_image_round_trips_through_scene_document() {
             Visibility::default(),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
 
-    // The document must carry the component patch; convert it back through
-    // the same reflection registry the loader uses and compare every field.
-    let registry = app.world().resource::<AppTypeRegistry>().clone();
-    let registry = registry.read();
-    let ast = app.world().resource::<jackdaw_bsn::SceneBsnAst>();
-    let node = ast.ast_for(entity).expect("registered in the document");
-    let value = jackdaw_bsn::get_bsn_field(ast, node, REFERENCE_IMAGE_TYPE_PATH, "")
-        .expect("ReferenceImage captured into the document");
-    let reflected = jackdaw_bsn::bsn_value_to_reflect(
-        &value,
-        std::any::TypeId::of::<ReferenceImage>(),
-        &registry,
-        None,
-    )
-    .expect("convert ReferenceImage back from the document");
-    let back = ReferenceImage::from_reflect(reflected.as_ref()).expect("from_reflect");
+    // The written scene carries the component; spawning it back yields every field.
+    let text = jackdaw::scene_io::emit_bsn_scene_with_inline_assets(
+        app.world_mut(),
+        std::path::Path::new(""),
+    );
+    assert!(
+        text.contains(REFERENCE_IMAGE_TYPE_PATH),
+        "ReferenceImage captured into the document:\n{text}"
+    );
+    app.world_mut().entity_mut(entity).despawn();
+    jackdaw::scene_io::spawn_bsn_text(app.world_mut(), &text, "").expect("the scene respawns");
+    let back = app
+        .world_mut()
+        .query::<&ReferenceImage>()
+        .single(app.world())
+        .expect("one reference image")
+        .clone();
     assert_eq!(back.path, original.path);
     assert_eq!(back.opacity, original.opacity);
     assert_eq!(back.locked, original.locked);

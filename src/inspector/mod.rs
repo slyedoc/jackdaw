@@ -9,6 +9,8 @@ pub mod component_picker;
 pub(crate) mod component_tooltip;
 mod custom_props_display;
 mod definition_card;
+mod feathers_bridge;
+pub use feathers_bridge::{field_row, field_widget, inspected_field};
 pub mod file_card;
 pub(crate) mod material_card_routing;
 mod material_display;
@@ -17,16 +19,12 @@ mod modifier_display;
 pub mod node_card;
 pub(crate) mod ops;
 pub(crate) mod physics_display;
-pub(crate) mod reflect_fields;
 pub(crate) mod type_metadata_pane;
-pub mod val_field;
 
 use crate::EditorEntity;
 
 use bevy::ecs::archetype::ArchetypeId;
 use bevy::prelude::*;
-
-const MAX_REFLECT_DEPTH: usize = 4;
 
 /// Remembers each inspector card's collapsed state across rebuilds, keyed by
 /// the card's display name. A name not present defaults to collapsed.
@@ -76,6 +74,7 @@ pub struct InspectorPlugin;
 
 impl Plugin for InspectorPlugin {
     fn build(&self, app: &mut App) {
+        feathers_bridge::plugin(app);
         app.world_mut().get_resource_or_insert_with(|| {
             let mut r = jackdaw_api_internal::inspector::InspectorRegistry::default();
             jackdaw_api_internal::inspector::seed_default_categories(&mut r);
@@ -99,20 +98,11 @@ impl Plugin for InspectorPlugin {
             .add_observer(component_display::on_inspector_dirty)
             .add_observer(material_card_routing::on_refresh_inspector_card_body)
             .add_observer(component_picker::on_add_component_button_click)
-            .add_observer(reflect_fields::on_checkbox_commit)
-            .add_observer(reflect_fields::on_text_edit_commit)
-            .add_observer(reflect_fields::on_numeric_value_change_f64)
-            .add_observer(reflect_fields::on_numeric_value_change_i64)
-            .add_observer(reflect_fields::on_color_plane_change)
-            .add_observer(reflect_fields::on_color_slider_change)
-            .add_observer(val_field::on_val_number_change)
-            .add_observer(val_field::on_val_unit_change)
             .add_observer(node_card::on_node_enum_change)
             .add_observer(node_card::on_optional_number_change)
             .add_observer(node_card::on_optional_number_mode_change)
             .add_observer(bindings_card::on_binding_combobox_change)
             .add_observer(bindings_card::on_binding_button_click)
-            .add_observer(reflect_fields::on_reflect_list_button_click)
             .add_observer(bindings_card::on_binding_checkbox_change)
             .add_observer(bindings_card::on_binding_text_commit)
             .add_observer(custom_props_display::on_custom_property_checkbox_commit)
@@ -134,9 +124,6 @@ impl Plugin for InspectorPlugin {
                 Update,
                 (
                     apply_pending_inspector_rebuild,
-                    reflect_fields::refresh_inspector_fields,
-                    reflect_fields::refresh_enum_variants,
-                    val_field::refresh_val_fields,
                     // The structured cards' refresh passes, which pull each
                     // card back in line with the component behind it.
                     (
@@ -168,7 +155,7 @@ impl Plugin for InspectorPlugin {
                     add_header::rebuild_add_header,
                     persist_inspector_collapse,
                 )
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }
@@ -349,32 +336,6 @@ pub(crate) struct ComponentDisplayTypePath(pub(crate) String);
 #[derive(Component)]
 pub(super) struct InspectorGroupSection;
 
-/// Tracks which inspector field entity maps to which source entity + component + field path.
-#[derive(Component)]
-pub(super) struct FieldBinding {
-    pub(super) source_entity: Entity,
-    pub(super) type_path: String,
-    pub(super) field_path: String,
-}
-
-/// The component path and field path a widget edits, or `None` when it
-/// edits nothing. Addresses a control by the field it writes rather than
-/// by its position in a section.
-pub fn field_edited_by(world: &World, widget: Entity) -> Option<(&str, &str)> {
-    world
-        .get::<FieldBinding>(widget)
-        .map(|binding| (binding.type_path.as_str(), binding.field_path.as_str()))
-}
-
-/// The list a control edits, as the type path and field path of that list, or
-/// `None` when the entity is no list control. Addresses Add, Remove and the
-/// move arrows by the list they act on rather than by their position.
-pub fn list_edited_by(world: &World, control: Entity) -> Option<(&str, &str)> {
-    world
-        .get::<reflect_fields::ReflectListControl>(control)
-        .map(reflect_fields::ReflectListControl::list)
-}
-
 /// The asset type a row names, and the field path it writes, or `None` when
 /// the entity is no asset row. Addresses an asset row by the field it writes.
 pub fn asset_field_shown_by(world: &World, row: Entity) -> Option<(&str, &str)> {
@@ -430,34 +391,14 @@ pub fn asset_field_value_of(world: &World, row: Entity) -> Option<Entity> {
         .and_then(|row| row.path_text)
 }
 
-/// Marker on the row-level container of a labeled inspector field,
-/// carrying the **root** `(component_type_path, field_path)` for the
-/// row regardless of how many scalar inputs sit inside it.
-///
-/// For scalar fields (e.g. `f32 intensity`) the row has one
-/// `FieldBinding` with the same path as this marker. For composite
-/// fields like `Vec3 translation` the row contains three axis
-/// `FieldBinding`s with paths `translation.x` / `.y` / `.z`, but
-/// there's still only one `InspectorFieldRow` on the outer column ;
-/// so per-field decorations (like the animation keyframe diamond)
-/// can hang off this marker without being duplicated per axis.
+/// Marker on a field row, carrying the `(component_type_path, field_path)` it edits however
+/// many inputs sit inside it (a `Vec3` row holds three), so per-field decorations like the
+/// keyframe diamond hang off the row once.
 #[derive(Component)]
 pub(super) struct InspectorFieldRow {
     pub(super) source_entity: Entity,
     pub(super) type_path: String,
     pub(super) field_path: String,
-}
-
-/// Marker on the container that holds an enum select menu + its current
-/// variant's field rows. `refresh_enum_variants` polls these and rebuilds the
-/// subtree (menu + field rows) in place whenever the ECS variant changes.
-#[derive(Component)]
-pub struct EnumVariantHost {
-    pub(super) source_entity: Entity,
-    pub(super) type_path: String,
-    pub(super) field_path: String,
-    pub(super) depth: usize,
-    pub(super) current_variant: String,
 }
 
 /// Container for brush face properties (texture, UV, etc). Populated dynamically.
@@ -603,4 +544,37 @@ fn on_category_strip_mount_added(
         &registry,
         &icon_font.0,
     );
+}
+
+/// The value a field row reads: the definition asset the entity is editing, or
+/// the component of that type on the entity.
+pub(crate) fn inspected_value<'w>(
+    world: &'w World,
+    entity_ref: bevy::ecs::world::EntityRef<'w>,
+    registration: &bevy::reflect::TypeRegistration,
+    registry: &bevy::reflect::TypeRegistry,
+) -> Option<&'w dyn Reflect> {
+    let type_path = registration.type_info().type_path();
+    if let Some(value) =
+        crate::definition_assets::definition_value(world, entity_ref.id(), type_path, registry)
+    {
+        return Some(value);
+    }
+    registration.data::<ReflectComponent>()?.reflect(entity_ref)
+}
+
+/// True when any component on `entity_ref` changed within the tick window
+/// `(last_run, this_run]`. Gates the reflection-based field/enum refresh on real
+/// data changes (undo, gizmos, operators, AST live-edit all mark the component
+/// changed) instead of polling reflection every frame.
+pub(crate) fn entity_components_changed(
+    entity_ref: bevy::ecs::world::EntityRef,
+    last_run: bevy::ecs::change_detection::Tick,
+    this_run: bevy::ecs::change_detection::Tick,
+) -> bool {
+    entity_ref.archetype().components().iter().any(|&id| {
+        entity_ref
+            .get_change_ticks_by_id(id)
+            .is_some_and(|ticks| ticks.is_changed(last_run, this_run))
+    })
 }

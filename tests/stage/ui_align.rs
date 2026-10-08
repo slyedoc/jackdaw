@@ -71,7 +71,7 @@ fn root_with_border(app: &mut App) -> Entity {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     root
 }
 
@@ -99,7 +99,7 @@ fn child(
             ChildOf(parent),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     entity
 }
 
@@ -233,7 +233,7 @@ fn a_member_its_parent_lays_out_refuses_the_whole_press() {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), flowed);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), flowed);
     settle(&mut app);
     let before = offsets(&app, placed);
     select(&mut app, &[placed, flowed]);

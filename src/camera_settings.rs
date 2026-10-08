@@ -2,14 +2,14 @@
 //!
 //! Stored in `.jackdaw/settings.json` (see [`crate::project_settings`])
 //! under `camera`, beside the canvas settings, and pushed onto every
-//! viewport camera's [`JackdawCameraSettings`] and perspective projection.
+//! viewport camera's [`EditorCamera`] and perspective projection.
 //! Kept out of the undo snapshot: a preference is not part of the document.
 
 use std::path::PathBuf;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;
-use jackdaw_camera::JackdawCameraSettings;
+use jackdaw_camera::EditorCamera;
 use serde::{Deserialize, Serialize};
 
 use crate::project::ProjectRoot;
@@ -114,7 +114,7 @@ fn sync_project_camera_preferences(
 /// camera with the component's own defaults.
 fn apply_camera_preferences(
     preferences: Res<CameraPreferences>,
-    mut cameras: Query<&mut JackdawCameraSettings>,
+    mut cameras: Query<&mut EditorCamera>,
     mut viewports: Query<&mut Projection, With<MainViewportCamera>>,
 ) {
     for mut settings in &mut cameras {

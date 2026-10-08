@@ -1726,7 +1726,7 @@ fn a_percent_anchored_node_landing_on_a_quarter_line_writes_the_exact_percent() 
 
 /// A canvas at 1003 authored pixels holding one child authored as
 /// `node`. Returns the panel and the child.
-fn quarter_line_app(node: Node) -> (App, Entity, Entity) {
+fn quarter_line_app(node: Node) -> (util::TestApp, Entity, Entity) {
     let mut app = stage_app();
     let panel = framed_panel(&mut app, 0.5);
     let root = ui_root(&mut app);
@@ -2180,7 +2180,7 @@ fn a_drag_lands_on_a_guide_when_that_kind_is_on() {
 
 /// Three absolutely placed children, 500 authored pixels apart on both
 /// axes. Returns the panel and the three, in tree order.
-fn selection_app() -> (App, Entity, [Entity; 3]) {
+fn selection_app() -> (util::TestApp, Entity, [Entity; 3]) {
     let mut app = stage_app();
     let panel = panel_entity(&mut app);
     let root = ui_root(&mut app);
@@ -3395,7 +3395,7 @@ fn guide_positions(app: &App, root: Entity, axis: CanvasAxis) -> Vec<f32> {
 
 /// A root filling the canvas with one child authored as `node`. Returns
 /// the panel and the child.
-fn anchored_app(node: Node) -> (App, Entity, Entity) {
+fn anchored_app(node: Node) -> (util::TestApp, Entity, Entity) {
     let mut app = stage_app();
     let panel = panel_entity(&mut app);
     let root = app
@@ -3424,7 +3424,7 @@ fn outline_over(app: &mut App, entity: Entity) -> Entity {
     overlay
 }
 
-fn stage_app() -> App {
+fn stage_app() -> util::TestApp {
     util::editor_test_app()
 }
 
@@ -4226,7 +4226,7 @@ fn the_canvas_and_the_outliner_share_one_selection() {
     let (root, back, front) = authored_scene(&mut app);
     for (entity, name) in [(root, "UiRoot"), (back, "Back"), (front, "Front")] {
         app.world_mut().entity_mut(entity).insert(Name::new(name));
-        jackdaw::scene_io::register_entity_in_ast(app.world_mut(), entity);
+        jackdaw::scene_io::adopt_entity(app.world_mut(), entity);
     }
     app.world_mut().spawn((
         jackdaw::hierarchy::HierarchyTreeContainer,

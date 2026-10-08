@@ -52,7 +52,7 @@ fn panel_in(app: &mut App, mode: ViewportMode) -> Entity {
 }
 
 /// A panel in `mode` with two scene tabs open, ready to swap between.
-fn app_with_panel_and_two_tabs(mode: ViewportMode) -> App {
+fn app_with_panel_and_two_tabs(mode: ViewportMode) -> util::TestApp {
     use jackdaw::scenes::{SceneTab, Scenes};
 
     let mut app = util::editor_test_app();

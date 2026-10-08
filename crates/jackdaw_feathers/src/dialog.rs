@@ -1,18 +1,25 @@
+//! The editor's dialog protocol: open a question with [`OpenDialogEvent`], hear
+//! the answer as [`DialogActionEvent`], [`DialogSecondaryActionEvent`] or
+//! [`DialogDismissEvent`]. The dialog itself is `bevy_feathers`'
+//! [`FeathersDialog`], whose barrier and close button ask to close with
+//! [`RequestClose`].
+
+use bevy::feathers::controls::{
+    FeathersDialog, FeathersDialogBody, FeathersDialogClose, FeathersDialogFooter,
+    FeathersDialogHeader,
+};
+use bevy::feathers::theme::ThemedText;
 use bevy::prelude::*;
-use bevy::ui::interaction_states::Pressed;
+use bevy::ui_widgets::{ModalDialog, RequestClose};
 use jackdaw_commands::KeymapCapture;
-use lucide_icons::Icon;
 
-use crate::button::{
-    ButtonClickEvent, ButtonProps, ButtonVariant, IconButtonProps, button, icon_button,
-};
+use crate::button::{ButtonClickEvent, ButtonProps, ButtonVariant, button};
 use crate::icons::EditorFont;
-use crate::tokens::{
-    BACKGROUND_COLOR, BORDER_COLOR, TEXT_DISPLAY_COLOR, TEXT_MUTED_COLOR, TEXT_SIZE_LG,
-    TEXT_SIZE_XL,
-};
+use crate::tokens::{TEXT_MUTED_COLOR, TEXT_SIZE_LG};
 
-const BACKDROP_OPACITY: f32 = 0.8;
+/// Over the editor's panels and popovers' own layers, as the hand-built
+/// dialog sat.
+const DIALOG_Z: i32 = 200;
 
 pub fn plugin(app: &mut App) {
     app.add_observer(on_open_dialog)
@@ -20,16 +27,8 @@ pub fn plugin(app: &mut App) {
         .add_observer(on_action_button_click)
         .add_observer(on_secondary_action_button_click)
         .add_observer(on_cancel_button_click)
-        .add_observer(on_close_button_click)
         .add_observer(on_close_dialog)
-        .add_systems(
-            Update,
-            (
-                sync_children_slot_visibility,
-                handle_backdrop_click,
-                handle_esc_key,
-            ),
-        );
+        .add_systems(Update, (sync_children_slot_visibility, handle_esc_key));
 }
 
 #[derive(Component)]
@@ -165,15 +164,6 @@ pub fn answer_dialog(commands: &mut Commands, dialog: Entity, choice: DialogChoi
 }
 
 #[derive(Component)]
-struct DialogBackdrop;
-
-#[derive(Component)]
-struct DialogPanel;
-
-#[derive(Component)]
-struct DialogCloseButton;
-
-#[derive(Component)]
 struct DialogCancelButton;
 
 #[derive(Component)]
@@ -182,7 +172,7 @@ struct DialogActionButton;
 #[derive(Component)]
 struct DialogSecondaryActionButton;
 
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 pub struct DialogChildrenSlot;
 
 #[derive(Component, Default, Clone, Copy)]
@@ -336,230 +326,179 @@ impl From<&OpenConfirmationDialogEvent> for OpenDialogEvent {
 fn on_open_dialog(
     event: On<OpenDialogEvent>,
     mut commands: Commands,
-    editor_font: Res<EditorFont>,
-    icon_font: Res<crate::icons::IconFont>,
     existing: Query<Entity, With<EditorDialog>>,
 ) {
     if !existing.is_empty() {
         return;
     }
-    spawn_dialog(&mut commands, &editor_font.0, &icon_font.0, &event);
+    spawn_dialog(&mut commands, &event);
 }
 
 fn on_open_confirmation_dialog(
     event: On<OpenConfirmationDialogEvent>,
     mut commands: Commands,
-    editor_font: Res<EditorFont>,
-    icon_font: Res<crate::icons::IconFont>,
     existing: Query<Entity, With<EditorDialog>>,
 ) {
     if !existing.is_empty() {
         return;
     }
     let dialog_event: OpenDialogEvent = event.event().into();
-    spawn_dialog(&mut commands, &editor_font.0, &icon_font.0, &dialog_event);
+    spawn_dialog(&mut commands, &dialog_event);
 }
 
-fn spawn_dialog(
-    commands: &mut Commands,
-    editor_font: &Handle<Font>,
-    icon_font: &Handle<Font>,
-    event: &OpenDialogEvent,
-) {
-    let font = editor_font.clone();
+fn spawn_dialog(commands: &mut Commands, event: &OpenDialogEvent) {
+    let title = event.title.clone();
+    let description = event.description.clone();
+    let action = event.action.clone();
+    let secondary = event.secondary_action.clone();
+    let cancel = event.cancel.clone();
+    let variant = event.variant;
+    let has_close_button = event.has_close_button;
+    let max_width = event.max_width.unwrap_or(px(448));
+    let content_padding = event.content_padding;
+    let choices = DialogChoices {
+        title: title.clone(),
+        description: description.clone(),
+        action: action.clone(),
+        secondary: secondary.clone(),
+        cancel: cancel.clone(),
+    };
+    let config = DialogConfig {
+        close_on_click_outside: event.close_on_click_outside,
+        close_on_esc: event.close_on_esc,
+    };
 
-    let backdrop_id = commands
-        .spawn((
-            DialogBackdrop,
-            Node {
-                width: percent(100),
-                height: percent(100),
-                position_type: PositionType::Absolute,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::BLACK.with_alpha(BACKDROP_OPACITY)),
-        ))
-        .id();
-
-    let has_header = event.title.is_some() || event.description.is_some();
-    let has_footer =
-        event.action.is_some() || event.cancel.is_some() || event.secondary_action.is_some();
-
-    let header_id = if has_header {
-        let mut header = commands.spawn((
-            Node {
-                padding: UiRect::all(px(24)),
-                border: UiRect::bottom(px(1)),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(6),
-                ..default()
-            },
-            BorderColor::all(BORDER_COLOR),
-        ));
-
-        if let Some(title) = &event.title {
-            header.with_child((
-                Text::new(title),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: TEXT_SIZE_XL,
-                    weight: FontWeight::SEMIBOLD,
-                    ..default()
-                },
-                TextColor(TEXT_DISPLAY_COLOR.into()),
-            ));
+    commands.queue(move |world: &mut World| {
+        let root = match world.spawn_scene(bsn! { @FeathersDialog GlobalZIndex(DIALOG_Z) }) {
+            Ok(mut root) => {
+                root.insert((EditorDialog, choices, variant, config))
+                    .observe(on_request_close);
+                root.id()
+            }
+            Err(error) => {
+                error!("a dialog did not spawn: {error}");
+                return;
+            }
+        };
+        let Some(panel) = world.entity(root).get::<Children>().and_then(|children| {
+            children
+                .iter()
+                .find(|&child| world.entity(child).contains::<ModalDialog>())
+        }) else {
+            return;
+        };
+        if let Some(mut node) = world.get_mut::<Node>(panel) {
+            node.width = percent(100);
+            node.max_width = max_width;
         }
 
-        if let Some(desc) = &event.description {
-            header.with_child((
-                Text::new(desc),
+        if title.is_some() || has_close_button {
+            let header = spawn_part(world, panel, bsn! { @FeathersDialogHeader });
+            if let Some(title) = title {
+                spawn_part(world, header, bsn! { Text(title) ThemedText });
+            }
+            if has_close_button {
+                spawn_part(world, header, bsn! { @FeathersDialogClose });
+            }
+        }
+
+        if let Some(description) = description {
+            let body = spawn_part(world, panel, bsn! { @FeathersDialogBody });
+            let font = world
+                .get_resource::<EditorFont>()
+                .map(|font| font.0.clone())
+                .unwrap_or_default();
+            world.spawn((
+                Text::new(description),
                 TextFont {
-                    font: font.clone().into(),
+                    font: font.into(),
                     font_size: TEXT_SIZE_LG,
                     ..default()
                 },
                 TextColor(TEXT_MUTED_COLOR.into()),
+                ChildOf(body),
             ));
         }
 
-        Some(header.id())
-    } else {
-        None
-    };
-
-    let footer_id = if has_footer {
-        let mut footer = commands.spawn(Node {
-            padding: UiRect::all(px(24)),
-            column_gap: px(6),
-            justify_content: JustifyContent::End,
-            ..default()
-        });
-
-        if let Some(cancel) = &event.cancel {
-            footer.with_child((DialogCancelButton, button(ButtonProps::new(cancel))));
+        let slot = spawn_part(world, panel, bsn! { @FeathersDialogBody });
+        if let Some(mut node) = world.get_mut::<Node>(slot) {
+            node.display = Display::None;
+            node.padding = content_padding;
+            node.row_gap = px(12);
         }
+        world.entity_mut(slot).insert(DialogChildrenSlot);
 
-        if let Some(action) = &event.action {
-            footer.with_child((
-                DialogActionButton,
-                button(
-                    ButtonProps::new(action).with_variant(event.variant.action_button_variant()),
-                ),
-            ));
+        if action.is_none() && cancel.is_none() && secondary.is_none() {
+            return;
         }
-
-        let footer_id = footer.id();
-
-        // Secondary action on the far left (margin-right: auto pushes it left),
-        // wrapped in a layout node to avoid a duplicate `Node` component.
-        if let Some(secondary) = &event.secondary_action {
-            let btn = commands
+        let footer = spawn_part(world, panel, bsn! { @FeathersDialogFooter });
+        // Secondary action on the far left; the wrapper's auto margin pushes it there.
+        if let Some(secondary) = secondary {
+            let wrapper = world
                 .spawn((
-                    DialogSecondaryActionButton,
-                    button(ButtonProps::new(secondary)),
-                ))
-                .id();
-            let wrapper = commands
-                .spawn(Node {
-                    margin: UiRect {
-                        right: Val::Auto,
+                    Node {
+                        margin: UiRect::right(Val::Auto),
                         ..default()
                     },
-                    ..default()
-                })
+                    ChildOf(footer),
+                ))
                 .id();
-            commands.entity(wrapper).add_child(btn);
-            commands.entity(footer_id).insert_child(0, wrapper);
+            world.spawn((
+                DialogSecondaryActionButton,
+                button(ButtonProps::new(secondary)),
+                ChildOf(wrapper),
+            ));
         }
+        if let Some(cancel) = cancel {
+            world.spawn((
+                DialogCancelButton,
+                button(ButtonProps::new(cancel)),
+                ChildOf(footer),
+            ));
+        }
+        if let Some(action) = action {
+            world.spawn((
+                DialogActionButton,
+                button(ButtonProps::new(action).with_variant(variant.action_button_variant())),
+                ChildOf(footer),
+            ));
+        }
+    });
+}
 
-        Some(footer_id)
-    } else {
-        None
+/// Spawn one section of a dialog under `parent`, or a bare node if the scene
+/// will not resolve, so the rest of the dialog still has somewhere to go.
+fn spawn_part(world: &mut World, parent: Entity, scene: impl Scene) -> Entity {
+    match world.spawn_scene(scene) {
+        Ok(mut part) => part.insert(ChildOf(parent)).id(),
+        Err(error) => {
+            error!("a dialog section did not spawn: {error}");
+            world.spawn((Node::default(), ChildOf(parent))).id()
+        }
+    }
+}
+
+/// The barrier (a click outside, or Escape with focus inside) and the close
+/// button ask to close. A dialog that does not close on a click outside
+/// ignores its barrier; Escape still reaches [`handle_esc_key`].
+fn on_request_close(
+    mut close: On<RequestClose>,
+    dialogs: Query<&DialogConfig, With<EditorDialog>>,
+    capture: Option<Res<KeymapCapture>>,
+    mut commands: Commands,
+) {
+    close.propagate(false);
+    let dialog = close.event_target();
+    let Ok(config) = dialogs.get(dialog) else {
+        return;
     };
-
-    let mut panel = commands.spawn((
-        DialogPanel,
-        Node {
-            width: percent(100),
-            max_width: event.max_width.unwrap_or(px(448)),
-            border: UiRect::all(px(1)),
-            border_radius: BorderRadius::all(px(6)),
-            flex_direction: FlexDirection::Column,
-            ..default()
-        },
-        BackgroundColor(BACKGROUND_COLOR.into()),
-        BorderColor::all(BORDER_COLOR),
-    ));
-
-    if let Some(header_id) = header_id {
-        panel.add_child(header_id);
+    if KeymapCapture::is_recording(capture.as_deref()) {
+        return;
     }
-
-    panel.with_child((
-        DialogChildrenSlot,
-        Node {
-            display: Display::None,
-            padding: event.content_padding,
-            border: UiRect::bottom(px(1)),
-            flex_direction: FlexDirection::Column,
-            row_gap: px(12),
-            ..default()
-        },
-        BorderColor::all(BORDER_COLOR),
-    ));
-
-    if let Some(footer_id) = footer_id {
-        panel.add_child(footer_id);
+    if close.original_event_target() == dialog && !config.close_on_click_outside {
+        return;
     }
-
-    if event.has_close_button {
-        panel.with_child((
-            Node {
-                position_type: PositionType::Absolute,
-                top: px(20),
-                right: px(20),
-                ..default()
-            },
-            children![(
-                DialogCloseButton,
-                icon_button(
-                    IconButtonProps::new(Icon::X).variant(ButtonVariant::Ghost),
-                    icon_font,
-                ),
-            )],
-        ));
-    }
-
-    let panel_id = panel.id();
-    commands.entity(backdrop_id).add_child(panel_id);
-
-    commands
-        .spawn((
-            EditorDialog,
-            DialogChoices {
-                title: event.title.clone(),
-                description: event.description.clone(),
-                action: event.action.clone(),
-                secondary: event.secondary_action.clone(),
-                cancel: event.cancel.clone(),
-            },
-            event.variant,
-            DialogConfig {
-                close_on_click_outside: event.close_on_click_outside,
-                close_on_esc: event.close_on_esc,
-            },
-            Node {
-                width: percent(100),
-                height: percent(100),
-                position_type: PositionType::Absolute,
-                ..default()
-            },
-            GlobalZIndex(200),
-            Pickable::IGNORE,
-        ))
-        .add_child(backdrop_id);
+    cancel_dialog(&mut commands, dialog);
 }
 
 fn dismiss_dialog(commands: &mut Commands, entity: Entity) {
@@ -567,9 +506,21 @@ fn dismiss_dialog(commands: &mut Commands, entity: Entity) {
 }
 
 /// Take a dialog down with its question unanswered, telling whoever put it up.
+/// Escape can reach both the barrier and [`handle_esc_key`]; only the first
+/// to land answers.
 fn cancel_dialog(commands: &mut Commands, entity: Entity) {
-    commands.trigger(DialogDismissEvent { entity });
-    dismiss_dialog(commands, entity);
+    commands.queue(move |world: &mut World| {
+        if !world
+            .get_entity(entity)
+            .is_ok_and(|dialog| dialog.contains::<EditorDialog>())
+        {
+            return;
+        }
+        world.trigger(DialogDismissEvent { entity });
+        if let Ok(dialog) = world.get_entity_mut(entity) {
+            dialog.despawn();
+        }
+    });
 }
 
 fn sync_children_slot_visibility(
@@ -581,29 +532,6 @@ fn sync_children_slot_visibility(
         } else {
             Display::Flex
         };
-    }
-}
-
-fn handle_backdrop_click(
-    interactions: Query<&ChildOf, (Added<Pressed>, With<DialogBackdrop>)>,
-    panels: Query<Has<Pressed>, With<DialogPanel>>,
-    dialogs: Query<&DialogConfig, With<EditorDialog>>,
-    mut commands: Commands,
-) {
-    for child_of in &interactions {
-        let Ok(config) = dialogs.get(child_of.parent()) else {
-            continue;
-        };
-
-        if !config.close_on_click_outside {
-            continue;
-        }
-
-        if panels.iter().any(|pressed| pressed) {
-            continue;
-        }
-
-        cancel_dialog(&mut commands, child_of.parent());
     }
 }
 
@@ -686,22 +614,6 @@ fn on_cancel_button_click(
     mut commands: Commands,
 ) {
     let Ok(button_parent) = cancel_buttons.get(event.entity) else {
-        return;
-    };
-
-    if let Some(dialog_entity) = find_dialog_ancestor(button_parent.parent(), &parents, &dialogs) {
-        cancel_dialog(&mut commands, dialog_entity);
-    }
-}
-
-fn on_close_button_click(
-    event: On<ButtonClickEvent>,
-    close_buttons: Query<&ChildOf, With<DialogCloseButton>>,
-    parents: Query<&ChildOf>,
-    dialogs: Query<Entity, With<EditorDialog>>,
-    mut commands: Commands,
-) {
-    let Ok(button_parent) = close_buttons.get(event.entity) else {
         return;
     };
 

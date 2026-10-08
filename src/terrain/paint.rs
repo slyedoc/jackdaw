@@ -44,7 +44,7 @@ pub(super) fn plugin(app: &mut App) {
             draw_paint_brush_gizmo,
         )
             .chain()
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     );
 }
 

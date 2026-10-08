@@ -42,7 +42,7 @@ crate, and nothing editor-related.
 ## What the editor adds on top
 
 The `jackdaw` package is the official editor installation. The public
-`jackdaw_editor` crate exposes the `JackdawEditorPlugins` composition seam.
+`jackdaw` crate exposes the `JackdawEditorPlugins` composition seam.
 They depend on nearly everything
 else in the workspace. The interesting layers:
 

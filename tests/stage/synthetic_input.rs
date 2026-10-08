@@ -25,7 +25,7 @@ const REFERENCE: UVec2 = UVec2::new(2400, 1200);
 
 /// An editor with one 2D panel showing a canvas, framed so the whole of
 /// it fits, and a window big enough to hold the panel.
-fn canvas_app() -> (App, Entity) {
+fn canvas_app() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     util::fixed_frame_clock(&mut app);
     {
@@ -78,7 +78,7 @@ fn authored_panel(app: &mut App) -> Entity {
             },
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), root);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), root);
     let node = app
         .world_mut()
         .spawn((
@@ -94,7 +94,7 @@ fn authored_panel(app: &mut App) -> Entity {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), node);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), node);
     node
 }
 
@@ -840,7 +840,7 @@ fn ctrl_arrow_up_reorders_from_the_keyboard() {
             ChildOf(root),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(app.world_mut(), second);
+    jackdaw::scene_io::adopt_entity(app.world_mut(), second);
     app.world_mut().resource_mut::<Selection>().entities = vec![second];
     settle(&mut app);
 

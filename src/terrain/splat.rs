@@ -46,7 +46,7 @@ pub(super) fn plugin(app: &mut App) {
             refresh_slope_maps,
         )
             .chain()
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     );
 }
 

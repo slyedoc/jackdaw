@@ -38,7 +38,7 @@ pub(crate) fn plugin(app: &mut App) {
     app.add_systems(
         Update,
         (
-            drive_shot_probe.run_if(in_state(crate::AppState::Editor)),
+            drive_shot_probe.run_if(crate::editor_active),
             // Aurora publishes the queue; a headless app has no render loop to fill it.
             drain_window_captures.run_if(resource_exists::<bevy_aurora::util::ScreenshotRequests>),
         ),

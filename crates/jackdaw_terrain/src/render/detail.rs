@@ -1190,7 +1190,6 @@ mod tests {
             ScatterPrimitive {
                 mesh: meshes.add(AuroraMesh::from_mesh(&mesh).unwrap()),
                 material: Handle::default(),
-                material_name: None,
                 local: Transform::from_xyz(0.0, offset, 0.0),
             }
         };
@@ -1242,7 +1241,6 @@ mod tests {
         let primitives = vec![ScatterPrimitive {
             mesh: meshes.add(AuroraMesh::from_mesh(&leaning).unwrap()),
             material: Handle::default(),
-            material_name: None,
             local: stretched_fourfold_up,
         }];
 
@@ -1277,7 +1275,6 @@ mod tests {
         let primitives = vec![ScatterPrimitive {
             mesh: meshes.add(AuroraMesh::from_mesh(&flat).unwrap()),
             material: Handle::default(),
-            material_name: None,
             local: Transform::IDENTITY,
         }];
 

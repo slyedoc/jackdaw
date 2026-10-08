@@ -1,17 +1,17 @@
+use bevy::feathers::controls::{FeathersSelect, OptionIndex};
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
+use bevy::ui_widgets::ValueChange;
 use lucide_icons::Icon;
 
 use crate::button::{ButtonClickEvent, ButtonProps, ButtonVariant, EditorButton, button};
-use crate::combobox::{ComboBoxChangeEvent, ComboBoxOptionData, combobox_with_selected};
 use crate::icons::{EditorFont, IconFont};
-use crate::inspector_field::path_to_label;
 use crate::popover::{
     EditorPopover, PopoverHeaderProps, PopoverPlacement, PopoverProps, PopoverTracker,
     activate_trigger, deactivate_trigger, popover, popover_header,
 };
 use crate::tokens::{BORDER_COLOR, TEXT_MUTED_COLOR, TEXT_SIZE_SM};
-use crate::utils::is_descendant_of;
+use crate::utils::{is_descendant_of, option_rows_with_icons};
 
 pub fn plugin(app: &mut App) {
     app.add_observer(handle_variant_edit_click)
@@ -303,17 +303,13 @@ fn handle_variant_edit_click(
         .or_else(|| config.label.clone())
         .unwrap_or_else(|| path_to_label(&config.path));
 
-    let options: Vec<ComboBoxOptionData> = config
-        .variants
-        .iter()
-        .map(|v| {
-            let mut opt = ComboBoxOptionData::new(path_to_label(&v.name)).with_value(&v.name);
-            if let Some(icon) = v.icon {
-                opt = opt.with_icon(icon);
-            }
-            opt
-        })
-        .collect();
+    let options = option_rows_with_icons(
+        config
+            .variants
+            .iter()
+            .map(|v| (path_to_label(&v.name), v.icon)),
+        Some(config.selected_index),
+    );
 
     let default_width = 256.0;
     let popover_props = PopoverProps::new(trigger.entity)
@@ -359,10 +355,11 @@ fn handle_variant_edit_click(
         .id();
 
     let combo = commands
-        .spawn((
-            VariantComboBox(entity),
-            combobox_with_selected(options, config.selected_index),
-        ))
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: {options} }
+            Node { width: percent(100) }
+        })
+        .insert(VariantComboBox(entity))
         .id();
 
     commands.entity(combo_wrapper).add_child(combo);
@@ -393,15 +390,16 @@ fn handle_variant_edit_click(
 }
 
 fn handle_variant_combobox_change(
-    trigger: On<ComboBoxChangeEvent>,
+    trigger: On<ValueChange<Entity>>,
     variant_comboboxes: Query<&VariantComboBox>,
+    picked: Query<&OptionIndex>,
     mut variant_edits: Query<&mut VariantEditConfig, With<EditorVariantEdit>>,
     variant_edit_children: Query<&Children, With<EditorVariantEdit>>,
     captions: Query<(), With<crate::button::ButtonContentText>>,
     mut texts: Query<&mut Text>,
     children_query: Query<&Children>,
 ) {
-    let combobox_entity = trigger.entity;
+    let combobox_entity = trigger.source;
 
     let Ok(variant_combobox) = variant_comboboxes.get(combobox_entity) else {
         return;
@@ -412,7 +410,9 @@ fn handle_variant_combobox_change(
         return;
     };
 
-    let new_index = trigger.selected;
+    let Ok(&OptionIndex(new_index)) = picked.get(trigger.value) else {
+        return;
+    };
     if new_index == config.selected_index {
         return;
     }
@@ -431,4 +431,23 @@ fn handle_variant_combobox_change(
     {
         **text = path_to_label(&selected_variant.name);
     }
+}
+
+/// A field path's last step as a label: `blend_mode` and `blendMode` read "Blend mode".
+fn path_to_label(path: &str) -> String {
+    let name = path.rsplit('.').next().unwrap_or(path);
+    let mut label = String::new();
+    for (i, ch) in name.chars().enumerate() {
+        if ch == '_' {
+            label.push(' ');
+        } else if ch.is_uppercase() && i > 0 {
+            label.push(' ');
+            label.extend(ch.to_lowercase());
+        } else if i == 0 {
+            label.extend(ch.to_uppercase());
+        } else {
+            label.push(ch);
+        }
+    }
+    label
 }

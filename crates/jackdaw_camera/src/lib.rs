@@ -1,207 +1,198 @@
-use bevy::prelude::*;
+//! The viewport camera, in the shape of BEI's fly-cam example: an input context on the camera
+//! itself. Hold RMB to look and fly on WASD / E-Q (Shift fast); the wheel scales the fly speed,
+//! or zooms an orthographic view. The host activates the context of the camera it wants driven.
+
+use std::f32::consts::FRAC_PI_2;
+
+use bevy::{ecs::spawn::SpawnWith, prelude::*};
+use bevy_enhanced_input::prelude::*;
 
 pub struct JackdawCameraPlugin;
 
 impl Plugin for JackdawCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<CameraNavInput>()
-            .add_systems(Update, camera_system);
+        app.add_input_context::<EditorCamera>()
+            .add_observer(look)
+            .add_observer(fly)
+            .add_observer(rise)
+            .add_observer(wheel);
     }
 }
 
-/// Per-frame navigation input, populated by the host application.
-///
-/// The camera controller reads only this resource, so the editor can drive it
-/// from rebindable input actions while other hosts feed it directly.
-///
-/// The editor populates this in `PreUpdate` (after `EnhancedInputSystems::Update`)
-/// via `populate_camera_nav_input` in `src/input_contexts.rs`. The camera
-/// system runs in `Update`, so it always sees the freshly written frame value.
-#[derive(Resource, Default, Clone)]
-pub struct CameraNavInput {
-    /// Fly mode engaged (the editor binds this to RMB hold via a code-level
-    /// `Down` condition; see `src/input_contexts.rs`).
-    pub fly_active: bool,
-    /// Pointer delta this frame while navigating.
-    pub look_delta: Vec2,
-    /// Wheel movement this frame (positive = zoom in / forward).
-    pub zoom_ticks: f32,
-    /// Normalized movement intent in camera-local axes while flying
-    /// (x = right, y = up, z = forward). The host resolves WASD/QE from raw
-    /// keyboard because those keys are not yet BEI-managed this pass.
-    pub move_axes: Vec3,
-}
-
-/// Settings component placed on the camera entity to enable fly-camera controls.
-///
-/// Controls:
-/// - Right-click + drag: look around (yaw/pitch)
-/// - Right-click + WASD: move forward/back/left/right (view-relative)
-/// - Right-click + Q / E: move up / down (world-space Y)
-/// - Scroll wheel: move forward/back along view direction
-/// - Right-click + scroll: adjust camera speed
-/// - Shift (held): run speed multiplier while flying
-#[derive(Component)]
-pub struct JackdawCameraSettings {
-    /// Mouse look sensitivity (radians per pixel).
-    pub sensitivity: f32,
-    /// Base movement speed (units per second).
+/// Input context and settings of a viewport camera.
+#[derive(Component, Debug)]
+pub struct EditorCamera {
+    /// Units per second; the wheel scales it.
     pub speed: f32,
-    /// Speed multiplier when Shift is held.
-    pub run_multiplier: f32,
-    /// Whether camera controls are enabled. Set to false during UI focus, etc.
-    pub enabled: bool,
-    /// Scroll movement speed (units per scroll line).
-    pub scroll_speed: f32,
+    pub fast_multiplier: f32,
+    /// Radians per pointer pixel.
+    pub sensitivity: f32,
     /// Pitch the view down when the pointer moves away, rather than up.
     pub invert_y: bool,
 }
 
-impl Default for JackdawCameraSettings {
+impl Default for EditorCamera {
     fn default() -> Self {
         Self {
-            sensitivity: 0.003,
-            speed: 10.0,
-            run_multiplier: 2.0,
-            enabled: true,
-            scroll_speed: 1.0,
+            speed: 15.0,
+            fast_multiplier: 4.0,
+            sensitivity: 0.0025,
             invert_y: false,
         }
     }
 }
 
-fn camera_system(
-    // Shift raw read is intentionally kept: it is a speed modifier that
-    // compounds with `move_axes` but is not a navigation trigger, so it
-    // does not need to be preset-bindable this pass.
-    keyboard: Res<ButtonInput<KeyCode>>,
-    nav: Res<CameraNavInput>,
-    time: Res<Time>,
-    mut camera_query: Query<(
-        &mut JackdawCameraSettings,
-        &mut Transform,
-        Option<&mut Projection>,
-    )>,
-) {
-    let shift = keyboard.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let dt = time.delta_secs();
+/// RMB: look, and fly while held.
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct CameraHold;
 
-    for (mut settings, mut transform, projection) in &mut camera_query {
-        if !settings.enabled {
-            continue;
-        }
+#[derive(InputAction)]
+#[action_output(Vec2)]
+pub struct CameraLook;
 
-        let is_ortho = projection
-            .as_ref()
-            .is_some_and(|p| matches!(p.as_ref(), Projection::Orthographic(_)));
+/// Strafe / forward (x right, y forward), already per-second scaled.
+#[derive(InputAction)]
+#[action_output(Vec2)]
+pub struct CameraMove;
 
-        // Mouse look (only while fly mode is active; disabled in ortho
-        // so axis-locked views stay aligned).
-        if nav.fly_active && !is_ortho && nav.look_delta != Vec2::ZERO {
-            let (mut yaw, mut pitch, _) = transform.rotation.to_euler(EulerRot::YXZ);
-            yaw -= nav.look_delta.x * settings.sensitivity;
-            pitch -= pitch_direction(settings.invert_y) * nav.look_delta.y * settings.sensitivity;
-            pitch = pitch.clamp(
-                -std::f32::consts::FRAC_PI_2 + 0.01,
-                std::f32::consts::FRAC_PI_2 - 0.01,
-            );
-            transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0);
-        }
+/// Up (+) / down (-), already per-second scaled.
+#[derive(InputAction)]
+#[action_output(f32)]
+pub struct CameraRise;
 
-        // Scroll zoom. Ctrl+Alt (grid size shortcut) and Shift (brush/grid
-        // resize) skip zoom so those chords are not stolen.
-        let ctrl = keyboard.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]);
-        let alt = keyboard.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]);
-        if (!ctrl || !alt) && !shift && nav.zoom_ticks != 0.0 {
-            let mut projection = projection;
-            if nav.fly_active {
-                // Right-click + scroll: adjust speed.
-                settings.speed = (settings.speed * (1.0 + nav.zoom_ticks * 0.1)).clamp(0.5, 100.0);
-            } else if let Some(proj) = projection.as_deref_mut()
-                && let Projection::Orthographic(ortho) = proj
-            {
-                // Ortho zoom: smaller scale = closer view.
-                ortho.scale = (ortho.scale * (1.0 - nav.zoom_ticks * 0.1)).clamp(0.05, 1000.0);
-            } else {
-                // Perspective: dolly along view direction.
-                let forward = transform.forward().as_vec3();
-                transform.translation += forward * nav.zoom_ticks * settings.scroll_speed;
-            }
-        }
+#[derive(InputAction)]
+#[action_output(bool)]
+pub struct CameraFast;
 
-        // Fly movement. `move_axes` is in camera-local space (x=right, y=up,
-        // z=forward); the host resolves WASD/QE from raw keyboard this pass.
-        if nav.move_axes != Vec3::ZERO {
-            let movement = nav.move_axes.x * transform.right().as_vec3()
-                + nav.move_axes.y * Vec3::Y
-                + nav.move_axes.z * transform.forward().as_vec3();
-            if movement != Vec3::ZERO {
-                let speed_mult = if shift { settings.run_multiplier } else { 1.0 };
-                transform.translation += movement.normalize() * settings.speed * speed_mult * dt;
-            }
-        }
-    }
-}
+#[derive(InputAction)]
+#[action_output(f32)]
+pub struct CameraWheel;
 
-/// The sign a look delta's vertical component is applied with. Pointer
-/// coordinates grow downward, so the uninverted camera pitches up when
-/// the pointer moves away.
-fn pitch_direction(invert_y: bool) -> f32 {
-    if invert_y { -1.0 } else { 1.0 }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The pitch a look drag of `delta` leaves, from level.
-    fn pitch_after_look(invert_y: bool, delta: Vec2) -> f32 {
-        let mut app = App::new();
-        app.add_plugins((MinimalPlugins, JackdawCameraPlugin))
-            .init_resource::<ButtonInput<KeyCode>>();
-        app.insert_resource(CameraNavInput {
-            fly_active: true,
-            look_delta: delta,
-            ..Default::default()
-        });
-        let camera = app
-            .world_mut()
-            .spawn((
-                JackdawCameraSettings {
-                    invert_y,
-                    ..Default::default()
+/// An inactive [`EditorCamera`] with its actions; insert on a camera.
+pub fn editor_camera() -> impl Bundle {
+    (
+        EditorCamera::default(),
+        ContextActivity::<EditorCamera>::INACTIVE,
+        // Ahead of the tool keys, so a held fly swallows W/E/Q.
+        ContextPriority::<EditorCamera>::new(5),
+        Actions::<EditorCamera>::spawn(SpawnWith(|ctx: &mut ActionSpawner<EditorCamera>| {
+            let hold = ctx
+                .spawn((Action::<CameraHold>::new(), bindings![MouseButton::Right]))
+                .id();
+            let fast = ctx
+                .spawn((
+                    Action::<CameraFast>::new(),
+                    bindings![KeyCode::ShiftLeft, KeyCode::ShiftRight],
+                ))
+                .id();
+            ctx.spawn((
+                Action::<CameraLook>::new(),
+                Chord::single(hold),
+                Bindings::spawn(Spawn(Binding::mouse_motion())),
+            ));
+            ctx.spawn((
+                Action::<CameraMove>::new(),
+                Chord::single(hold),
+                ActionSettings {
+                    consume_input: true,
+                    ..default()
                 },
-                Transform::IDENTITY,
-            ))
-            .id();
-        app.update();
-        let (_, pitch, _) = app
-            .world()
-            .get::<Transform>(camera)
-            .expect("the camera kept its transform")
-            .rotation
-            .to_euler(EulerRot::YXZ);
-        pitch
-    }
+                DeadZone::default(),
+                DeltaScale::default(),
+                Bindings::spawn(Cardinal::wasd_keys()),
+            ));
+            ctx.spawn((
+                Action::<CameraRise>::new(),
+                Chord::single(hold),
+                ActionSettings {
+                    consume_input: true,
+                    ..default()
+                },
+                DeltaScale::default(),
+                Bindings::spawn(Bidirectional::new(KeyCode::KeyE, KeyCode::KeyQ)),
+            ));
+            // Shift+wheel resizes brushes.
+            ctx.spawn((
+                Action::<CameraWheel>::new(),
+                BlockBy::single(fast),
+                Bindings::spawn(Spawn((Binding::mouse_wheel(), SwizzleAxis::YXZ))),
+            ));
+        })),
+    )
+}
 
-    /// Pointer coordinates grow downward, so a drag away from the user
-    /// pitches the view up unless the setting says otherwise.
-    #[test]
-    fn inverting_y_reverses_the_pitch_a_look_drag_produces() {
-        let away = Vec2::new(0.0, -20.0);
-        let upright = pitch_after_look(false, away);
-        let inverted = pitch_after_look(true, away);
-        assert!(upright > 0.0, "the view pitched up: {upright}");
-        assert!(inverted < 0.0, "the view pitched down: {inverted}");
-        assert!((upright + inverted).abs() < 1e-6, "by the same amount");
+/// Ortho views are axis snaps, so they never turn.
+fn look(
+    look: On<Fire<CameraLook>>,
+    mut cameras: Query<(&EditorCamera, &mut Transform, Option<&Projection>)>,
+) {
+    let Ok((camera, mut tf, projection)) = cameras.get_mut(look.context) else {
+        return;
+    };
+    if matches!(projection, Some(Projection::Orthographic(_))) {
+        return;
     }
+    let pitch_sign = if camera.invert_y { -1.0 } else { 1.0 };
+    let (mut yaw, mut pitch, _) = tf.rotation.to_euler(EulerRot::YXZ);
+    yaw -= look.value.x * camera.sensitivity;
+    pitch = (pitch - pitch_sign * look.value.y * camera.sensitivity)
+        .clamp(-FRAC_PI_2 + 0.01, FRAC_PI_2 - 0.01);
+    tf.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0);
+}
 
-    #[test]
-    fn camera_nav_input_default_is_inactive() {
-        let nav = CameraNavInput::default();
-        assert!(!nav.fly_active);
-        assert_eq!(nav.look_delta, Vec2::ZERO);
-        assert_eq!(nav.zoom_ticks, 0.0);
-        assert_eq!(nav.move_axes, Vec3::ZERO);
+/// The camera's speed this frame, Shift included.
+fn speed(
+    context: Entity,
+    camera: &EditorCamera,
+    actions: &Query<&Actions<EditorCamera>>,
+    fast: &Query<&Action<CameraFast>>,
+) -> f32 {
+    let held = actions
+        .get(context)
+        .is_ok_and(|list| list.iter().any(|a| fast.get(a).is_ok_and(|v| **v)));
+    if held {
+        camera.speed * camera.fast_multiplier
+    } else {
+        camera.speed
+    }
+}
+
+fn fly(
+    mv: On<Fire<CameraMove>>,
+    mut cameras: Query<(&EditorCamera, &mut Transform)>,
+    actions: Query<&Actions<EditorCamera>>,
+    fast: Query<&Action<CameraFast>>,
+) {
+    let Ok((camera, mut tf)) = cameras.get_mut(mv.context) else {
+        return;
+    };
+    let speed = speed(mv.context, camera, &actions, &fast);
+    let step = tf.rotation * Vec3::new(mv.value.x, 0.0, -mv.value.y);
+    tf.translation += step * speed;
+}
+
+fn rise(
+    rise: On<Fire<CameraRise>>,
+    mut cameras: Query<(&EditorCamera, &mut Transform)>,
+    actions: Query<&Actions<EditorCamera>>,
+    fast: Query<&Action<CameraFast>>,
+) {
+    let Ok((camera, mut tf)) = cameras.get_mut(rise.context) else {
+        return;
+    };
+    let speed = speed(rise.context, camera, &actions, &fast);
+    tf.translation.y += rise.value * speed;
+}
+
+/// Speed x1.25 per notch; an ortho view zooms instead.
+fn wheel(wheel: On<Fire<CameraWheel>>, mut cameras: Query<(&mut EditorCamera, &mut Projection)>) {
+    let Ok((mut camera, mut projection)) = cameras.get_mut(wheel.context) else {
+        return;
+    };
+    if let Projection::Orthographic(ortho) = &mut *projection {
+        ortho.scale = (ortho.scale * 0.9_f32.powf(wheel.value)).clamp(0.05, 1000.0);
+    } else {
+        camera.speed = (camera.speed * 1.25_f32.powf(wheel.value)).clamp(0.5, 2000.0);
     }
 }

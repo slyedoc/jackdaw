@@ -26,7 +26,7 @@ impl Plugin for SnappingPlugin {
                 Update,
                 sync_grid_settings
                     .after(handle_grid_size_scroll)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

@@ -41,7 +41,7 @@ pub(crate) fn empty_config_dir() -> &'static std::path::Path {
 }
 
 /// Take `app` into the editor proper. A headless app is parked in
-/// `AppState::ProjectSelect`, and the panels that read the open project fail
+/// `AppState::Off`, and the panels that read the open project fail
 /// their parameter validation without one, so a project goes in first.
 pub(crate) fn enter_editor(app: &mut App) {
     use bevy::prelude::*;

@@ -752,7 +752,7 @@ fn view_menu_rows(app: &mut App) -> Vec<(String, String)> {
 
 /// An editor with one 2D viewport panel laid out, so its header's Snap
 /// menu has built its rows.
-fn snap_menu_app() -> (App, Entity) {
+fn snap_menu_app() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     let parent = build_panel(&mut app);
     (app, parent)

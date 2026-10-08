@@ -182,7 +182,7 @@ impl Plugin for TransformGizmosPlugin {
                 Update,
                 draw_gizmos
                     .after(gizmo_drag_invoke_trigger)
-                    .run_if(in_state(crate::AppState::Editor)),
+                    .run_if(crate::editor_active),
             );
     }
 }

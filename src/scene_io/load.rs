@@ -986,11 +986,14 @@ mod terrain_sidecar_import_tests {
 
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: data_path.to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: data_path.to_string(),
+                ..default()
+            },
+        ));
         (world, tmp.join("zone.bsn"))
     }
 
@@ -1071,11 +1074,14 @@ mod terrain_sidecar_import_tests {
         let tmp = unique_tmp_dir("missing");
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 4,
-            data_path: "gone.jdterrain".to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 4,
+                data_path: "gone.jdterrain".to_string(),
+                ..default()
+            },
+        ));
 
         import_terrain_sidecars(
             &mut world,
@@ -1140,12 +1146,15 @@ mod grid_settling_tests {
         // No stored geometry, so the declared rectangle places these cells.
         store.insert(data_path.to_string(), legacy_document(span));
         world.insert_resource(store);
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution,
-            size: Vec2::splat(100.0),
-            data_path: data_path.to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution,
+                size: Vec2::splat(100.0),
+                data_path: data_path.to_string(),
+                ..default()
+            },
+        ));
         world
     }
 
@@ -1197,12 +1206,15 @@ mod grid_settling_tests {
             let mut store = TerrainDataStore::default();
             store.insert(DATA_PATH.to_string(), legacy_document(4));
             world.insert_resource(store);
-            world.spawn(jackdaw_scene_types::Terrain {
-                resolution,
-                size,
-                data_path: DATA_PATH.to_string(),
-                ..default()
-            });
+            world.spawn((
+                crate::scene_io::SceneEntity,
+                jackdaw_scene_types::Terrain {
+                    resolution,
+                    size,
+                    data_path: DATA_PATH.to_string(),
+                    ..default()
+                },
+            ));
 
             settle_terrain_grids(&mut world);
 
@@ -1229,12 +1241,15 @@ mod grid_settling_tests {
         let mut store = TerrainDataStore::default();
         store.insert(DATA_PATH.to_string(), legacy_document(4));
         world.insert_resource(store);
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 1024,
-            size: Vec2::new(2000.0, 500.0),
-            data_path: DATA_PATH.to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 1024,
+                size: Vec2::new(2000.0, 500.0),
+                data_path: DATA_PATH.to_string(),
+                ..default()
+            },
+        ));
 
         settle_terrain_grids(&mut world);
 
@@ -1312,12 +1327,15 @@ mod grid_settling_tests {
 
         let mut world = World::new();
         world.insert_resource(TerrainDataStore::default());
-        world.spawn(jackdaw_scene_types::Terrain {
-            resolution: 256,
-            size: Vec2::splat(100.0),
-            data_path: data_path.to_string(),
-            ..default()
-        });
+        world.spawn((
+            crate::scene_io::SceneEntity,
+            jackdaw_scene_types::Terrain {
+                resolution: 256,
+                size: Vec2::splat(100.0),
+                data_path: data_path.to_string(),
+                ..default()
+            },
+        ));
         let scene = tmp.join("zone.bsn").to_string_lossy().to_string();
 
         let first = import_terrain_sidecars(&mut world, &scene, SidecarImport::FillMissing);

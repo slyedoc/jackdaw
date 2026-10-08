@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use bevy::asset::UntypedHandle;
 use bevy::picking::events::PointerDragDrop;
 use bevy::prelude::*;
-use bevy::reflect::PartialReflect;
 use jackdaw_api::prelude::AssetKinds;
 use jackdaw_feathers::picker::{
     PickerItems, PickerProps, SelectInput, SpawnItemInput, match_text, picker_item,
@@ -291,17 +290,6 @@ pub(crate) fn attach_asset_field(
     });
 }
 
-/// The asset a field names, ready for a row, or `None` when the field names no
-/// asset at all.
-pub(crate) fn asset_type_of_field(
-    registry: &AppTypeRegistry,
-    value: &dyn PartialReflect,
-) -> Option<String> {
-    let type_id = value.get_represented_type_info()?.type_id();
-    let registry = registry.read();
-    crate::typed_values::asset_type_path(&registry, type_id)
-}
-
 // -- Reading what a row shows ----------------------------------------------
 
 /// The path a row's field names, or `None` when the editor cannot read it.
@@ -340,7 +328,7 @@ fn component_field_text(
     let registry = registry.read();
     let registration = registry.get_with_type_path(type_path)?;
     let entity_ref = world.get_entity(source).ok()?;
-    let value = super::reflect_fields::inspected_value(world, entity_ref, registration, &registry)?;
+    let value = super::inspected_value(world, entity_ref, registration, &registry)?;
     let field = if field_path.is_empty() {
         value.as_partial_reflect()
     } else {
@@ -463,7 +451,7 @@ fn inspected_rows_changed(
     let Ok(entity_ref) = world.get_entity(primary) else {
         return false;
     };
-    super::reflect_fields::entity_components_changed(entity_ref, previous, this_run)
+    super::entity_components_changed(entity_ref, previous, this_run)
 }
 
 // -- Writing --------------------------------------------------------------

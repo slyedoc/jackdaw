@@ -83,11 +83,11 @@ Import never edits your Cargo manifest, lockfile, toolchain, or `target/`, so
 
 Jackdaw is a standalone editor. Game applications depend only on
 `jackdaw_runtime`. To build a custom standalone editor, depend on
-`jackdaw_editor`:
+`jackdaw`:
 
 ```rust
 use bevy::prelude::*;
-use jackdaw_editor::prelude::*;
+use jackdaw::prelude::*;
 
 fn main() -> AppExit {
     App::new()

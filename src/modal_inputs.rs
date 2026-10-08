@@ -74,35 +74,13 @@ pub struct ModalStepUp;
 #[action_output(bool)]
 pub struct ModalStepDown;
 
-/// Hold to enter fly-navigation mode (right mouse button, `Down` condition).
-///
-/// Bound code-level with `Binding::MouseButton { Right }` + `Down` so fly is
-/// active every frame RMB is held. This action is NOT registered in
-/// `BuiltinActions` and carries no `DefaultKeymap` entry: the binding is
-/// hard-wired here, not preset-bindable.
-#[derive(InputAction, Default)]
-#[action_output(bool)]
-pub struct NavFly;
-
-/// Mouse motion delta while navigating.
-///
-/// Bound code-level with `Binding::mouse_motion()`. Not preset-bindable:
-/// axis feeds drive a continuous value; only the activation chord (RMB) is
-/// the user-rebindable part, and that is gated by `NavFly.fly_active` in the
-/// populate system.
-#[derive(InputAction, Default)]
-#[action_output(Vec2)]
-pub struct NavLook;
-
 /// One scroll-up tick while in the nav context.
 ///
 /// Bound code-level with `Binding::mouse_wheel()` + `ScrollTick::new(true)`.
 /// Registered as `"nav.brush_resize_up"` in `BuiltinActions` and
 /// `DefaultKeymap` so keymap presets can rebind the resize chord. The
 /// terrain sculpt system gates on Shift held in keyboard, matching the
-/// pre-BEI behavior where scroll-resize and camera zoom coexist via the
-/// Shift guard in `jackdaw_camera` (the camera skips zoom when Shift is
-/// down; the resize system only fires when Shift is down).
+/// camera's wheel action, which Shift blocks.
 #[derive(InputAction, Default)]
 #[action_output(bool)]
 pub struct NavBrushResizeUp;

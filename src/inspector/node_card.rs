@@ -1,32 +1,51 @@
 //! The structured `Node` card: every layout field gets its own control,
 //! grouped into sections and described by the field tables below.
 
+use bevy::feathers::controls::{
+    FeathersNumberInput, FeathersSelect, HardLimit, NumberInputPrecision, OptionIndex, SoftLimit,
+    list_rows_from_strings,
+};
+use bevy::ui_widgets::NumericValue;
 use bevy::{
     ecs::system::SystemState,
     prelude::*,
     reflect::{GetPath, NamedField, ReflectRef, Typed, enums::EnumInfo},
-    ui::{Checked, InteractionDisabled},
+    ui::{Checked, InteractionDisabled, Selected},
     ui_widgets::ValueChange,
 };
 use jackdaw_feathers::{
-    combobox::{
-        ComboBoxChangeEvent, ComboBoxOptionData, ComboBoxSelectedIndex, combobox_with_selected,
-    },
     field_row::{FieldRowProps, spawn_field_row},
-    icons::{EditorFont, Icon, IconFont},
-    number_input::{
-        HardLimit, NumberInputPrecision, ScrubNumberInput, ScrubNumberInputValue, SoftLimit,
-    },
+    icons::{Icon, IconFont},
     panel_card::{PanelCardCollapseState, PanelCardProps, spawn_panel_card},
     segmented,
+    utils::{show_select_option, shown_select_option},
 };
 
-use super::val_field::{spawn_ui_rect_field, spawn_val_field};
 
 /// The reflect path of the component this card stands in for, and the card's
 /// `ComponentDisplayTypePath`.
 pub fn node_type_path() -> &'static str {
     <Node as bevy::reflect::TypePath>::type_path()
+}
+
+fn node_root(source: Entity) -> bevy::feathers_inspector::InspectorRoot {
+    bevy::feathers_inspector::InspectorRoot::Component {
+        entity: source,
+        type_id: std::any::TypeId::of::<Node>(),
+    }
+}
+
+/// One of the node's fields as the inspector draws it, under `parent`.
+fn node_field(
+    commands: &mut Commands,
+    parent: Entity,
+    source: Entity,
+    path: &'static str,
+    label: &'static str,
+) {
+    commands.queue(move |world: &mut World| {
+        bevy::feathers_inspector::build_field(world, node_root(source), path, label, parent);
+    });
 }
 
 /// Decimal places an optional-number row shows.
@@ -271,19 +290,8 @@ pub(crate) fn fill_node_card_body(world: &mut World, source: Entity, body: Entit
             .unwrap_or_default(),
     );
 
-    let editor_font = world
-        .get_resource::<EditorFont>()
-        .map(|font| font.0.clone())
-        .unwrap_or_default();
-    let type_registry = world
-        .get_resource::<AppTypeRegistry>()
-        .cloned()
-        .unwrap_or_default();
-
-    // The generic reflect renderer the track lists go to reads entity names,
-    // so this needs a real `Query` beside its `Commands`.
-    let mut state: SystemState<(Commands, Query<&Name>)> = SystemState::new(world);
-    if let Ok((mut commands, entity_names)) = state.get_mut(world) {
+    let mut state: SystemState<Commands> = SystemState::new(world);
+    if let Ok(mut commands) = state.get_mut(world) {
         commands.entity(body).insert(NodeCardBody);
         build_node_card(
             &mut commands,
@@ -292,9 +300,6 @@ pub(crate) fn fill_node_card_body(world: &mut World, source: Entity, body: Entit
             &node,
             &icon_font,
             &collapse,
-            &entity_names,
-            &type_registry,
-            &editor_font,
         );
     }
     state.apply(world);
@@ -324,10 +329,6 @@ fn section(
     .body
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the card's own inputs plus what the generic renderer needs for the track lists"
-)]
 fn build_node_card(
     commands: &mut Commands,
     body: Entity,
@@ -335,9 +336,6 @@ fn build_node_card(
     node: &Node,
     icon_font: &Handle<Font>,
     collapse: &PanelCardCollapseState,
-    entity_names: &Query<&Name>,
-    type_registry: &AppTypeRegistry,
-    editor_font: &Handle<Font>,
 ) {
     crate::ui_layout_presets::spawn_preset_row(commands, body, icon_font);
 
@@ -356,26 +354,8 @@ fn build_node_card(
     for field in [&OVERFLOW_X, &OVERFLOW_Y, &CLIP_VISUAL_BOX] {
         spawn_enum_combo(commands, overflow, source, node, field);
     }
-    super::reflect_fields::spawn_numeric_field_row(
-        commands,
-        overflow,
-        "scrollbar width",
-        f64::from(node.scrollbar_width),
-        "scrollbar_width".to_string(),
-        source,
-        node_type_path(),
-        false,
-    );
-    super::reflect_fields::spawn_numeric_field_row(
-        commands,
-        overflow,
-        "clip margin",
-        f64::from(node.overflow_clip_margin.margin),
-        "overflow_clip_margin.margin".to_string(),
-        source,
-        node_type_path(),
-        false,
-    );
+    node_field(commands, overflow, source, "scrollbar_width", "scrollbar width");
+    node_field(commands, overflow, source, "overflow_clip_margin.margin", "clip margin");
 
     let position = section(
         commands,
@@ -386,22 +366,8 @@ fn build_node_card(
         collapse,
         false,
     );
-    for (name, value) in [
-        ("left", node.left),
-        ("top", node.top),
-        ("right", node.right),
-        ("bottom", node.bottom),
-    ] {
-        spawn_val_field(
-            commands,
-            position,
-            name,
-            value,
-            0,
-            name.to_string(),
-            source,
-            node_type_path(),
-        );
+    for name in ["left", "top", "right", "bottom"] {
+        node_field(commands, position, source, name, name);
     }
 
     let size = section(
@@ -413,24 +379,15 @@ fn build_node_card(
         collapse,
         false,
     );
-    for (name, path, value) in [
-        ("width", "width", node.width),
-        ("height", "height", node.height),
-        ("min width", "min_width", node.min_width),
-        ("min height", "min_height", node.min_height),
-        ("max width", "max_width", node.max_width),
-        ("max height", "max_height", node.max_height),
+    for (name, path) in [
+        ("width", "width"),
+        ("height", "height"),
+        ("min width", "min_width"),
+        ("min height", "min_height"),
+        ("max width", "max_width"),
+        ("max height", "max_height"),
     ] {
-        spawn_val_field(
-            commands,
-            size,
-            name,
-            value,
-            0,
-            path.to_string(),
-            source,
-            node_type_path(),
-        );
+        node_field(commands, size, source, path, name);
     }
     spawn_optional_number(commands, size, source, node, &ASPECT_RATIO);
     spawn_enum_combo(commands, size, source, node, &BOX_SIZING);
@@ -470,56 +427,18 @@ fn build_node_card(
         collapse,
         false,
     );
-    for (name, value) in [
-        ("margin", node.margin),
-        ("padding", node.padding),
-        ("border", node.border),
-    ] {
-        spawn_ui_rect_field(
-            commands,
-            spacing,
-            name,
-            value,
-            0,
-            name.to_string(),
-            source,
-            node_type_path(),
-        );
+    for name in ["margin", "padding", "border"] {
+        node_field(commands, spacing, source, name, name);
     }
-    for (name, path, value) in [
-        ("row gap", "row_gap", node.row_gap),
-        ("column gap", "column_gap", node.column_gap),
-        (
-            "radius top left",
-            "border_radius.top_left.x",
-            node.border_radius.top_left.x,
-        ),
-        (
-            "radius top right",
-            "border_radius.top_right.x",
-            node.border_radius.top_right.x,
-        ),
-        (
-            "radius bottom right",
-            "border_radius.bottom_right.x",
-            node.border_radius.bottom_right.x,
-        ),
-        (
-            "radius bottom left",
-            "border_radius.bottom_left.x",
-            node.border_radius.bottom_left.x,
-        ),
+    for (name, path) in [
+        ("row gap", "row_gap"),
+        ("column gap", "column_gap"),
+        ("radius top left", "border_radius.top_left.x"),
+        ("radius top right", "border_radius.top_right.x"),
+        ("radius bottom right", "border_radius.bottom_right.x"),
+        ("radius bottom left", "border_radius.bottom_left.x"),
     ] {
-        spawn_val_field(
-            commands,
-            spacing,
-            name,
-            value,
-            0,
-            path.to_string(),
-            source,
-            node_type_path(),
-        );
+        node_field(commands, spacing, source, path, name);
     }
 
     let flex = section(
@@ -534,31 +453,10 @@ fn build_node_card(
     for field in [&FLEX_DIRECTION, &FLEX_WRAP] {
         spawn_enum_combo(commands, flex, source, node, field);
     }
-    for (name, path, value) in [
-        ("grow", "flex_grow", node.flex_grow),
-        ("shrink", "flex_shrink", node.flex_shrink),
-    ] {
-        super::reflect_fields::spawn_numeric_field_row(
-            commands,
-            flex,
-            name,
-            f64::from(value),
-            path.to_string(),
-            source,
-            node_type_path(),
-            false,
-        );
+    for (name, path) in [("grow", "flex_grow"), ("shrink", "flex_shrink")] {
+        node_field(commands, flex, source, path, name);
     }
-    spawn_val_field(
-        commands,
-        flex,
-        "basis",
-        node.flex_basis,
-        0,
-        "flex_basis".to_string(),
-        source,
-        node_type_path(),
-    );
+    node_field(commands, flex, source, "flex_basis", "basis");
     spawn_enum_combo(commands, flex, source, node, &DIRECTION);
 
     let grid = section(
@@ -587,23 +485,7 @@ fn build_node_card(
         ("auto rows", "grid_auto_rows"),
         ("auto columns", "grid_auto_columns"),
     ] {
-        let Some(value) = <Node as bevy::prelude::Struct>::field(node, path) else {
-            continue;
-        };
-        super::reflect_fields::spawn_field_row(
-            commands,
-            grid,
-            label,
-            value,
-            0,
-            path.to_string(),
-            source,
-            node_type_path(),
-            entity_names,
-            type_registry,
-            editor_font,
-            icon_font,
-        );
+        node_field(commands, grid, source, path, label);
     }
 }
 
@@ -681,20 +563,12 @@ fn spawn_enum_combo(
 ) {
     let row = spawn_field_row(commands, parent, FieldRowProps::new(field.label));
     let current = field.current(node);
-    let options: Vec<ComboBoxOptionData> = field
-        .variants()
-        .iter()
-        .map(|variant| ComboBoxOptionData::new(*variant))
-        .collect();
     commands
-        .spawn((
-            combobox_with_selected(options, current),
-            ChildOf(row.control),
-        ))
-        .insert((
-            NodeEnumCombo { source, field },
-            ComboBoxSelectedIndex(current),
-        ));
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(field.variants(), Some(current)) }
+            Node { width: percent(100) }
+        })
+        .insert((NodeEnumCombo { source, field }, ChildOf(row.control)));
 }
 
 /// Write path shared by both enum controls, minting the same undo-backed
@@ -714,11 +588,10 @@ fn commit_variant(
         return;
     };
     commands.queue(move |world: &mut World| {
-        super::reflect_fields::apply_enum_variant_with_undo(
+        bevy::feathers_inspector::set_variant(
             world,
-            source,
-            node_type_path(),
-            field.path,
+            &node_root(source),
+            &bevy::feathers_inspector::recurse::parse_path(field.path),
             variant,
         );
     });
@@ -739,17 +612,18 @@ fn on_segment_change(
 }
 
 pub(crate) fn on_node_enum_change(
-    event: On<ComboBoxChangeEvent>,
+    event: On<ValueChange<Entity>>,
     combos: Query<&NodeEnumCombo>,
+    options: Query<&OptionIndex>,
     mut commands: Commands,
 ) {
-    let Ok(combo) = combos.get(event.entity) else {
+    let Ok(combo) = combos.get(event.source) else {
         return;
     };
-    if false {
+    let Ok(&OptionIndex(selected)) = options.get(event.value) else {
         return;
-    }
-    commit_variant(&mut commands, combo.source, combo.field, event.selected);
+    };
+    commit_variant(&mut commands, combo.source, combo.field, selected);
 }
 
 /// Keep the segmented controls showing what the component holds.
@@ -773,20 +647,21 @@ pub fn paint_node_segments(
     }
 }
 
-/// Same job for the dropdowns, which repaint themselves from
-/// `ComboBoxSelectedIndex`.
+/// Same job for the dropdowns, without a change event.
 pub fn refresh_node_enum_combos(
     nodes: Query<&Node>,
-    combos: Query<(Entity, &NodeEnumCombo, &ComboBoxSelectedIndex)>,
+    combos: Query<(Entity, &NodeEnumCombo)>,
+    children: Query<&Children>,
+    shown: Query<&OptionIndex, With<Selected>>,
     mut commands: Commands,
 ) {
-    for (entity, combo, shown) in &combos {
+    for (entity, combo) in &combos {
         let Ok(node) = nodes.get(combo.source) else {
             continue;
         };
         let live = combo.field.current(node);
-        if live != shown.0 {
-            commands.entity(entity).insert(ComboBoxSelectedIndex(live));
+        if shown_select_option(entity, &children, &shown) != Some(live) {
+            commands.queue(show_select_option(entity, live));
         }
     }
 }
@@ -843,31 +718,22 @@ fn spawn_optional_number(
         },
     ));
 
-    let options: Vec<ComboBoxOptionData> = OPTIONAL_MODES
-        .iter()
-        .map(|mode| ComboBoxOptionData::new(*mode))
-        .collect();
     let mode_index = usize::from(value.is_some());
     commands
-        .spawn((
-            combobox_with_selected(options, mode_index),
-            ChildOf(row.control),
-        ))
-        .insert((
-            NodeOptionalMode(row.row),
-            ComboBoxSelectedIndex(mode_index),
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(OPTIONAL_MODES, Some(mode_index)) }
             Node {
                 width: px(OPTIONAL_MODE_WIDTH),
                 min_width: px(OPTIONAL_MODE_MIN_WIDTH),
                 flex_shrink: 1.0,
-                ..Default::default()
-            },
-        ));
+            }
+        })
+        .insert((NodeOptionalMode(row.row), ChildOf(row.control)));
 
     let number = commands
-        .spawn_scene(bsn! { @ScrubNumberInput })
+        .spawn_scene(bsn! { @FeathersNumberInput })
         .insert((
-            ScrubNumberInputValue::F64(value.unwrap_or_default()),
+            NumericValue::F64(value.unwrap_or_default()),
             NumberInputPrecision(if field.integer { 0 } else { RATIO_PRECISION }),
             NodeOptionalInput(row.row),
             ChildOf(row.control),
@@ -877,9 +743,9 @@ fn spawn_optional_number(
     let low = *field.range.start();
     let high = *field.range.end();
     if field.integer {
-        commands.entity(number).insert(HardLimit::f64(low..high));
+        commands.entity(number).insert(HardLimit::f64(low..=high));
     } else {
-        commands.entity(number).insert(SoftLimit::f64(low..high));
+        commands.entity(number).insert(SoftLimit::f64(low..=high));
     }
     if value.is_none() {
         commands.entity(number).insert(InteractionDisabled);
@@ -928,7 +794,7 @@ fn sync_optional_widgets(world: &mut World, root: Entity) {
         let Ok(mut entity) = world.get_entity_mut(input) else {
             continue;
         };
-        entity.insert(ScrubNumberInputValue::F64(value.unwrap_or_default()));
+        entity.insert(NumericValue::F64(value.unwrap_or_default()));
         if value.is_some() {
             entity.remove::<InteractionDisabled>();
         } else {
@@ -943,9 +809,7 @@ fn sync_optional_widgets(world: &mut World, root: Entity) {
         .map(|(entity, _)| entity)
         .collect();
     for mode in modes {
-        if let Ok(mut entity) = world.get_entity_mut(mode) {
-            entity.insert(ComboBoxSelectedIndex(usize::from(value.is_some())));
-        }
+        show_select_option(mode, usize::from(value.is_some())).apply(world);
     }
 }
 
@@ -968,7 +832,7 @@ pub(crate) fn on_optional_number_change(
     let is_final = event.is_final;
     commands
         .entity(source)
-        .insert(ScrubNumberInputValue::F64(value));
+        .insert(NumericValue::F64(value));
     commands.queue(move |world: &mut World| {
         let Some(mut state) = world.get_mut::<NodeOptionalNumber>(root) else {
             return;
@@ -982,19 +846,23 @@ pub(crate) fn on_optional_number_change(
 }
 
 pub(crate) fn on_optional_number_mode_change(
-    event: On<ComboBoxChangeEvent>,
+    event: On<ValueChange<Entity>>,
     modes: Query<&NodeOptionalMode>,
+    options: Query<&OptionIndex>,
     rows: Query<&NodeOptionalNumber>,
     mut commands: Commands,
 ) {
-    let Ok(mode) = modes.get(event.entity) else {
+    let Ok(mode) = modes.get(event.source) else {
+        return;
+    };
+    let Ok(&OptionIndex(selected)) = options.get(event.value) else {
         return;
     };
     let root = mode.0;
     if rows.get(root).ok().map(|row| row.source).is_none() {
         return;
     }
-    let set = event.selected == 1;
+    let set = selected == 1;
     commands.queue(move |world: &mut World| {
         let Some(mut state) = world.get_mut::<NodeOptionalNumber>(root) else {
             return;

@@ -878,24 +878,25 @@ mod tests {
     #[test]
     fn a_wheel_turn_reaches_the_window_as_lines() {
         let mut world = World::new();
-        world.init_resource::<Messages<MouseWheel>>();
         world.init_resource::<Messages<WindowEvent>>();
         let window = world.spawn_empty().id();
         emit(&mut world, window, Emit::Wheel(Vec2::new(0.0, -3.0)));
 
         let turned = world
-            .run_system_once(|mut wheel: MessageReader<MouseWheel>| {
-                wheel.read().copied().collect::<Vec<_>>()
+            .run_system_once(|mut events: MessageReader<WindowEvent>| {
+                events
+                    .read()
+                    .filter_map(|event| match event {
+                        WindowEvent::MouseWheel(wheel) => Some(*wheel),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
             })
             .expect("the reader runs");
         assert_eq!(turned.len(), 1);
         assert_eq!(turned[0].unit, MouseScrollUnit::Line);
         assert_eq!((turned[0].x, turned[0].y), (0.0, -3.0));
         assert_eq!(turned[0].window, window);
-        let combined = world
-            .run_system_once(|mut events: MessageReader<WindowEvent>| events.read().count())
-            .expect("the reader runs");
-        assert_eq!(combined, 1, "the combined window stream carries it too");
     }
 
     #[test]

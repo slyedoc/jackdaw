@@ -15,7 +15,7 @@ use crate::selection::Selection;
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(
         Update,
-        update_terrain_inspector.run_if(in_state(crate::AppState::Editor)),
+        update_terrain_inspector.run_if(crate::editor_active),
     );
 }
 

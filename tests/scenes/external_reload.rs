@@ -9,10 +9,10 @@ use jackdaw::scenes::external_watch::{
     ExternalReloadChoice, ExternalSceneChanges, ExternalSceneWatchPlugin, answer_external_change,
 };
 
-const ALPHA: &str = "#Alpha\nbevy_transform::components::transform::Transform\n";
-const BETA: &str = "#Beta\nbevy_transform::components::transform::Transform\n";
-/// The removed facade UI vocabulary, which every load path refuses.
-const RETIRED: &str = "#Overlay\njackdaw_ui::UiCanvas\n";
+const ALPHA: &str = "bevy_ecs::hierarchy::Children [\n    #Alpha\n    bevy_transform::components::transform::Transform\n]\n";
+const BETA: &str = "bevy_ecs::hierarchy::Children [\n    #Beta\n    bevy_transform::components::transform::Transform\n]\n";
+/// A type this build does not know, which every load path refuses.
+const RETIRED: &str = "bevy_ecs::hierarchy::Children [\n    #Overlay\n    jackdaw_ui::UiCanvas\n]\n";
 
 fn make_app() -> App {
     use bevy::winit::WinitPlugin;
@@ -20,7 +20,6 @@ fn make_app() -> App {
     let mut app = App::new();
     app.add_plugins(bevy::app::PluginGroup::build(DefaultPlugins).disable::<WinitPlugin>());
     app.add_plugins(jackdaw_scene_types::SceneTypesPlugin::default());
-    app.add_plugins(jackdaw_bsn::BsnDocumentPlugin);
     app.init_resource::<jackdaw::commands::CommandHistory>();
     app.init_resource::<jackdaw::scene_io::SceneFilePath>();
     app.init_resource::<jackdaw::scene_io::SceneDirtyState>();
@@ -286,13 +285,13 @@ fn a_refused_reload_keeps_the_open_scene_and_says_so() {
     );
     assert_eq!(
         refused.category,
-        jackdaw::scene_io::RefusalCategory::Retired,
+        jackdaw::scene_io::RefusalCategory::NotSpawned,
         "and classifies why, so the notice can lead with it",
     );
     let notice = refused.description();
     assert!(
         notice.contains("zone.bsn")
-            && notice.contains(jackdaw::scene_io::RefusalCategory::Retired.label()),
+            && notice.contains(jackdaw::scene_io::RefusalCategory::NotSpawned.label()),
         "the notice the user reads names the file and the reason: {notice}",
     );
     assert!(
@@ -543,7 +542,7 @@ fn keep_is_not_asked_again_about_the_same_bytes() {
 /// Keep cannot have answered for it.
 #[test]
 fn a_write_during_the_prompt_is_asked_about_after_keep() {
-    const GAMMA: &str = "#Gamma\nbevy_transform::components::transform::Transform\n";
+    const GAMMA: &str = "bevy_ecs::hierarchy::Children [\n    #Gamma\n    bevy_transform::components::transform::Transform\n]\n";
 
     let tmp = tempfile::tempdir().unwrap();
     let scene = tmp.path().join("zone.bsn");
@@ -566,18 +565,17 @@ fn a_write_during_the_prompt_is_asked_about_after_keep() {
     );
 }
 
-/// An outside edit can turn a scene file into a prefab, and a prefab document
+/// An outside edit can turn a scene file into a root file, and a root file
 /// left in a Scene tab would be saved back as a plain scene.
 #[test]
-fn a_reload_that_brings_a_prefab_retypes_the_tab() {
-    const PREFAB: &str = "#Rock\njackdaw::prefab::components::Prefab\n";
+fn a_reload_that_brings_a_root_file_retypes_the_tab() {
+    const PREFAB: &str = "#Rock\nbevy_transform::components::transform::Transform\n";
 
     let tmp = tempfile::tempdir().unwrap();
     let scene = tmp.path().join("zone.bsn");
     std::fs::write(&scene, ALPHA).unwrap();
 
     let mut app = make_app();
-    app.init_resource::<jackdaw::prefab::PrefabAstCache>();
     open_and_settle(&mut app, &scene);
     assert!(
         matches!(
@@ -596,29 +594,20 @@ fn a_reload_that_brings_a_prefab_retypes_the_tab() {
         matches!(scenes.tabs[0].kind, jackdaw::scenes::TabKind::Prefab),
         "what came off disk decides what the tab is",
     );
-    assert!(
-        matches!(
-            scenes.tabs[0].content,
-            jackdaw::scenes::TabContent::Prefab(_)
-        ),
-        "and the content follows the kind, so a capture cannot write it back \
-         out as a scene",
-    );
 }
 
-/// A prefab file open in a tab is a document the user is editing, so an outside
+/// A root file open in a tab is a document the user is editing, so an outside
 /// edit to it has to be a question, the same way it is for a scene.
 #[test]
-fn an_outside_edit_to_an_open_prefab_raises_a_prompt() {
-    const ROCK: &str = "#Rock\njackdaw::prefab::components::Prefab\n";
-    const BOULDER: &str = "#Boulder\njackdaw::prefab::components::Prefab\n";
+fn an_outside_edit_to_an_open_root_file_raises_a_prompt() {
+    const ROCK: &str = "#Rock\nbevy_transform::components::transform::Transform\n";
+    const BOULDER: &str = "#Boulder\nbevy_transform::components::transform::Transform\n";
 
     let tmp = tempfile::tempdir().unwrap();
     let prefab = tmp.path().join("rock.bsn");
     std::fs::write(&prefab, ROCK).unwrap();
 
     let mut app = make_app();
-    app.init_resource::<jackdaw::prefab::PrefabAstCache>();
     open_and_settle(&mut app, &prefab);
     assert!(
         matches!(

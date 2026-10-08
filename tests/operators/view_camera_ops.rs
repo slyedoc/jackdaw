@@ -14,7 +14,7 @@ use crate::util::OperatorResultExt as _;
 
 /// An editor with one viewport camera, which is what
 /// `resolve_frame_camera` needs to answer without a hovered panel.
-fn app_with_a_camera() -> (App, Entity) {
+fn app_with_a_camera() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     let camera = app
         .world_mut()

@@ -30,7 +30,7 @@ pub(super) fn plugin(app: &mut App) {
         Update,
         (region_pick_trigger, draw_region_grid)
             .chain()
-            .run_if(in_state(crate::AppState::Editor)),
+            .run_if(crate::editor_active),
     );
 }
 

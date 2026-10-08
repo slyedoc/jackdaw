@@ -181,13 +181,13 @@ holds project-scoped editor settings:
 
 ## Custom editor composition
 
-Programmatic configuration goes through `jackdaw_editor` and its
+Programmatic configuration goes through `jackdaw` and its
 `JackdawEditorPlugins` plugin group:
 
 ```rust
 App::new()
     .add_plugins(EnhancedInputPlugin)
-    .add_plugins(jackdaw_editor::JackdawEditorPlugins::default())
+    .add_plugins(jackdaw::prelude::JackdawEditorPlugins::default())
     .run();
 ```
 

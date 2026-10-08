@@ -27,7 +27,7 @@ const NODE: &str = "bevy_ui::ui_node::Node";
 
 /// An editor holding one UI scene whose fill bar binds `Node.width`, with
 /// preview off. Returns the fill entity.
-fn scene_with_a_bound_width() -> (App, Entity) {
+fn scene_with_a_bound_width() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     app.register_type::<Vitals>();
 
@@ -48,8 +48,8 @@ fn scene_with_a_bound_width() -> (App, Entity) {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, fill);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, fill);
     // The operator is only available with a primary selection, so a test that
     // never selects would pass on the dispatch being refused.
     app.world_mut().resource_mut::<Selection>().entities = vec![fill];
@@ -103,7 +103,7 @@ fn a_previewed_component_cannot_be_removed_until_the_session_ends() {
 
 /// A widget in the same scene whose binding drives its collider, carrying
 /// the physics pair `physics.disable` would take off. Returns that entity.
-fn scene_with_a_bound_collider() -> (App, Entity) {
+fn scene_with_a_bound_collider() -> (util::TestApp, Entity) {
     let mut app = util::editor_test_app();
     app.register_type::<Vitals>();
 
@@ -126,8 +126,8 @@ fn scene_with_a_bound_collider() -> (App, Entity) {
             }]),
         ))
         .id();
-    jackdaw::scene_io::register_entity_in_ast(world, root);
-    jackdaw::scene_io::register_entity_in_ast(world, solid);
+    jackdaw::scene_io::adopt_entity(world, root);
+    jackdaw::scene_io::adopt_entity(world, solid);
     app.world_mut().resource_mut::<Selection>().entities = vec![solid];
     app.update();
     (app, solid)

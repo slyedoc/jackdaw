@@ -159,7 +159,7 @@ impl Plugin for TextureFilesPlugin {
         app.init_resource::<AssetPreviewState>().add_systems(
             Update,
             (extract_array_layers, remove_incompatible_image_nodes)
-                .run_if(in_state(crate::AppState::Editor)),
+                .run_if(crate::editor_active),
         );
     }
 }

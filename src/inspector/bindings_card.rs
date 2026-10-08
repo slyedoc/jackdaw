@@ -8,22 +8,22 @@
 
 use bevy::ecs::component::ComponentInfo;
 use bevy::ecs::reflect::{AppTypeRegistry, ReflectComponent, ReflectResource};
-use bevy::feathers::controls::FeathersCheckbox;
+use bevy::feathers::controls::{
+    FeathersCheckbox, FeathersMenu, FeathersMenuButton, FeathersMenuItem, FeathersMenuPopup,
+    FeathersSelect, OptionIndex, list_rows_from_strings,
+};
+use bevy::feathers::theme::ThemedText;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::reflect::{TypeInfo, serde::TypedReflectSerializer};
 use bevy::ui::{Checked, InteractionDisabled};
-use bevy::ui_widgets::ValueChange;
+use bevy::ui_widgets::{Activate, ValueChange};
 use jackdaw_api::prelude::*;
 use jackdaw_bind::{BindError, BindPath, Binding, Bindings, ParsedPath};
 use jackdaw_feathers::{
     button::{ButtonClickEvent, ButtonProps, ButtonSize, ButtonVariant, button},
-    combobox::{
-        ComboBoxChangeEvent, ComboBoxOptionData, ComboBoxSelectedIndex, combobox_with_label,
-        combobox_with_selected,
-    },
     field_row::{FieldRowProps, spawn_field_row},
-    icons::Icon,
+    icons::{Icon, icon_scene},
     text_edit::{TextEditCommitEvent, TextEditProps, text_edit},
     tokens,
     tooltip::Tooltip,
@@ -47,16 +47,18 @@ const PICKER_WIDTH: f32 = 96.0;
 /// How far a picker gives way before the row wraps it onto its own line.
 const PICKER_MIN_WIDTH: f32 = 72.0;
 
-/// Node for a path row's type and field pickers, which share a line and give
+/// A path row's type or field picker, sharing a line with its sibling and giving
 /// way together. The floor comes from the basis and the row's wrap rather than
 /// a `min_width`, which would clip the picker on a very narrow panel.
-fn picker_node() -> Node {
-    Node {
-        flex_grow: 1.0,
-        flex_shrink: 1.0,
-        flex_basis: Val::Px(PICKER_WIDTH),
-        min_width: Val::Px(0.0),
-        ..Default::default()
+fn picker(options: impl IntoIterator<Item: AsRef<str>>, selected: usize) -> impl Scene {
+    bsn! {
+        @FeathersSelect { @options: list_rows_from_strings(options, Some(selected)) }
+        Node {
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            flex_basis: px(PICKER_WIDTH),
+            min_width: px(0.0),
+        }
     }
 }
 
@@ -70,9 +72,7 @@ pub struct BindingRowLabel;
 
 /// The footer's Add Binding menu.
 #[derive(Component)]
-pub struct AddBindingMenu {
-    source: Entity,
-}
+pub struct AddBindingMenu;
 
 /// What a picker on this card would write, in option order.
 #[derive(Component)]
@@ -1384,20 +1384,19 @@ fn spawn_path_row(
     if slot != PathSlot::Write {
         let selected = usize::from(is_resource);
         commands
-            .spawn((
-                combobox_with_selected(
-                    vec![
-                        ComboBoxOptionData::new("Component"),
-                        ComboBoxOptionData::new("Resource"),
-                    ],
-                    selected,
-                ),
-                ChildOf(row.control),
-            ))
-            // The widget carries its own `Node`, so the narrower width goes on
-            // afterwards rather than into the bundle beside it.
+            .spawn_scene(bsn! {
+                @FeathersSelect {
+                    @options: list_rows_from_strings(["Component", "Resource"], Some(selected)),
+                }
+                Node {
+                    width: px(PICKER_MIN_WIDTH),
+                    // Gives way with the pickers beside it rather than pushing
+                    // them off a narrow row.
+                    flex_shrink: 1.0,
+                    min_width: px(0.0),
+                }
+            })
             .insert((
-                ComboBoxSelectedIndex(selected),
                 BindingOptions(vec!["Component".to_string(), "Resource".to_string()]),
                 BindingControl::for_event_field(
                     source,
@@ -1405,14 +1404,7 @@ fn spawn_path_row(
                     BindControl::PathSource(slot),
                     &event_field,
                 ),
-                Node {
-                    width: Val::Px(PICKER_MIN_WIDTH),
-                    // Gives way with the pickers beside it rather than pushing
-                    // them off a narrow row.
-                    flex_shrink: 1.0,
-                    min_width: Val::Px(0.0),
-                    ..Default::default()
-                },
+                ChildOf(row.control),
             ));
     }
 
@@ -1429,15 +1421,11 @@ fn spawn_path_row(
         .position(|option| *option == type_path)
         .unwrap_or(0);
     commands
-        .spawn((
-            combobox_with_selected(
-                offered
-                    .iter()
-                    .map(|path| ComboBoxOptionData::new(short_of(path)).with_value(path))
-                    .collect::<Vec<_>>(),
-                selected,
-            ),
-            ComboBoxSelectedIndex(selected),
+        .spawn_scene(picker(
+            offered.iter().map(|path| short_of(path)),
+            selected,
+        ))
+        .insert((
             BindingOptions(offered),
             BindingControl::for_event_field(
                 source,
@@ -1446,23 +1434,15 @@ fn spawn_path_row(
                 &event_field,
             ),
             ChildOf(row.control),
-        ))
-        .insert(picker_node());
+        ));
 
     // A marker names no field, so the row stops at the type picker.
     if !SchemaCtx::lookup(types, &type_path).is_some_and(|option| option.marker) {
         let fields = offered_with_current(fields, &field);
         let selected = fields.iter().position(|name| *name == field).unwrap_or(0);
         commands
-            .spawn((
-                combobox_with_selected(
-                    fields
-                        .iter()
-                        .map(|name| ComboBoxOptionData::new(name).with_value(name))
-                        .collect::<Vec<_>>(),
-                    selected,
-                ),
-                ComboBoxSelectedIndex(selected),
+            .spawn_scene(picker(fields.iter(), selected))
+            .insert((
                 BindingOptions(fields),
                 BindingControl::for_event_field(
                     source,
@@ -1471,8 +1451,7 @@ fn spawn_path_row(
                     &event_field,
                 ),
                 ChildOf(row.control),
-            ))
-            .insert(picker_node());
+            ));
     }
 
     if removable && let PathSlot::Read(i) = slot {
@@ -1609,23 +1588,22 @@ fn spawn_optional_picker(
         .iter()
         .position(|name| name == current)
         .map_or(0, |index| index + 1);
-    let mut options = vec![ComboBoxOptionData::new("none")];
-    options.extend(
-        offered
-            .iter()
-            .map(|name| ComboBoxOptionData::new(short_of(name)).with_value(name)),
-    );
+    let mut options = vec!["none".to_string()];
+    options.extend(offered.iter().map(|name| short_of(name).to_string()));
     let mut values = vec![String::new()];
     values.extend(offered);
 
     let row = spawn_field_row(commands, parent, FieldRowProps::new(label));
-    commands.spawn((
-        combobox_with_selected(options, selected),
-        ComboBoxSelectedIndex(selected),
-        BindingOptions(values),
-        BindingControl::new(source, index, control),
-        ChildOf(row.control),
-    ));
+    commands
+        .spawn_scene(bsn! {
+            @FeathersSelect { @options: list_rows_from_strings(options, Some(selected)) }
+            Node { width: percent(100) }
+        })
+        .insert((
+            BindingOptions(values),
+            BindingControl::new(source, index, control),
+            ChildOf(row.control),
+        ));
 }
 
 fn spawn_checkbox(
@@ -1731,23 +1709,47 @@ fn spawn_footer(commands: &mut Commands, parent: Entity, source: Entity) {
             ChildOf(parent),
         ))
         .id();
-    commands.spawn((
-        combobox_with_label(
-            BindKind::ALL
-                .iter()
-                .map(|kind| ComboBoxOptionData::new(kind.label()).with_icon(kind.icon()))
-                .collect::<Vec<_>>(),
-            "Add Binding",
-        ),
-        BindingOptions(
-            BindKind::ALL
-                .iter()
-                .map(|kind| kind.label().to_string())
-                .collect(),
-        ),
-        AddBindingMenu { source },
-        ChildOf(row),
-    ));
+    let items: Vec<Box<dyn SceneList>> = BindKind::ALL
+        .iter()
+        .map(|&kind| -> Box<dyn SceneList> {
+            let glyph = kind.icon().unicode();
+            let label = kind.label().to_string();
+            bsn! {
+                @FeathersMenuItem {
+                    @caption: bsn_list! {
+                        @icon_scene(glyph, tokens::TEXT_SIZE_PX)
+                        --
+                        Text(label) ThemedText
+                    },
+                }
+                Node { column_gap: px(tokens::SPACING_SM) }
+                on(move |_: On<Activate>, mut commands: Commands| {
+                    commands.queue(move |world: &mut World| {
+                        apply(world, source, |list| {
+                            list.push(kind.new_binding(None));
+                            true
+                        });
+                    });
+                })
+            }
+            .into()
+        })
+        .collect();
+    commands
+        .spawn_scene(bsn! {
+            @FeathersMenu
+            Node { width: percent(100) }
+            Children [
+                @FeathersMenuButton {
+                    @caption: bsn_list! { Text("Add Binding") ThemedText },
+                }
+                Node { flex_grow: 1.0 }
+                --
+                @FeathersMenuPopup
+                Children [ {Box::new(items) as Box<dyn SceneList>} ]
+            ]
+        })
+        .insert((AddBindingMenu, ChildOf(row)));
 }
 
 /// Build the new `Bindings` value and commit it whole. Every mutation on this
@@ -2218,50 +2220,34 @@ fn apply_to(
 }
 
 pub(crate) fn on_binding_combobox_change(
-    event: On<ComboBoxChangeEvent>,
+    event: On<ValueChange<Entity>>,
     controls: Query<&BindingControl>,
     options: Query<&BindingOptions>,
+    rows: Query<&OptionIndex>,
     variants: Query<&VariantComboBox>,
-    menus: Query<&AddBindingMenu>,
     mut commands: Commands,
 ) {
-    // The footer menu adds; nothing else on the card does.
-    if let Ok(menu) = menus.get(event.entity) {
-        let Some(kind) = BindKind::ALL.get(event.selected).copied() else {
-            return;
-        };
-        let source = menu.source;
-        commands.queue(move |world: &mut World| {
-            apply(world, source, |list| {
-                list.push(kind.new_binding(None));
-                true
-            });
-        });
+    let Ok(&OptionIndex(selected)) = rows.get(event.value) else {
         return;
-    }
-
+    };
     // The kind picker's dropdown lives inside the variant-edit popover, so its
-    // event arrives on the popover's combobox, not the card's own control.
+    // event arrives on the popover's select, not the card's own control.
     let owner = variants
-        .get(event.entity)
-        .map_or(event.entity, |variant| variant.0);
+        .get(event.source)
+        .map_or(event.source, |variant| variant.0);
     let Ok(control) = controls.get(owner) else {
         return;
     };
     let (source, index, event_field) =
         (control.source, control.binding, control.event_field.clone());
-    // The widget's own value wins; the recorded option list is the fallback for
-    // an index-only change.
-    let picked = event.value.clone().or_else(|| {
-        options
-            .get(event.entity)
-            .ok()
-            .and_then(|options| options.0.get(event.selected).cloned())
-    });
+    let picked = options
+        .get(event.source)
+        .ok()
+        .and_then(|options| options.0.get(selected).cloned());
 
     match control.control {
         BindControl::Kind => {
-            let Some(kind) = BindKind::ALL.get(event.selected).copied() else {
+            let Some(kind) = BindKind::ALL.get(selected).copied() else {
                 return;
             };
             apply_to(&mut commands, source, index, move |binding| {
@@ -2277,7 +2263,7 @@ pub(crate) fn on_binding_combobox_change(
         BindControl::PathSource(slot) => {
             // The type list changes with the source, so the row lands on the
             // first entry of the new list.
-            let to_resource = event.selected == 1;
+            let to_resource = selected == 1;
             commands.queue(move |world: &mut World| {
                 let ctx = SchemaCtx::gather(world, source);
                 let types: &[TypeOption] = if to_resource {
