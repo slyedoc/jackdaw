@@ -57,7 +57,7 @@ pub fn ensure_scene_environment(world: &mut World) -> Option<Entity> {
     let entity = world
         .spawn((
             Name::new("Environment"),
-            Environment,
+            Environment::default(),
             SceneEnvironment,
             Transform::IDENTITY,
             AuthoredComponents(HashSet::default()),

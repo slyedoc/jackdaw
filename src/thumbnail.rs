@@ -445,7 +445,7 @@ fn setup_thumbnail_stage(
         .spawn((
             Name::new("Thumbnail Environment"),
             crate::EditorEntity,
-            Environment,
+            Environment::default(),
         ))
         .id();
     thumbnails.stage = Some(stage);

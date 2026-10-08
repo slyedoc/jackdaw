@@ -22,7 +22,6 @@ use super::registration::{
 };
 use super::save::save_scene_inner;
 use super::{SceneDirtyState, SceneFilePath};
-use avian3d::environment::PhysicsEnvironment;
 
 #[derive(Resource)]
 pub(super) enum SceneDialogTask {
@@ -106,6 +105,9 @@ pub struct SceneFile {
     pub bytes: Vec<u8>,
     /// The file's root is a wrapper (no name, no patches) holding the scene's top-level entities.
     pub wrapped: bool,
+    /// The file's root is unnamed but carries components: those are its environment's settings
+    /// (sky, exposure, physics), and its children are the scene.
+    pub environment: bool,
 }
 
 /// Read and parse a scene file, without touching the open scene.
@@ -130,6 +132,7 @@ pub fn read_scene_file(world: &World, path: &Path) -> Result<SceneFile, LoadRefu
         )
     })?;
     let wrapped = is_wrapper(&document);
+    let environment = is_environment_root(&document);
     let asset_path = asset_path_of(world, path);
     Ok(SceneFile {
         path: path.to_path_buf(),
@@ -137,10 +140,22 @@ pub fn read_scene_file(world: &World, path: &Path) -> Result<SceneFile, LoadRefu
         text,
         bytes,
         wrapped,
+        environment,
     })
 }
 
 /// Whether the document's one root only holds the scene's top-level entities.
+/// Whether the document's one root is an environment: no name of its own, settings on it.
+fn is_environment_root(document: &BsnDocument) -> bool {
+    let [root] = document.roots[..] else {
+        return false;
+    };
+    matches!(
+        document.node(root).map(|node| &node.kind),
+        Some(BsnNodeKind::Entity { name: None, base: None, patches, .. }) if !patches.is_empty()
+    )
+}
+
 fn is_wrapper(document: &BsnDocument) -> bool {
     let [root] = document.roots[..] else {
         return false;
@@ -235,7 +250,7 @@ fn try_spawn(world: &mut World, file: &SceneFile) -> Attempt {
     world
         .entity_mut(root)
         .remove::<(ScenePatchInstance, SceneInstanceState)>();
-    let roots = if world.get::<PhysicsEnvironment>(root).is_some() {
+    let roots = if file.environment {
         // An environment scene: the root is the tab's environment, the children its scene.
         let children: Vec<Entity> = world
             .get::<Children>(root)
@@ -278,6 +293,7 @@ pub fn spawn_bsn_text(world: &mut World, text: &str, source: &str) -> Result<Vec
         text: text.to_string(),
         bytes: Vec::new(),
         wrapped: is_wrapper(&document),
+        environment: is_environment_root(&document),
     };
     match try_spawn(world, &file) {
         Attempt::Spawned(roots) => Ok(roots),

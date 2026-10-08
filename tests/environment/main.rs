@@ -119,8 +119,8 @@ fn an_authored_setting_saves_as_the_files_root_and_reopens_on_the_environment() 
     );
     assert!(root.contains("Atmosphere"), "and the sky:\n{text}");
     assert!(
-        root.contains("bevy_aurora::environment::Environment"),
-        "and names itself an environment:\n{text}"
+        !root.contains("bevy_aurora::environment::Environment"),
+        "settings only: whoever spawns the file makes it an environment:\n{text}"
     );
     assert!(
         !root.contains("Name"),
@@ -140,11 +140,7 @@ fn an_authored_setting_saves_as_the_files_root_and_reopens_on_the_environment() 
     ));
     let mut set = authored(&reopened, environment);
     set.sort();
-    let mut want = vec![
-        TypeId::of::<Environment>(),
-        TypeId::of::<EnvironmentExposure>(),
-        TypeId::of::<Sky>(),
-    ];
+    let mut want = vec![TypeId::of::<EnvironmentExposure>(), TypeId::of::<Sky>()];
     want.sort();
     assert_eq!(set, want, "what the file set is what it authored");
     let rock = named(&mut reopened, "Rock");
@@ -231,8 +227,14 @@ fn an_environment_added_from_the_menu_nests_in_the_scene_and_saves_with_it() {
         .call()
         .expect("the operator dispatched");
     settle(&mut app);
-    let nested = named(&mut app, "Environment");
     let tab = environment(&app);
+    let nested = app
+        .world_mut()
+        .query::<(Entity, &Name)>()
+        .iter(app.world())
+        .find(|(entity, name)| name.as_str() == "Environment" && *entity != tab)
+        .map(|(entity, _)| entity)
+        .expect("a nested environment spawned");
     assert_ne!(nested, tab, "a new entity, not the tab's own environment");
     assert!(app.world().get::<Environment>(nested).is_some());
     assert!(
@@ -258,5 +260,134 @@ fn an_environment_added_from_the_menu_nests_in_the_scene_and_saves_with_it() {
     assert!(
         children.contains("bevy_aurora::environment::Environment"),
         "saved as one of the scene's entities:\n{text}"
+    );
+}
+
+#[test]
+fn a_file_opened_beside_another_tab_renders_in_that_tab() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::copy(
+        fixture_dir().join("jackdaw.toml"),
+        tmp.path().join("jackdaw.toml"),
+    )
+    .expect("the manifest copies");
+    let assets = tmp.path().join("assets");
+    std::fs::create_dir_all(&assets).expect("an assets folder");
+    let mut app = util::editor_test_app_at(&assets);
+    app.world_mut()
+        .insert_resource(jackdaw::project::ProjectRoot {
+            root: tmp.path().to_path_buf(),
+            config: default(),
+        });
+    app.world_mut()
+        .resource_mut::<NextState<jackdaw::AppState>>()
+        .set(jackdaw::AppState::Editor);
+    app.update();
+    settle(&mut app);
+    // Beside an untitled tab, as the editor opens a project with one restored.
+    let _ = app
+        .world_mut()
+        .operator("scene.new")
+        .call()
+        .expect("the operator dispatched");
+    settle(&mut app);
+    std::fs::write(
+        assets.join("rig.bsn"),
+        "#rig\nbevy_transform::components::transform::Transform\nbevy_ecs::hierarchy::Children [\n    #Bone\n    bevy_transform::components::transform::Transform\n]\n",
+    )
+    .expect("the rig is written");
+    let character = assets.join("character.bsn");
+    std::fs::write(
+        &character,
+        "#character\nbevy_transform::components::transform::Transform\nbevy_ecs::hierarchy::Children [\n    :\"rig.bsn\"\n    bevy_transform::components::transform::Transform\n]\n",
+    )
+    .expect("the character is written");
+    jackdaw::scenes::operators::scene_open_system(app.world_mut(), &character);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        app.update();
+        let spawned = app
+            .world_mut()
+            .query::<&Name>()
+            .iter(app.world())
+            .any(|n| n.as_str() == "Bone");
+        if spawned {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    settle(&mut app);
+
+    let scenes = app.world().resource::<jackdaw::scenes::Scenes>();
+    assert_eq!(scenes.tabs.len(), 2, "opened as a tab of its own");
+    let tab = environment(&app);
+    let bit = app
+        .world()
+        .resource::<bevy_aurora::environment::RenderEnvironments>()
+        .bit(tab)
+        .expect("the tab has a render bit");
+    assert!(bit > 0, "a tab renders apart from the editor's own bit");
+
+    // The open document's bone: the asset browser renders a thumbnail copy of the file too.
+    let bone = app
+        .world_mut()
+        .query_filtered::<(Entity, &Name), With<jackdaw::scene_io::SceneEntity>>()
+        .iter(app.world())
+        .find(|(_, n)| n.as_str() == "Bone")
+        .map(|(e, _)| e)
+        .expect("the tab's bone");
+    assert_eq!(
+        app.world()
+            .get::<bevy_aurora::environment::InEnvironment>(bone)
+            .map(|e| e.0),
+        Some(bit),
+        "the nested rig's bones render in the tab's bit",
+    );
+    let mut cameras = app.world_mut().query_filtered::<
+        Option<&bevy::camera::visibility::RenderLayers>,
+        With<jackdaw::viewport::MainViewportCamera>,
+    >();
+    for layers in cameras.iter(app.world()) {
+        assert!(
+            layers.is_some_and(|l| l.intersects(&bevy::camera::visibility::RenderLayers::layer(bit as usize))),
+            "the viewport sees the active tab: {layers:?}",
+        );
+    }
+}
+
+#[test]
+fn a_nested_environment_saves_without_its_bit() {
+    let (mut app, _tmp, scene) = editor_on(TWO_ROOTS);
+    let _ = app
+        .world_mut()
+        .operator("entity.add.environment")
+        .call()
+        .expect("the operator dispatched");
+    settle(&mut app);
+    assert!(jackdaw::scene_io::save_scene(app.world_mut()));
+    let text = std::fs::read_to_string(&scene).expect("saved");
+    let line = text
+        .lines()
+        .find(|l| l.contains("bevy_aurora::environment::Environment"))
+        .unwrap_or_else(|| panic!("the nested environment is saved:\n{text}"));
+    assert_eq!(
+        line.trim(),
+        "bevy_aurora::environment::Environment",
+        "the file asks for an environment, not a bit:\n{text}"
+    );
+
+    jackdaw::scenes::operators::scene_open_system(app.world_mut(), &scene);
+    settle(&mut app);
+    let tab = environment(&app);
+    let reopened: Vec<Option<u8>> = app
+        .world_mut()
+        .query::<(Entity, &Environment)>()
+        .iter(app.world())
+        .filter(|(entity, _)| *entity != tab)
+        .map(|(_, e)| e.0)
+        .collect();
+    assert!(
+        reopened.iter().any(Option::is_some),
+        "reopened, it takes a bit again: {reopened:?}"
     );
 }

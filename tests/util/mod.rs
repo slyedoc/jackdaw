@@ -98,6 +98,19 @@ pub fn editor_test_app() -> TestApp {
     app
 }
 
+/// [`editor_test_app`] reading assets from `assets`, so a scene's nested scenes resolve.
+#[expect(clippy::allow_attributes, reason = "Some tests use this")]
+#[allow(dead_code, reason = "Some tests use this")]
+pub fn editor_test_app_at(assets: &std::path::Path) -> TestApp {
+    let mut app = ambient_app_at(assets);
+    add_editor_plugins(&mut app);
+    app.finish();
+    // First tick runs Startup + extension auto-enable so every
+    // built-in's operator entities are spawned.
+    app.update();
+    app
+}
+
 /// Advance the app's clock by a fixed step per frame, so gestures measured
 /// in seconds (double clicks, spring loads) read the same on a loaded
 /// runner as on a fast machine.

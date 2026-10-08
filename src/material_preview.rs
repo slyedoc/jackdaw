@@ -114,7 +114,7 @@ fn setup_material_preview_scene(
         .spawn((
             Name::new("Material Preview Environment"),
             crate::EditorEntity,
-            Environment,
+            Environment::default(),
         ))
         .id();
     commands.spawn((
