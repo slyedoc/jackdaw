@@ -67,16 +67,15 @@ cargo run
 ```
 
 This launches the standalone binary. `main.rs` adds
-`jackdaw_runtime::JackdawPlugin`, which registers the asset
-loader for `.bsn` files, and the template's `GamePlugin`
-spawns a `JackdawSceneRoot` pointing at `scene.bsn`. No editor
+`jackdaw_runtime::JackdawPlugin`, and the template's `GamePlugin`
+puts a `ScenePatchInstance` of `scene.bsn` on the main environment. No editor
 in the loop. The cube sits where you placed it, and any
 components you attached in the inspector are alive on the
 entity.
 
-Bevy cannot load `.bsn` on its own; the loader ships in
-`jackdaw_runtime`, which is an ordinary dependency of your
-crate.
+`jackdaw_runtime` is an ordinary dependency of your crate: it brings
+up what the editor authored (terrain, navmesh, colliders) once the
+scene has spawned.
 
 ## What you have now
 

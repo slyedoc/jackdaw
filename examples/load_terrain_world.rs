@@ -3,7 +3,7 @@
 //! ground rather than through it.
 //!
 //! The game side is an asset folder with the files the editor wrote,
-//! `JackdawPlugin` added after `AuroraDefaultPlugins`, and a `JackdawSceneRoot`
+//! `JackdawPlugin` added after `AuroraDefaultPlugins`, and a `ScenePatchInstance`
 //! pointed at the scene. Nothing registers anything, nothing exports anything,
 //! and no code here knows how a `.jdterrain` or a `.jdnav` is laid out.
 //!
@@ -221,7 +221,7 @@ fn open_scene(
     mut meshes: ResMut<Assets<AuroraMesh>>,
     mut materials: ResMut<Assets<AuroraMaterial>>,
 ) {
-    commands.spawn(JackdawSceneRoot(assets.load("scene.bsn")));
+    commands.spawn(ScenePatchInstance(assets.load("scene.bsn")));
     commands.spawn((
         Camera3d::default(),
         TerrainViewer,

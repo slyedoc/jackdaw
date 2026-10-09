@@ -80,16 +80,13 @@ impl std::fmt::Display for MigrationError {
 pub fn runtime_wiring_note() -> String {
     format!(
         "to load your authored .bsn scenes in the game, add the runtime:\n\
-         \x20   cargo add jackdaw_runtime@{version} --features physics,pie\n\
+         \x20   cargo add jackdaw_runtime@{version} --features physics\n\
          then in your GamePlugin's build():\n\
          \x20   app.add_plugins(jackdaw_runtime::JackdawPlugin);\n\
          \x20   // in a startup system:\n\
-         \x20   commands.spawn(jackdaw_runtime::prelude::JackdawSceneRoot(\n\
+         \x20   commands.spawn(jackdaw_runtime::prelude::ScenePatchInstance(\n\
          \x20       asset_server.load(\"scene.bsn\"),\n\
-         \x20   ));\n\
-         the `pie` feature is what lets the editor's Play button drive your\n\
-         game: Play builds and runs your own binary, and the two talk over\n\
-         a link that feature installs.",
+         \x20   ));",
         version = crate::scene_io::stamp::BEVY_VERSION
     )
 }

@@ -64,6 +64,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(
             Update,
             (
+                adopt_lone_terrain,
                 update_terrain_panel_content,
                 sync_shape_fields,
                 sync_gen_fields,
@@ -370,6 +371,27 @@ fn textures_signature(data_path: &str, refs: &TexturesTabRefs) -> TexturesSignat
         } else {
             Vec::new()
         },
+    }
+}
+
+/// With nothing selected, the scene's one terrain is selected as the Terrain panel comes into
+/// view or the terrain is added: the panel and its operators work on the selection.
+fn adopt_lone_terrain(
+    mut selection: ResMut<Selection>,
+    terrains: Query<Entity, (With<jackdaw_scene_types::Terrain>, With<crate::scene_io::SceneEntity>)>,
+    added: Query<(), Added<jackdaw_scene_types::Terrain>>,
+    bodies: Query<&ComputedNode, With<TerrainPanelBody>>,
+    mut was_shown: Local<bool>,
+    mut commands: Commands,
+) {
+    let shown = bodies.iter().any(|node| node.size() != Vec2::ZERO);
+    let appeared = shown && !*was_shown;
+    *was_shown = shown;
+    if !(appeared || shown && !added.is_empty()) || !selection.entities.is_empty() {
+        return;
+    }
+    if let Ok(terrain) = terrains.single() {
+        selection.select_single(&mut commands, terrain);
     }
 }
 

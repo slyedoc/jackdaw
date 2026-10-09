@@ -2,7 +2,7 @@
 //!
 //! 1. Add `jackdaw_runtime` to your `Cargo.toml`
 //! 2. Add `JackdawPlugin` to your app
-//! 3. Spawn a `JackdawSceneRoot` with an asset server load
+//! 3. Spawn a `ScenePatchInstance` with an asset server load
 //!
 //! The scene includes the camera, lights, brushes, and any other
 //! entities saved from the editor.
@@ -20,7 +20,7 @@ fn main() -> AppExit {
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(JackdawSceneRoot(
+    commands.spawn(ScenePatchInstance(
         asset_server.load("examples/scenes/scene.bsn"),
     ));
 }

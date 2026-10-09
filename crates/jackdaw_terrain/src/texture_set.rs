@@ -195,15 +195,6 @@ pub enum TextureSetError {
         material: String,
         first: usize,
     },
-    /// Texture arrays require every layer to share one size, so one
-    /// mismatched file makes the whole set unusable.
-    MismatchedSize {
-        entry: usize,
-        material: String,
-        path: String,
-        found: (u32, u32),
-        expected: (u32, u32),
-    },
 }
 
 impl core::fmt::Display for TextureSetError {
@@ -252,18 +243,6 @@ impl core::fmt::Display for TextureSetError {
                 "slots {first} and {entry} both use material '{material}'; \
                  each slot is one texture id and needs its own material"
             ),
-            Self::MismatchedSize {
-                entry,
-                material,
-                path,
-                found,
-                expected,
-            } => write!(
-                f,
-                "material '{material}' (slot {entry}) texture '{path}' is {}x{}, but this \
-                 terrain's textures are {}x{}; every texture must be the same size",
-                found.0, found.1, expected.0, expected.1
-            ),
         }
     }
 }
@@ -273,9 +252,6 @@ impl core::error::Error for TextureSetError {}
 impl TextureSet {
     /// Check everything that can be checked without opening the texture
     /// files: entry count, paths, UV scales, repeated materials.
-    ///
-    /// Size agreement needs the decoded images and is checked by
-    /// [`check_layer_sizes`] once they load.
     pub fn validate(&self) -> Result<(), TextureSetError> {
         if self.entries.is_empty() {
             return Err(TextureSetError::Empty);
@@ -357,31 +333,6 @@ impl TextureSet {
     }
 }
 
-/// Agree the layer sizes of a texture array, or name the first file that
-/// disagrees.
-///
-/// The first layer sets the expected size, so the error points at the odd
-/// one out rather than at layer 0. Callers pass the sizes they decoded;
-/// nothing here opens a file.
-pub fn check_layer_sizes(
-    layers: &[(usize, &str, &str, (u32, u32))],
-) -> Result<(u32, u32), TextureSetError> {
-    let Some((_, _, _, expected)) = layers.first().copied() else {
-        return Err(TextureSetError::Empty);
-    };
-    for (entry, material, path, found) in layers.iter().copied() {
-        if found != expected {
-            return Err(TextureSetError::MismatchedSize {
-                entry,
-                material: material.to_string(),
-                path: path.to_string(),
-                found,
-                expected,
-            });
-        }
-    }
-    Ok(expected)
-}
 
 #[cfg(test)]
 mod tests {
@@ -597,37 +548,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn matching_layer_sizes_report_the_shared_size() {
-        let layers = [
-            (0, "grass", "a.png", (256, 256)),
-            (1, "rock", "b.png", (256, 256)),
-        ];
-        assert_eq!(check_layer_sizes(&layers), Ok((256, 256)));
-    }
-
-    #[test]
-    fn a_mismatched_layer_names_the_material_not_the_first_entry() {
-        let layers = [
-            (0, "grass", "a.png", (256, 256)),
-            (1, "rock", "b.png", (256, 256)),
-            (2, "sand", "odd.png", (512, 256)),
-        ];
-        let err = check_layer_sizes(&layers).expect_err("mismatch");
-        assert_eq!(
-            err,
-            TextureSetError::MismatchedSize {
-                entry: 2,
-                material: "sand".to_string(),
-                path: "odd.png".to_string(),
-                found: (512, 256),
-                expected: (256, 256),
-            }
-        );
-        let message = err.to_string();
-        assert!(message.contains("sand"), "{message}");
-        assert!(message.contains("odd.png"), "{message}");
-        assert!(message.contains("512x256"), "{message}");
-        assert!(message.contains("256x256"), "{message}");
-    }
 }

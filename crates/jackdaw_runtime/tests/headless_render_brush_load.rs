@@ -13,11 +13,11 @@
 //! Run: `cargo test -p jackdaw_runtime --test headless_render_brush_load`
 #![cfg(feature = "render")]
 
-use std::path::PathBuf;
+mod support;
 
 use bevy::prelude::*;
 use bevy::reflect::TypePath;
-use jackdaw_runtime::{JackdawPlugin, JackdawScene, JackdawSceneRoot};
+use jackdaw_runtime::JackdawPlugin;
 
 /// One face with an UNASSIGNED material: the `material` field is omitted so it
 /// reflects to the default `Handle<StandardMaterial>`, exactly as a face that
@@ -32,14 +32,9 @@ normal: glam::Vec3 {{ x: {:?}, y: {:?}, z: {:?} }}, distance: {:?} }} }}",
 
 #[test]
 fn null_material_brush_loads_headless_under_render_feature() {
-    let mut app = App::new();
-    // `render` feature is ON (so `material` is `Handle<StandardMaterial>`), but
-    // NO rendering plugins are added -- this is the dedicated-server shape.
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(bevy::transform::TransformPlugin);
-    app.add_plugins(bevy::asset::AssetPlugin::default());
-    app.add_plugins(bevy::world_serialization::WorldSerializationPlugin);
-    app.add_plugins(JackdawPlugin);
+    // `render` feature is ON, but NO rendering plugins are added: the dedicated-server shape.
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = support::game(dir.path());
 
     let brush_type_path = <jackdaw_scene_types::Brush as TypePath>::type_path();
 
@@ -54,16 +49,8 @@ fn null_material_brush_loads_headless_under_render_feature() {
     .join(",\n        ");
     let scene = format!("{brush_type_path} {{\n    faces: [\n        {faces},\n    ],\n}}\n");
 
-    let scene_handle = app
-        .world_mut()
-        .resource_mut::<Assets<JackdawScene>>()
-        .add(JackdawScene::new(scene, PathBuf::new()));
-    app.world_mut().spawn(JackdawSceneRoot(scene_handle));
-
-    // First update runs the scene-load loop; the second covers the insert
-    // observer firing. Neither must panic on the absent render asset stores.
-    app.update();
-    app.update();
+    // Neither the load nor the insert observer may panic on the absent render asset stores.
+    support::spawn_text(&mut app, dir.path(), "brush.bsn", &scene);
 
     let mut brush_query = app.world_mut().query::<&jackdaw_scene_types::Brush>();
     let brushes: Vec<_> = brush_query.iter(app.world()).collect();

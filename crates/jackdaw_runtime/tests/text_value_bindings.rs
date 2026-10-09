@@ -5,9 +5,10 @@
 //! the other. This covers the composition that joins them, over the document
 //! the editor writes.
 
+mod support;
+
 use bevy::prelude::*;
 use bevy::text::EditableText;
-use jackdaw_runtime::{JackdawPlugin, JackdawScene, JackdawSceneRoot};
 use jackdaw_widgets_runtime::TextValue;
 
 #[derive(Resource, Reflect, Default)]
@@ -17,7 +18,7 @@ struct Form {
 }
 
 const SCENE: &str = r#"
-bevy_ecs::hierarchy::Children [
+Children [
     #Name
     jackdaw_widgets_runtime::TextValue("")
     jackdaw_bind::types::Bindings([
@@ -28,16 +29,11 @@ bevy_ecs::hierarchy::Children [
 
 #[test]
 fn a_loaded_text_input_follows_its_source_and_is_followed_by_it() {
-    let mut app = runtime_app();
-    let scene = app
-        .world_mut()
-        .resource_mut::<Assets<JackdawScene>>()
-        .add(JackdawScene::new(SCENE.into(), ".".into()));
-    app.world_mut().spawn(JackdawSceneRoot(scene));
-    app.update();
-    app.update();
+    let dir = tempfile::tempdir().unwrap();
+    let mut app = runtime_app(dir.path());
+    support::spawn_text(&mut app, dir.path(), "form.bsn", SCENE);
 
-    let input = named_entity(app.world_mut(), "Name");
+    let input = support::named(app.world_mut(), "Name");
     assert!(
         app.world().get::<TextValue>(input).is_some(),
         "the authored text value loaded"
@@ -149,13 +145,8 @@ fn bound_input(app: &mut App) -> Entity {
 /// No UI plugins: `JackdawPlugin` puts the text systems after the evaluator by
 /// naming both, so the order this test leans on holds in an app with no layout
 /// in it at all.
-fn runtime_app() -> App {
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins);
-    app.add_plugins(bevy::transform::TransformPlugin);
-    app.add_plugins(AssetPlugin::default());
-    app.add_plugins(bevy::world_serialization::WorldSerializationPlugin);
-    app.add_plugins(JackdawPlugin);
+fn runtime_app(dir: &std::path::Path) -> App {
+    let mut app = support::game(dir);
     app.register_type::<Form>();
     app.init_resource::<Form>();
     app
@@ -176,12 +167,4 @@ fn set_editor_text(app: &mut App, entity: Entity, text: &str) {
         .expect("the input keeps its editor")
         .editor_mut()
         .set_text(text);
-}
-
-fn named_entity(world: &mut World, target: &str) -> Entity {
-    let mut names = world.query::<(Entity, &Name)>();
-    names
-        .iter(world)
-        .find_map(|(entity, name)| (name.as_str() == target).then_some(entity))
-        .unwrap_or_else(|| panic!("expected entity named {target}"))
 }

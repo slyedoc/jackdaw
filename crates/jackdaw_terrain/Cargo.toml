@@ -12,6 +12,7 @@ noise = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 bevy_math = { git = "https://github.com/bevyengine/bevy", branch = "main" }
 bytemuck = { version = "1", features = ["derive"], optional = true }
+ash = { version = "0.38.0", optional = true }
 bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-features = false, optional = true, features = [
     "std",
     "bevy_asset",
@@ -36,6 +37,7 @@ render = [
     "dep:bevy",
     "dep:path-slash",
     "dep:bytemuck",
+    "dep:ash",
     "dep:jackdaw_scene_types",
     "dep:wgpu-types",
     "jackdaw_scene_types/render",

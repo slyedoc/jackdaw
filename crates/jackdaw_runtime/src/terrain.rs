@@ -22,9 +22,9 @@ use bevy::scene::ScenePatchInstance;
 use jackdaw_scene_types::Terrain;
 use jackdaw_terrain::render::{
     DetailDirty, DetailRenderPlugin, DetailSystems, ScatterDirty, ScatterRenderPlugin,
-    ScatterSystems, SplatArrayHandles, SplatBuildError, TerrainDetailSource, TerrainRenderPlugin,
-    TerrainScatter, TerrainSplat3d, TerrainSplatMaterial, TextureSetImages,
-    control_image_from_bytes, resolve_with, slope_image, splat_images, tint_image,
+    ScatterSystems, SplatBuildError, TerrainDetailSource, TerrainRenderPlugin, TerrainScatter,
+    TerrainSplat3d, TerrainSplatMaterial, TextureSetImages, control_image_from_bytes, resolve_with,
+    slope_image, slot_images_ready, tint_image,
 };
 use jackdaw_terrain::sidecar::{self, TerrainMaterialSlot};
 use jackdaw_terrain::splat::ControlTexels;
@@ -340,8 +340,8 @@ fn build_ready_materials(
             continue;
         }
 
-        let built = match splat_images(&splat.set, &splat.images, &images) {
-            Ok(built) => built,
+        match slot_images_ready(&splat.set, &splat.images, &images) {
+            Ok(()) => {}
             Err(SplatBuildError::NotReady) => {
                 // Still loading, or permanently failed. Only the asset
                 // server can tell the two apart, and only a failure is
@@ -373,16 +373,9 @@ fn build_ready_materials(
             shape.resolution,
         ));
         let slope = images.add(slope_image(&document.heightmap));
-        let arrays = SplatArrayHandles {
-            albedo: images.add(built.albedo),
-            normal: images.add(built.normal),
-            height: images.add(built.height),
-            occlusion: images.add(built.occlusion),
-            roughness: images.add(built.roughness),
-        };
-        splat.material = Some(splat_materials.add(TerrainSplatMaterial::new(
+        let mut material = TerrainSplatMaterial::new(
             &splat.set,
-            arrays,
+            splat.images.clone(),
             control,
             slope,
             tint,
@@ -390,7 +383,9 @@ fn build_ready_materials(
             shape.resolution,
             document.data.autoterrain,
             document.data.surface,
-        )));
+        );
+        material.terrain_origin = shape.origin;
+        splat.material = Some(splat_materials.add(material));
         splat.built_size = shape.size;
         splat.built_resolution = shape.resolution;
         splat.reported = false;
@@ -944,13 +939,7 @@ mod tests {
 
         let material = TerrainSplatMaterial::new(
             &TextureSet::default(),
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),
@@ -972,13 +961,7 @@ mod tests {
     fn a_terrain_that_never_asked_for_autoterrain_draws_from_its_control_map_alone() {
         let material = TerrainSplatMaterial::new(
             &TextureSet::default(),
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),

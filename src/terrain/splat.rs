@@ -15,8 +15,8 @@ use bevy::asset::{AssetEvent, LoadState};
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use jackdaw_terrain::render::{
-    SplatArrayHandles, SplatBuildError, TerrainSplatMaterial, TextureSetImages,
-    control_image_from_bytes, resolve_with, slope_image, splat_images, tint_image_from_bytes,
+    SplatBuildError, TerrainSplatMaterial, TextureSetImages, control_image_from_bytes,
+    resolve_with, slope_image, slot_images_ready, tint_image_from_bytes,
 };
 use jackdaw_terrain::sidecar::{AutoTerrainSettings, SurfaceSettings, TerrainMaterialSlot};
 use jackdaw_terrain::splat::ControlTexels;
@@ -31,8 +31,6 @@ use crate::material_assets::MaterialRegistry;
 use bevy_aurora::material::AuroraMaterial;
 
 pub(super) fn plugin(app: &mut App) {
-    // TODO(aurora): TerrainRenderPlugin is MaterialPlugin<TerrainSplatMaterial>.
-    // AURORA.md item 2.
     app.init_resource::<TerrainSplatMaterials>().add_systems(
         Update,
         (
@@ -308,8 +306,8 @@ fn build_ready_materials(
             continue;
         }
 
-        let built = match splat_images(&entry.set, &entry.images, &images) {
-            Ok(built) => built,
+        match slot_images_ready(&entry.set, &entry.images, &images) {
+            Ok(()) => {}
             Err(SplatBuildError::NotReady) => {
                 // Still loading or permanently failed; only the asset
                 // server can tell the two apart.
@@ -343,18 +341,11 @@ fn build_ready_materials(
         let tint = images.add(tint_image_from_bytes(&tint_texels, shape.resolution));
         let heights = store.heightmap(terrain).map;
         let slope = images.add(slope_image(&heights));
-        let arrays = SplatArrayHandles {
-            albedo: images.add(built.albedo),
-            normal: images.add(built.normal),
-            height: images.add(built.height),
-            occlusion: images.add(built.occlusion),
-            roughness: images.add(built.roughness),
-        };
         let autoterrain = store.autoterrain(&terrain.data_path);
         let surface = store.surface(&terrain.data_path);
-        let material = splat_materials.add(TerrainSplatMaterial::new(
+        let mut splat = TerrainSplatMaterial::new(
             &entry.set,
-            arrays,
+            entry.images.clone(),
             control.clone(),
             slope.clone(),
             tint.clone(),
@@ -362,7 +353,9 @@ fn build_ready_materials(
             shape.resolution,
             autoterrain,
             surface,
-        ));
+        );
+        splat.terrain_origin = shape.origin;
+        let material = splat_materials.add(splat);
         entry.slope = Some(slope);
         entry.slope_heights = Some(heights);
         entry.control = Some(control);

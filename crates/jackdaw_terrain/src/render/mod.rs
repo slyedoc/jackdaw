@@ -3,15 +3,11 @@
 //! names. Behind the `render` feature, so the data model below it stays
 //! buildable with no GPU crate in the graph.
 //!
-//! TODO(aurora): the splat shader was a raster `Material`; aurora has no terrain surface class
-//! yet. [`TerrainSplatMaterial`] keeps every input the shader read, and a terrain wearing one
-//! ([`TerrainSplat3d`]) traces as a plain stand-in [`AuroraMaterial`] until the class exists.
+//! A surface wearing one ([`TerrainSplat3d`]) traces through aurora's surface class for it
+//! (`aurora.rs`, `terrain_splat.slang`), which reads each slot's own maps bindless.
 //!
-//! A terrain's material names become the three texture arrays the shader binds
-//! in two steps: [`resolve_with`] maps each slot onto a [`TextureSetEntry`], and
-//! [`splat_images`] stacks the entries' images into arrays. Finding the material
-//! behind a name is the host's job, done through a closure passed to
-//! [`resolve_with`].
+//! [`resolve_with`] maps each slot onto a [`TextureSetEntry`] and its images; finding the
+//! material behind a name is the host's job, done through the closure passed to it.
 //!
 //! The blend is height-weighted rather than a cross-fade: a layer's weight is
 //! `pow(corner_weight + layer_weight + height, sharpness)`, normalized across
@@ -23,13 +19,11 @@ use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerD
 use bevy::prelude::*;
 // `resolve_with` and the splat cache read a plain PBR material for its texture handles;
 // on this branch that is aurora's.
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use bevy_aurora::material::AuroraMaterial;
 use path_slash::PathExt as _;
-use wgpu_types::{
-    Extent3d, TextureDataOrder, TextureDimension, TextureFormat, TextureViewDescriptor,
-    TextureViewDimension,
-};
+use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
+mod aurora;
 pub mod detail;
 pub mod scatter;
 
@@ -49,32 +43,10 @@ use crate::heightmap::Heightmap;
 use crate::sidecar::{AutoTerrainSettings, SurfaceSettings, TerrainMaterialSlot};
 use crate::splat::ControlTexels;
 use crate::texture_set::{
-    MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError, check_layer_sizes,
+    MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError,
 };
 
 pub use crate::sidecar::DEFAULT_BLEND_SHARPNESS;
-
-/// Tangent-space normal of a flat surface, as an RGBA8 texel.
-const FLAT_NORMAL_TEXEL: [u8; 4] = [128, 128, 255, 255];
-/// Height of a layer with no height map: the middle of the range.
-///
-/// The height blend compares `layer_weight + height` between the two ids a
-/// control word names. The top of the range would let a material with no depth
-/// map beat every material that has one at any paint weight, and the bottom
-/// would lose them all; the middle leaves the paint deciding.
-const FLAT_HEIGHT_TEXEL: [u8; 4] = [128, 128, 128, 255];
-/// What fills an occlusion or roughness layer for a slot that has no such
-/// map.
-///
-/// The shader's per-slot flag keeps it from reading these layers at all, so
-/// the value only has to be something the array can hold; white is the
-/// identity for occlusion either way.
-const UNMAPPED_LAYER_TEXEL: [u8; 4] = [255, 255, 255, 255];
-/// Albedo of a slot whose material has no base colour texture, or none
-/// this project can resolve. Neutral grey rather than a missing layer, so
-/// the slot keeps its texture id and the ids painted after it do not
-/// shift.
-const FALLBACK_ALBEDO_TEXEL: [u8; 4] = [128, 128, 128, 255];
 
 /// The loaded image handles for a [`TextureSet`], parallel to its entries.
 ///
@@ -231,17 +203,7 @@ impl ResolvedSlots {
     }
 }
 
-/// The per-slot texture arrays a splat material binds.
-#[derive(Clone, Debug)]
-pub struct SplatImages {
-    pub albedo: Image,
-    pub normal: Image,
-    pub height: Image,
-    pub occlusion: Image,
-    pub roughness: Image,
-}
-
-/// Why a texture set could not be stacked into arrays yet, or at all.
+/// Why a texture set cannot draw yet, or at all.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SplatBuildError {
     /// At least one of the set's images has not finished loading. Not a
@@ -249,12 +211,6 @@ pub enum SplatBuildError {
     NotReady,
     /// The set cannot be used, and retrying will not help.
     Invalid(TextureSetError),
-    /// An image decoded, but into a format neither bevy's conversion nor
-    /// the narrowing below can turn into the array's.
-    Unconvertible {
-        from: TextureFormat,
-        to: TextureFormat,
-    },
 }
 
 impl core::fmt::Display for SplatBuildError {
@@ -262,491 +218,26 @@ impl core::fmt::Display for SplatBuildError {
         match self {
             Self::NotReady => write!(f, "texture set images are still loading"),
             Self::Invalid(reason) => write!(f, "{reason}"),
-            Self::Unconvertible { from, to } => write!(
-                f,
-                "a texture decoded as {from:?}, which cannot be reinterpreted as the \
-                 array's {to:?}"
-            ),
         }
     }
 }
 
 impl core::error::Error for SplatBuildError {}
 
-/// Stack a resolved texture set into its per-slot arrays.
-///
-/// Returns [`SplatBuildError::NotReady`] until every image the set names has
-/// decoded, and [`SplatBuildError::Invalid`], naming the material and path, when
-/// the layers disagree on size.
-///
-/// An entry with no map for one of the arrays gets a filled layer rather than a
-/// missing one, so a slot never loses its texture id. When no entry has a given
-/// map, that array is built 1x1: sampling a one-texel layer returns the constant
-/// anywhere, so the shader needs no flag to tell the two cases apart.
-///
-/// A normal map flagged [`TextureSetEntry::flip_normal_y`] has its green channel
-/// inverted here, once, on the way into the array.
-pub fn splat_images(
+/// Whether a resolved texture set can draw: valid, and every image it names decoded.
+pub fn slot_images_ready(
     set: &TextureSet,
     handles: &TextureSetImages,
     images: &Assets<Image>,
-) -> Result<SplatImages, SplatBuildError> {
-    if let Err(reason) = set.validate() {
-        return Err(SplatBuildError::Invalid(reason));
-    }
-    // The handle lists are parallel to the entries, and every array below
-    // declares `entry_count.max(1)` layers. No handles at all would declare one
-    // layer over an empty buffer, which is a texture wgpu cannot make.
+) -> Result<(), SplatBuildError> {
+    set.validate().map_err(SplatBuildError::Invalid)?;
     if handles.albedo.is_empty() {
         return Err(SplatBuildError::Invalid(TextureSetError::Empty));
     }
-
-    let albedo_layers = decode_layers(&handles.albedo, set, images, |entry| {
-        entry.albedo.as_deref().unwrap_or_default()
-    })?;
-    // The layer size is whatever the resolved albedos agree on. A set
-    // whose materials all went missing has none to measure, and builds
-    // one texel per layer.
-    let (width, height) = match albedo_layers.sizes.first() {
-        Some(_) => check_layer_sizes(&albedo_layers.sizes).map_err(SplatBuildError::Invalid)?,
-        None => (1, 1),
-    };
-
-    let albedo = stack(
-        &albedo_layers,
-        handles.albedo.len(),
-        (width, height),
-        TextureFormat::Rgba8UnormSrgb,
-        FALLBACK_ALBEDO_TEXEL,
-        &[],
-        MipFilter::Srgb,
-    )?;
-
-    let normal_flips: Vec<bool> = set.entries.iter().map(|e| e.flip_normal_y).collect();
-    let normal = stack_optional(
-        &handles.normal,
-        set,
-        images,
-        (width, height),
-        FLAT_NORMAL_TEXEL,
-        &normal_flips,
-        MipFilter::Normal,
-        |entry| entry.normal.as_deref().unwrap_or_default(),
-    )?;
-    let height_array = stack_optional(
-        &handles.height,
-        set,
-        images,
-        (width, height),
-        FLAT_HEIGHT_TEXEL,
-        &[],
-        MipFilter::Linear,
-        |entry| entry.height.as_deref().unwrap_or_default(),
-    )?;
-    let occlusion = stack_optional(
-        &handles.occlusion,
-        set,
-        images,
-        (width, height),
-        UNMAPPED_LAYER_TEXEL,
-        &[],
-        MipFilter::Linear,
-        |entry| entry.occlusion.as_deref().unwrap_or_default(),
-    )?;
-    let roughness = stack_optional(
-        &handles.roughness,
-        set,
-        images,
-        (width, height),
-        UNMAPPED_LAYER_TEXEL,
-        &[],
-        MipFilter::Linear,
-        |entry| entry.roughness.as_deref().unwrap_or_default(),
-    )?;
-
-    Ok(SplatImages {
-        albedo,
-        normal,
-        height: height_array,
-        occlusion,
-        roughness,
-    })
-}
-
-/// Decoded images for one per-entry handle list, with the sizes of the
-/// ones that resolved.
-struct DecodedLayers<'a> {
-    decoded: Vec<Option<&'a Image>>,
-    sizes: Vec<(usize, &'a str, &'a str, (u32, u32))>,
-}
-
-fn decode_layers<'a>(
-    handles: &[Option<Handle<Image>>],
-    set: &'a TextureSet,
-    images: &'a Assets<Image>,
-    path_of: impl Fn(&TextureSetEntry) -> &str,
-) -> Result<DecodedLayers<'a>, SplatBuildError> {
-    let mut decoded = Vec::with_capacity(handles.len());
-    let mut sizes = Vec::new();
-    for (index, handle) in handles.iter().enumerate() {
-        let Some(handle) = handle else {
-            decoded.push(None);
-            continue;
-        };
-        let image = images.get(handle).ok_or(SplatBuildError::NotReady)?;
-        let size = image.size();
-        if let Some(entry) = set.entries.get(index) {
-            sizes.push((
-                index,
-                entry.material.as_str(),
-                path_of(entry),
-                (size.x, size.y),
-            ));
-        }
-        decoded.push(Some(image));
-    }
-    Ok(DecodedLayers { decoded, sizes })
-}
-
-/// Build one array from a per-entry list of optional handles. A layer with no
-/// handle is filled with `fill`; if no entry has one at all, the whole array
-/// collapses to 1x1.
-fn stack_optional(
-    handles: &[Option<Handle<Image>>],
-    set: &TextureSet,
-    images: &Assets<Image>,
-    size: (u32, u32),
-    fill: [u8; 4],
-    flip_green: &[bool],
-    filter: MipFilter,
-    path_of: impl Fn(&TextureSetEntry) -> &str,
-) -> Result<Image, SplatBuildError> {
-    if handles.iter().all(Option::is_none) {
-        return Ok(fill_array(1, 1, handles.len().max(1) as u32, fill));
-    }
-    let layers = decode_layers(handles, set, images, path_of)?;
-    stack(
-        &layers,
-        handles.len(),
-        size,
-        TextureFormat::Rgba8Unorm,
-        fill,
-        flip_green,
-        filter,
-    )
-}
-
-/// Lay decoded layers out as one array image, filling the entries that
-/// resolved to nothing and refusing any that disagrees on size.
-fn stack(
-    layers: &DecodedLayers<'_>,
-    entry_count: usize,
-    (width, height): (u32, u32),
-    format: TextureFormat,
-    fill: [u8; 4],
-    flip_green: &[bool],
-    filter: MipFilter,
-) -> Result<Image, SplatBuildError> {
-    // Measured against the albedo size, not against each other: every
-    // array in a set shares one layer size.
-    for (entry, material, path, size) in layers.sizes.iter().copied() {
-        if size != (width, height) {
-            return Err(SplatBuildError::Invalid(TextureSetError::MismatchedSize {
-                entry,
-                material: material.to_string(),
-                path: path.to_string(),
-                found: size,
-                expected: (width, height),
-            }));
-        }
-    }
-
-    let texel_count = (width as usize) * (height as usize);
-    let mut data = Vec::with_capacity(chain_texels(width, height) * 4 * entry_count.max(1));
-    for (index, image) in layers.decoded.iter().enumerate() {
-        let base = match image {
-            Some(image) => {
-                let mut texels = converted(image, format)?;
-                if flip_green.get(index).copied().unwrap_or(false) {
-                    for texel in texels.chunks_exact_mut(4) {
-                        texel[1] = 255 - texel[1];
-                    }
-                }
-                texels
-            }
-            None => fill.iter().copied().cycle().take(texel_count * 4).collect(),
-        };
-        push_mip_chain(&mut data, base, width, height, filter);
-    }
-    Ok(array_image(
-        width,
-        height,
-        entry_count.max(1) as u32,
-        format,
-        data,
-    ))
-}
-
-/// An image's texels in `format`, converting if it decoded as something
-/// else. The arrays are 8 bit per channel, and a texture pack may hand the
-/// loader a 16-bit file for any slot; converting here keeps such a pack
-/// usable without a pre-converted copy.
-fn converted(image: &Image, format: TextureFormat) -> Result<Vec<u8>, SplatBuildError> {
-    if image.texture_descriptor.format == format {
-        return image.data.clone().ok_or(SplatBuildError::NotReady);
-    }
-    // Image data is stripped for the render world, so a decoded image
-    // with none is unavailable; one that will not convert is an error,
-    // and reporting it as still loading would retry forever.
-    let Some(data) = image.data.as_deref() else {
+    if handles.handles().any(|handle| images.get(handle).is_none()) {
         return Err(SplatBuildError::NotReady);
-    };
-    let from = image.texture_descriptor.format;
-    if let Some(texels) = image.convert(format).and_then(|converted| converted.data) {
-        return Ok(texels);
     }
-    narrowed_to_rgba8(data, from, format).ok_or(SplatBuildError::Unconvertible { from, to: format })
-}
-
-/// Narrow 16-bit-per-channel texels to RGBA8, keeping the high byte of each
-/// channel.
-///
-/// `Image::convert` routes through `DynamicImage`, which has no path out of the
-/// formats bevy decodes deep files into. A single channel replicates across RGB,
-/// so a 16-bit height map stacks as grey rather than red.
-fn narrowed_to_rgba8(data: &[u8], from: TextureFormat, to: TextureFormat) -> Option<Vec<u8>> {
-    if !matches!(
-        to,
-        TextureFormat::Rgba8Unorm | TextureFormat::Rgba8UnormSrgb
-    ) {
-        return None;
-    }
-    match from {
-        TextureFormat::Rgba16Unorm | TextureFormat::Rgba16Uint => Some(
-            data.chunks_exact(8)
-                .flat_map(|t| [t[1], t[3], t[5], t[7]])
-                .collect(),
-        ),
-        TextureFormat::Rg16Unorm | TextureFormat::Rg16Uint => Some(
-            data.chunks_exact(4)
-                .flat_map(|t| [t[1], t[1], t[1], t[3]])
-                .collect(),
-        ),
-        TextureFormat::R16Unorm | TextureFormat::R16Uint => Some(
-            data.chunks_exact(2)
-                .flat_map(|t| [t[1], t[1], t[1], 255])
-                .collect(),
-        ),
-        _ => None,
-    }
-}
-
-/// How a mip level averages the four texels it stands for. A texture array is
-/// filtered as stored bytes, so what averaging is correct depends on what the
-/// bytes mean.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum MipFilter {
-    /// Plain average of the stored bytes.
-    Linear,
-    /// Average in linear light, stored back non-linearly.
-    Srgb,
-    /// Average as tangent-space directions, renormalized.
-    Normal,
-}
-
-/// Mip levels a `width` by `height` texture carries, down to 1x1:
-/// `floor(log2(max(width, height))) + 1`, which is what wgpu's
-/// `mip_level_size` computes.
-fn mip_level_count(width: u32, height: u32) -> u32 {
-    u32::BITS - width.max(height).max(1).leading_zeros()
-}
-
-/// Texels one layer's whole mip chain holds, base level included.
-fn chain_texels(width: u32, height: u32) -> usize {
-    (0..mip_level_count(width, height))
-        .map(|level| {
-            let w = (width >> level).max(1) as usize;
-            let h = (height >> level).max(1) as usize;
-            w * h
-        })
-        .sum()
-}
-
-/// sRGB byte to linear light, tabulated: a full chain over a 16-layer
-/// 2K set decodes hundreds of millions of texels, and `powf` on each is
-/// seconds of hitch on the rebuild.
-static SRGB_TO_LINEAR: std::sync::LazyLock<[f32; 256]> = std::sync::LazyLock::new(|| {
-    std::array::from_fn(|byte| {
-        let c = byte as f32 / 255.0;
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    })
-});
-
-fn srgb_to_linear(byte: u8) -> f32 {
-    SRGB_TO_LINEAR[byte as usize]
-}
-
-fn linear_to_srgb(value: f32) -> u8 {
-    let c = value.clamp(0.0, 1.0);
-    let encoded = if c <= 0.003_130_8 {
-        c * 12.92
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
-    };
-    (encoded * 255.0 + 0.5) as u8
-}
-
-fn averaged_byte(taps: [[u8; 4]; 4], channel: usize) -> u8 {
-    let sum: u32 = taps.iter().map(|t| u32::from(t[channel])).sum();
-    ((sum as f32) / 4.0 + 0.5) as u8
-}
-
-fn average_texels(taps: [[u8; 4]; 4], filter: MipFilter) -> [u8; 4] {
-    let mut out = [0u8; 4];
-    // Alpha is a coverage weight in every one of these arrays, never a
-    // colour or a direction, so it averages linearly whatever the rest do.
-    out[3] = averaged_byte(taps, 3);
-    match filter {
-        MipFilter::Linear => {
-            for (channel, byte) in out.iter_mut().enumerate().take(3) {
-                *byte = averaged_byte(taps, channel);
-            }
-        }
-        MipFilter::Srgb => {
-            for (channel, byte) in out.iter_mut().enumerate().take(3) {
-                let sum: f32 = taps.iter().map(|t| srgb_to_linear(t[channel])).sum();
-                *byte = linear_to_srgb(sum / 4.0);
-            }
-        }
-        MipFilter::Normal => {
-            let mut vector = [0f32; 3];
-            for (channel, component) in vector.iter_mut().enumerate() {
-                let sum: f32 = taps
-                    .iter()
-                    .map(|t| f32::from(t[channel]) / 255.0 * 2.0 - 1.0)
-                    .sum();
-                *component = sum / 4.0;
-            }
-            let length =
-                (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
-            // Four directions that cancel leave nothing to point at; a flat
-            // normal is the only answer that still shades.
-            if length < 1e-4 {
-                vector = [0.0, 0.0, 1.0];
-            } else {
-                for component in &mut vector {
-                    *component /= length;
-                }
-            }
-            for (channel, byte) in out.iter_mut().enumerate().take(3) {
-                *byte = ((vector[channel] * 0.5 + 0.5) * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-            }
-        }
-    }
-    out
-}
-
-fn texel_at(src: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
-    let at = ((y as usize) * (width as usize) + (x as usize)) * 4;
-    [src[at], src[at + 1], src[at + 2], src[at + 3]]
-}
-
-/// One mip level below `src`, box filtered.
-///
-/// An odd side halves by flooring, which leaves a row or column the
-/// footprint would run past; the second tap clamps back onto the last one
-/// rather than reading into the next row.
-fn downsample(src: &[u8], width: u32, height: u32, filter: MipFilter) -> Vec<u8> {
-    let next_width = (width / 2).max(1);
-    let next_height = (height / 2).max(1);
-    let mut out = Vec::with_capacity((next_width as usize) * (next_height as usize) * 4);
-    for y in 0..next_height {
-        let y0 = (y * 2).min(height - 1);
-        let y1 = (y * 2 + 1).min(height - 1);
-        for x in 0..next_width {
-            let x0 = (x * 2).min(width - 1);
-            let x1 = (x * 2 + 1).min(width - 1);
-            let taps = [
-                texel_at(src, width, x0, y0),
-                texel_at(src, width, x1, y0),
-                texel_at(src, width, x0, y1),
-                texel_at(src, width, x1, y1),
-            ];
-            out.extend_from_slice(&average_texels(taps, filter));
-        }
-    }
-    out
-}
-
-/// Append one layer's base level and every mip below it to `data`.
-///
-/// The arrays upload as [`TextureDataOrder::LayerMajor`], which reads a
-/// layer's whole chain before the next layer's base, so a caller stacking
-/// layers appends each chain whole.
-fn push_mip_chain(data: &mut Vec<u8>, base: Vec<u8>, width: u32, height: u32, filter: MipFilter) {
-    let levels = mip_level_count(width, height);
-    data.extend_from_slice(&base);
-    let mut level = base;
-    let (mut w, mut h) = (width, height);
-    for _ in 1..levels {
-        level = downsample(&level, w, h, filter);
-        w = (w / 2).max(1);
-        h = (h / 2).max(1);
-        data.extend_from_slice(&level);
-    }
-}
-
-fn fill_array(width: u32, height: u32, layers: u32, fill: [u8; 4]) -> Image {
-    let texels = (width as usize) * (height as usize) * (layers as usize);
-    let data: Vec<u8> = fill.iter().copied().cycle().take(texels * 4).collect();
-    array_image(width, height, layers, TextureFormat::Rgba8Unorm, data)
-}
-
-fn array_image(
-    width: u32,
-    height: u32,
-    layers: u32,
-    format: TextureFormat,
-    data: Vec<u8>,
-) -> Image {
-    // Built uninitialized because `Image::new` checks the buffer against
-    // one mip level, and these arrays carry a whole chain per layer.
-    let mut image = Image::new_uninit(
-        Extent3d {
-            width,
-            height,
-            depth_or_array_layers: layers,
-        },
-        TextureDimension::D2,
-        format,
-        RenderAssetUsages::RENDER_WORLD,
-    );
-    // The sampler below filters between mip levels, so the levels have to
-    // exist: without them every fragment reads the sharpest texels, and
-    // detiled UVs that decorrelate neighbouring fragments turn mid-range
-    // ground into noise. `push_mip_chain` laid the data out to match.
-    image.texture_descriptor.mip_level_count = mip_level_count(width, height);
-    image.data_order = TextureDataOrder::LayerMajor;
-    image.data = Some(data);
-    // A one-layer array still has to present as an array to the shader,
-    // which wgpu will not infer from `depth_or_array_layers == 1`.
-    image.texture_view_descriptor = Some(TextureViewDescriptor {
-        dimension: Some(TextureViewDimension::D2Array),
-        ..default()
-    });
-    image.sampler = ImageSampler::Descriptor(ImageSamplerDescriptor {
-        address_mode_u: ImageAddressMode::Repeat,
-        address_mode_v: ImageAddressMode::Repeat,
-        mag_filter: ImageFilterMode::Linear,
-        min_filter: ImageFilterMode::Linear,
-        mipmap_filter: ImageFilterMode::Linear,
-        ..default()
-    });
-    image
+    Ok(())
 }
 
 /// The control map as an uploadable image: `R32Uint`, one texel per grid
@@ -899,6 +390,8 @@ pub struct TerrainSplatMaterial {
     pub detile_strengths: [Vec4; MAX_TEXTURES / 4],
     /// Terrain XZ extent in world units.
     pub terrain_size: Vec2,
+    /// Local XZ of control grid point `(0, 0)`: where the extent starts.
+    pub terrain_origin: Vec2,
     /// `0..1`, remapped by the shader onto a `4..64` power exponent. Low is
     /// a soft cross-fade, high a near-binary height cutout.
     pub blend_sharpness: f32,
@@ -929,29 +422,24 @@ pub struct TerrainSplatMaterial {
     /// Bit `i` is set where texture id `i` has a roughness map. An id
     /// without one takes [`Self::perceptual_roughness`].
     pub roughness_slots: u32,
-    pub albedo: Handle<Image>,
-    pub normal: Handle<Image>,
-    pub height: Handle<Image>,
+    /// Bit `i` is set where texture id `i`'s normal map is authored green-down.
+    pub flip_normal_slots: u32,
+    /// Each id's own maps, sampled where they are: the tracer reads textures
+    /// bindless, so nothing is stacked into arrays.
+    pub slots: TextureSetImages,
     pub control: Handle<Image>,
     /// Slope per grid point, in radians. Only autoterrain reads it.
     pub slope: Handle<Image>,
-    /// The colour layer the finished albedo is multiplied by. Filtered,
-    /// so it has a sampler of its own rather than sharing the layer
-    /// arrays'.
+    /// The colour layer the finished albedo is multiplied by.
     pub tint: Handle<Image>,
-    /// Ambient occlusion per slot, read from the red channel.
-    pub occlusion: Handle<Image>,
-    /// Roughness per slot, read from the green channel the way a
-    /// metallic-roughness texture stores it.
-    pub roughness: Handle<Image>,
 }
 
 impl TerrainSplatMaterial {
-    /// Build a material for a terrain from its set, its arrays, its
+    /// Build a material for a terrain from its set, its maps, its
     /// control map and how it textures the cells no hand has claimed.
     pub fn new(
         set: &TextureSet,
-        arrays: SplatArrayHandles,
+        slots: TextureSetImages,
         control: Handle<Image>,
         slope: Handle<Image>,
         tint: Handle<Image>,
@@ -973,6 +461,7 @@ impl TerrainSplatMaterial {
             uv_scales,
             detile_strengths,
             terrain_size,
+            terrain_origin: Vec2::ZERO,
             blend_sharpness: DEFAULT_BLEND_SHARPNESS,
             perceptual_roughness: 0.9,
             control_resolution,
@@ -985,14 +474,11 @@ impl TerrainSplatMaterial {
             tint_strength: crate::sidecar::DEFAULT_TINT_STRENGTH,
             occlusion_slots: slot_mask(set, |entry| entry.occlusion.is_some()),
             roughness_slots: slot_mask(set, |entry| entry.roughness.is_some()),
-            albedo: arrays.albedo,
-            normal: arrays.normal,
-            height: arrays.height,
+            flip_normal_slots: slot_mask(set, |entry| entry.flip_normal_y),
+            slots,
             control,
             slope,
             tint,
-            occlusion: arrays.occlusion,
-            roughness: arrays.roughness,
         };
         material.set_autoterrain(autoterrain);
         material.set_surface(surface);
@@ -1041,44 +527,12 @@ fn slot_mask(set: &TextureSet, has_map: impl Fn(&TextureSetEntry) -> bool) -> u3
     mask
 }
 
-/// The array images once they are in `Assets<Image>`.
-#[derive(Clone, Debug)]
-pub struct SplatArrayHandles {
-    pub albedo: Handle<Image>,
-    pub normal: Handle<Image>,
-    pub height: Handle<Image>,
-    pub occlusion: Handle<Image>,
-    pub roughness: Handle<Image>,
-}
-
 /// The splat material a terrain chunk wears.
 #[derive(Component, Clone, Debug, Default, Reflect, PartialEq, Eq)]
 #[reflect(Component, Default, Clone, PartialEq)]
 pub struct TerrainSplat3d(pub Handle<TerrainSplatMaterial>);
 
-/// Give every chunk that starts wearing a splat the one stand-in material it
-/// traces with, until aurora has a terrain class.
-fn wear_splat_stand_in(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<AuroraMaterial>>,
-    mut stand_in: Local<Option<Handle<AuroraMaterial>>>,
-    worn: Query<Entity, Added<TerrainSplat3d>>,
-) {
-    for entity in &worn {
-        let material = stand_in.get_or_insert_with(|| {
-            materials.add(AuroraMaterial {
-                base_color: Color::srgb(0.32, 0.36, 0.25),
-                perceptual_roughness: 0.9,
-                ..default()
-            })
-        });
-        commands
-            .entity(entity)
-            .insert(AuroraMaterial3d(material.clone()));
-    }
-}
-
-/// Registers the splat material asset, and traces terrain wearing one with a stand-in.
+/// Registers the splat material asset and the surface class that traces it.
 pub struct TerrainRenderPlugin;
 
 impl Plugin for TerrainRenderPlugin {
@@ -1089,10 +543,8 @@ impl Plugin for TerrainRenderPlugin {
         {
             app.init_asset::<TerrainSplatMaterial>();
         }
-        app.register_type::<TerrainSplat3d>().add_systems(
-            PostUpdate,
-            wear_splat_stand_in.run_if(resource_exists::<Assets<AuroraMaterial>>),
-        );
+        app.register_type::<TerrainSplat3d>()
+            .add_plugins(aurora::plugin);
     }
 }
 
@@ -1395,28 +847,6 @@ mod tests {
         )
     }
 
-    /// A solid image whose texel is however many bytes `texel` is, for the
-    /// formats bevy decodes deep files into.
-    fn solid_texel(width: u32, height: u32, texel: &[u8], format: TextureFormat) -> Image {
-        let data: Vec<u8> = texel
-            .iter()
-            .copied()
-            .cycle()
-            .take((width as usize) * (height as usize) * texel.len())
-            .collect();
-        Image::new(
-            Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            data,
-            format,
-            RenderAssetUsages::RENDER_WORLD,
-        )
-    }
-
     /// A set of solid-colour entries, all loaded, one per requested size.
     fn loaded_set(sizes: &[(u32, u32)]) -> (Assets<Image>, TextureSet, TextureSetImages) {
         let mut images = Assets::<Image>::default();
@@ -1446,278 +876,12 @@ mod tests {
     }
 
     #[test]
-    fn a_uniform_set_stacks_into_one_layer_per_entry() {
-        let (images, set, handles) = loaded_set(&[(4, 4), (4, 4), (4, 4)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.albedo.texture_descriptor.size.width, 4);
-        assert_eq!(
-            built.albedo.texture_descriptor.size.depth_or_array_layers,
-            3
-        );
-        assert_eq!(
-            built
-                .albedo
-                .texture_view_descriptor
-                .as_ref()
-                .unwrap()
-                .dimension,
-            Some(TextureViewDimension::D2Array)
-        );
-    }
-
-    #[test]
-    fn a_single_entry_set_still_presents_as_an_array() {
-        let (images, set, handles) = loaded_set(&[(2, 2)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(
-            built.albedo.texture_descriptor.size.depth_or_array_layers,
-            1
-        );
-        assert_eq!(
-            built
-                .albedo
-                .texture_view_descriptor
-                .as_ref()
-                .unwrap()
-                .dimension,
-            Some(TextureViewDimension::D2Array)
-        );
-    }
-
-    /// The layer size in texels of one mip level of a `size` square.
-    fn level_texels(size: u32, level: u32) -> usize {
-        let side = (size >> level).max(1) as usize;
-        side * side
-    }
-
-    /// One layer's mip `level` out of a stacked array, as texels.
-    ///
-    /// The arrays upload layer-major: a layer's whole chain, then the
-    /// next layer's base. Walking it here is what proves the builder
-    /// wrote the order `TextureDataOrder::LayerMajor` reads back.
-    fn mip_level(image: &Image, layer: u32, level: u32) -> Vec<[u8; 4]> {
-        let size = image.texture_descriptor.size.width;
-        let levels = image.texture_descriptor.mip_level_count;
-        let chain: usize = (0..levels).map(|l| level_texels(size, l) * 4).sum();
-        let start =
-            chain * (layer as usize) + (0..level).map(|l| level_texels(size, l) * 4).sum::<usize>();
-        let end = start + level_texels(size, level) * 4;
-        image.data.as_ref().expect("built arrays carry data")[start..end]
-            .chunks_exact(4)
-            .map(|t| [t[0], t[1], t[2], t[3]])
-            .collect()
-    }
-
-    /// A 2x2-checkered layer of `a` and `b`, so mip 1 is one texel and
-    /// has to be their average.
-    fn checker(size: u32, a: [u8; 4], b: [u8; 4], format: TextureFormat) -> Image {
-        let mut data = Vec::with_capacity((size as usize) * (size as usize) * 4);
-        for y in 0..size {
-            for x in 0..size {
-                let texel = if (x + y) % 2 == 0 { a } else { b };
-                data.extend_from_slice(&texel);
-            }
-        }
-        Image::new(
-            Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            TextureDimension::D2,
-            data,
-            format,
-            RenderAssetUsages::RENDER_WORLD,
-        )
-    }
-
-    fn one_layer_set(
-        albedo: Option<Image>,
-        normal: Option<Image>,
-    ) -> (Assets<Image>, TextureSet, TextureSetImages) {
-        let mut images = Assets::<Image>::default();
-        let albedo = albedo.map(|image| images.add(image));
-        let normal = normal.map(|image| images.add(image));
-        (
-            images,
-            TextureSet {
-                entries: vec![TextureSetEntry::new("m0", "t0.png")],
-            },
-            TextureSetImages {
-                albedo: vec![albedo],
-                normal: vec![normal],
-                height: vec![None],
-                occlusion: vec![None; 1],
-                roughness: vec![None; 1],
-            },
-        )
-    }
-
-    /// Without a chain the sampler's `mipmap_filter` has nothing to read
-    /// and every fragment lands on the sharpest texels, which is what
-    /// turns detiled mid-range ground into noise.
-    #[test]
-    fn a_built_array_carries_a_full_mip_chain() {
-        let (images, set, handles) = loaded_set(&[(64, 64), (64, 64)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.albedo.texture_descriptor.mip_level_count, 7);
-        let expected: usize = (0..7).map(|l| level_texels(64, l) * 4).sum::<usize>() * 2;
-        assert_eq!(built.albedo.data.as_ref().unwrap().len(), expected);
-    }
-
-    /// Layer-major, exactly: the second layer's base level starts where the
-    /// first layer's whole chain ends. Getting it wrong by one level's worth of
-    /// bytes shifts every layer past the first.
-    #[test]
-    fn the_second_layer_starts_where_the_first_layers_chain_ends() {
-        let red = [255u8, 0, 0, 255];
-        let blue = [0u8, 0, 255, 255];
-        let mut images = Assets::<Image>::default();
-        let layers = [
-            images.add(solid(8, 8, red, TextureFormat::Rgba8UnormSrgb)),
-            images.add(solid(8, 8, blue, TextureFormat::Rgba8UnormSrgb)),
-        ];
-        let set = TextureSet {
-            entries: vec![
-                TextureSetEntry::new("m0", "t0.png"),
-                TextureSetEntry::new("m1", "t1.png"),
-            ],
-        };
-        let handles = TextureSetImages {
-            albedo: layers.iter().cloned().map(Some).collect(),
-            normal: vec![None, None],
-            height: vec![None, None],
-            occlusion: vec![None; 2],
-            roughness: vec![None; 2],
-        };
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        let levels = built.albedo.texture_descriptor.mip_level_count;
-        assert_eq!(levels, 4, "8x8 chains down to 1x1");
-
-        let chain: usize = (0..levels).map(|l| level_texels(8, l) * 4).sum();
-        assert_eq!(chain, chain_texels(8, 8) * 4);
-        let data = built.albedo.data.as_ref().expect("built arrays carry data");
-        assert_eq!(data.len(), chain * 2, "one whole chain per layer");
-        assert_eq!(
-            &data[chain..chain + 4],
-            &blue,
-            "layer 1 mip 0 sits at the sum of layer 0's chain"
-        );
-
-        // Every level of a solid layer is that colour: the filter averages
-        // equals. A wrong stride shows up as one layer's colour appearing
-        // in the other's chain.
-        for level in 0..levels {
-            for texel in mip_level(&built.albedo, 0, level) {
-                assert_eq!(texel, red, "layer 0, level {level}");
-            }
-            for texel in mip_level(&built.albedo, 1, level) {
-                assert_eq!(texel, blue, "layer 1, level {level}");
-            }
-        }
-    }
-
-    /// A non-power-of-two side floors at every level, the way wgpu's
-    /// `mip_level_size` does, and stops at 1x1 rather than running past it.
-    #[test]
-    fn a_non_power_of_two_layer_still_gets_a_chain_that_ends_at_one_texel() {
-        assert_eq!(mip_level_count(1, 1), 1);
-        assert_eq!(mip_level_count(48, 48), 6);
-        assert_eq!(mip_level_count(64, 3), 7);
-        let (images, set, handles) = loaded_set(&[(48, 48)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.albedo.texture_descriptor.mip_level_count, 6);
-        let expected: usize = (0..6)
-            .map(|l| {
-                let side = (48u32 >> l).max(1) as usize;
-                side * side * 4
-            })
-            .sum();
-        assert_eq!(built.albedo.data.as_ref().unwrap().len(), expected);
-    }
-
-    /// Colour averages in linear light. A black-and-white checker whose
-    /// mip read mid grey as `(0 + 255) / 2 = 128` would darken every
-    /// distant slope by the whole sRGB gamma.
-    #[test]
-    fn an_albedo_mip_averages_a_checker_in_linear_light() {
-        let (images, set, handles) = one_layer_set(
-            Some(checker(
-                4,
-                [0, 0, 0, 255],
-                [255, 255, 255, 255],
-                TextureFormat::Rgba8UnormSrgb,
-            )),
-            None,
-        );
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        let mip = mip_level(&built.albedo, 0, 1);
-        assert_eq!(mip.len(), 4);
-        // Half linear light encodes to sRGB 188, not to the byte midpoint.
-        for texel in mip {
-            assert_eq!(texel[0], 188, "expected mid grey in linear light");
-            assert_eq!(texel[3], 255);
-        }
-    }
-
-    /// A normal is a direction: averaging two slopes that lean opposite
-    /// ways shortens the vector, and a short normal read as a unit one
-    /// flattens the lighting instead of smoothing it.
-    #[test]
-    fn a_normal_mip_stays_unit_length() {
-        let (images, set, handles) = one_layer_set(
-            Some(solid(
-                4,
-                4,
-                [10, 20, 30, 255],
-                TextureFormat::Rgba8UnormSrgb,
-            )),
-            Some(checker(
-                4,
-                [255, 128, 128, 255],
-                [0, 128, 128, 255],
-                TextureFormat::Rgba8Unorm,
-            )),
-        );
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        for level in 0..built.normal.texture_descriptor.mip_level_count {
-            for texel in mip_level(&built.normal, 0, level) {
-                let vector: Vec<f32> = texel[..3]
-                    .iter()
-                    .map(|c| f32::from(*c) / 255.0 * 2.0 - 1.0)
-                    .collect();
-                let length =
-                    (vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2]).sqrt();
-                assert!(
-                    (length - 1.0).abs() < 0.02,
-                    "mip {level} holds a normal of length {length}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_mismatched_albedo_names_the_entry_and_both_sizes() {
-        let (images, set, handles) = loaded_set(&[(4, 4), (8, 4)]);
-        let err = splat_images(&set, &handles, &images).expect_err("mismatched sizes");
-        let SplatBuildError::Invalid(reason) = err else {
-            panic!("expected an invalid-set error, got {err:?}");
-        };
-        let message = reason.to_string();
-        assert!(message.contains("t1.png"), "{message}");
-        assert!(message.contains("8x4"), "{message}");
-        assert!(message.contains("4x4"), "{message}");
-    }
-
-    /// `splat_images` is public, so handles that do not line up with the
-    /// entries are refused rather than turned into an undersized texture.
-    #[test]
-    fn handles_with_no_layers_at_all_are_refused_rather_than_built() {
+    fn handles_with_no_layers_at_all_are_refused() {
         let images = Assets::<Image>::default();
         let set = TextureSet {
             entries: vec![TextureSetEntry::new("grass", "a.png")],
         };
-        let err = splat_images(&set, &TextureSetImages::default(), &images)
+        let err = slot_images_ready(&set, &TextureSetImages::default(), &images)
             .expect_err("handles that name no layers are refused");
         assert_eq!(err, SplatBuildError::Invalid(TextureSetError::Empty));
     }
@@ -1726,387 +890,16 @@ mod tests {
     fn an_image_that_has_not_decoded_yet_reports_not_ready_rather_than_failing() {
         let (_, set, handles) = loaded_set(&[(4, 4)]);
         let empty = Assets::<Image>::default();
-        assert!(matches!(
-            splat_images(&set, &handles, &empty),
+        assert_eq!(
+            slot_images_ready(&set, &handles, &empty),
             Err(SplatBuildError::NotReady)
-        ));
-    }
-
-    #[test]
-    fn a_set_with_no_normal_maps_gets_a_one_texel_flat_array() {
-        let (images, set, handles) = loaded_set(&[(64, 64), (64, 64)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.normal.texture_descriptor.size.width, 1);
-        assert_eq!(
-            built.normal.texture_descriptor.size.depth_or_array_layers,
-            2
-        );
-        assert_eq!(
-            built.normal.data.as_ref().unwrap()[..4],
-            FLAT_NORMAL_TEXEL,
-            "a set with no normal maps must shade flat, not black"
-        );
-        assert_eq!(
-            built.height.data.as_ref().unwrap()[..4],
-            FLAT_HEIGHT_TEXEL,
-            "a set with no height maps must blend evenly, not lose every band"
-        );
-    }
-
-    /// The fill for a layer with no height map has to sit in the middle of the
-    /// range, not at either end.
-    ///
-    /// The shader blends two ids by `layer_weight + height`, so a fill at either
-    /// end lets one material's missing file decide the whole terrain's look.
-    #[test]
-    fn a_layer_with_no_height_map_is_filled_mid_range() {
-        assert_eq!(
-            FLAT_HEIGHT_TEXEL,
-            [128, 128, 128, 255],
-            "a heightless layer must neither win nor lose every band"
-        );
-        let (images, set, handles) = loaded_set(&[(4, 4), (4, 4)]);
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        for texel in mip_level(&built.height, 1, 0) {
-            assert_eq!(texel, FLAT_HEIGHT_TEXEL);
-        }
-    }
-
-    /// Optionality is per entry: one entry with a height map and one
-    /// without must both end up in a full-size array, the second filled.
-    #[test]
-    fn an_entry_without_a_height_map_gets_a_filled_layer_beside_one_that_has_it() {
-        let mut images = Assets::<Image>::default();
-        let a = images.add(solid(4, 4, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let b = images.add(solid(4, 4, [4, 5, 6, 255], TextureFormat::Rgba8UnormSrgb));
-        let h = images.add(solid(4, 4, [7, 7, 7, 255], TextureFormat::Rgba8Unorm));
-        let set = TextureSet {
-            entries: vec![
-                TextureSetEntry {
-                    height: Some("a_h.png".into()),
-                    ..TextureSetEntry::new("grass", "a.png")
-                },
-                TextureSetEntry::new("rock", "b.png"),
-            ],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(a), Some(b)],
-            normal: vec![None, None],
-            height: vec![Some(h), None],
-            occlusion: vec![None; 2],
-            roughness: vec![None; 2],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.height.texture_descriptor.size.width, 4);
-        assert_eq!(
-            built.height.texture_descriptor.size.depth_or_array_layers,
-            2
-        );
-        assert_eq!(
-            mip_level(&built.height, 0, 0)[0][0],
-            7,
-            "entry 0 keeps its own height map"
-        );
-        assert_eq!(
-            mip_level(&built.height, 1, 0)[0],
-            FLAT_HEIGHT_TEXEL,
-            "entry 1 is filled, not left black"
         );
     }
 
     #[test]
-    fn a_height_map_of_the_wrong_size_names_itself_not_the_albedo() {
-        let mut images = Assets::<Image>::default();
-        let a = images.add(solid(4, 4, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let h = images.add(solid(8, 8, [7, 7, 7, 255], TextureFormat::Rgba8Unorm));
-        let set = TextureSet {
-            entries: vec![TextureSetEntry {
-                height: Some("tall_h.png".into()),
-                ..TextureSetEntry::new("grass", "a.png")
-            }],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(a)],
-            normal: vec![None],
-            height: vec![Some(h)],
-            occlusion: vec![None; 1],
-            roughness: vec![None; 1],
-        };
-        let err = splat_images(&set, &handles, &images).expect_err("mismatched height map");
-        let SplatBuildError::Invalid(reason) = err else {
-            panic!("expected an invalid-set error, got {err:?}");
-        };
-        assert!(reason.to_string().contains("tall_h.png"), "{reason}");
-        assert!(reason.to_string().contains("grass"), "{reason}");
-    }
-
-    /// A slot whose material has no file behind it must still occupy its
-    /// own layer: dropping it would shift every id painted after it.
-    #[test]
-    fn a_slot_with_no_albedo_gets_a_fallback_layer_and_keeps_its_id() {
-        let mut images = Assets::<Image>::default();
-        let a = images.add(solid(4, 4, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let c = images.add(solid(4, 4, [9, 9, 9, 255], TextureFormat::Rgba8UnormSrgb));
-        let set = TextureSet {
-            entries: vec![
-                TextureSetEntry::new("grass", "a.png"),
-                TextureSetEntry::unresolved("gone", 0.1),
-                TextureSetEntry::new("rock", "c.png"),
-            ],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(a), None, Some(c)],
-            normal: vec![None, None, None],
-            height: vec![None, None, None],
-            occlusion: vec![None; 3],
-            roughness: vec![None; 3],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(
-            built.albedo.texture_descriptor.size.depth_or_array_layers, 3,
-            "the missing slot must keep its own layer",
-        );
-        assert_eq!(
-            mip_level(&built.albedo, 0, 0)[0][0],
-            1,
-            "slot 0 still draws its own texture"
-        );
-        assert_eq!(
-            mip_level(&built.albedo, 1, 0)[0],
-            FALLBACK_ALBEDO_TEXEL,
-            "the missing slot draws the fallback rather than nothing",
-        );
-        assert_eq!(
-            mip_level(&built.albedo, 2, 0)[0][0],
-            9,
-            "slot 2 kept its id"
-        );
-    }
-
-    /// Every material missing leaves nothing to measure, so the arrays
-    /// collapse to one texel rather than failing to build at all, and the
-    /// terrain still renders and stays paintable.
-    #[test]
-    fn a_set_whose_materials_all_went_missing_still_builds() {
-        let images = Assets::<Image>::default();
-        let set = TextureSet {
-            entries: vec![
-                TextureSetEntry::unresolved("gone", 0.1),
-                TextureSetEntry::unresolved("also_gone", 0.1),
-            ],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![None, None],
-            normal: vec![None, None],
-            height: vec![None, None],
-            occlusion: vec![None; 2],
-            roughness: vec![None; 2],
-        };
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.albedo.texture_descriptor.size.width, 1);
-        assert_eq!(
-            built.albedo.texture_descriptor.size.depth_or_array_layers,
-            2
-        );
-        assert_eq!(
-            built.albedo.data.as_ref().unwrap()[..4],
-            FALLBACK_ALBEDO_TEXEL
-        );
-    }
-
-    /// A normal map authored with green pointing down is flipped once
-    /// here, on the way into the array, so the shader never has to know
-    /// which convention a material used.
-    #[test]
-    fn a_material_flagged_for_dx_normals_has_its_green_channel_flipped() {
-        let mut images = Assets::<Image>::default();
-        let a = images.add(solid(2, 2, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let b = images.add(solid(2, 2, [4, 5, 6, 255], TextureFormat::Rgba8UnormSrgb));
-        let dx = images.add(solid(2, 2, [128, 40, 255, 255], TextureFormat::Rgba8Unorm));
-        let gl = images.add(solid(2, 2, [128, 40, 255, 255], TextureFormat::Rgba8Unorm));
-        let set = TextureSet {
-            entries: vec![
-                TextureSetEntry {
-                    normal: Some("dx_n.png".into()),
-                    flip_normal_y: true,
-                    ..TextureSetEntry::new("dx_rock", "a.png")
-                },
-                TextureSetEntry {
-                    normal: Some("gl_n.png".into()),
-                    ..TextureSetEntry::new("gl_rock", "b.png")
-                },
-            ],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(a), Some(b)],
-            normal: vec![Some(dx), Some(gl)],
-            height: vec![None, None],
-            occlusion: vec![None; 2],
-            roughness: vec![None; 2],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        let flagged = mip_level(&built.normal, 0, 0)[0];
-        assert_eq!(
-            flagged[1],
-            255 - 40,
-            "the flagged layer's green is inverted"
-        );
-        assert_eq!(flagged[0], 128, "red is untouched");
-        assert_eq!(flagged[2], 255, "blue is untouched");
-        assert_eq!(
-            mip_level(&built.normal, 1, 0)[0][1],
-            40,
-            "an unflagged layer in the same set keeps its green",
-        );
-    }
-
-    /// A downloaded pack ships 16-bit maps. They must stack from the
-    /// originals, narrowed here, rather than needing a converted copy.
-    #[test]
-    fn a_sixteen_bit_set_stacks_from_the_high_byte_of_every_channel() {
-        let mut images = Assets::<Image>::default();
-        let albedo = images.add(solid_texel(
-            2,
-            2,
-            &[0x00, 0x11, 0x00, 0x22, 0x00, 0x33, 0xff, 0xff],
-            TextureFormat::Rgba16Unorm,
-        ));
-        let normal = images.add(solid_texel(
-            2,
-            2,
-            &[0x00, 0x80, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff],
-            TextureFormat::Rgba16Unorm,
-        ));
-        let height = images.add(solid_texel(2, 2, &[0x00, 0x99], TextureFormat::R16Uint));
-        let set = TextureSet {
-            entries: vec![TextureSetEntry {
-                normal: Some("n.png".into()),
-                height: Some("h.png".into()),
-                ..TextureSetEntry::new("rock", "a.png")
-            }],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(albedo)],
-            normal: vec![Some(normal)],
-            height: vec![Some(height)],
-            occlusion: vec![None; 1],
-            roughness: vec![None; 1],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(
-            built.albedo.texture_descriptor.format,
-            TextureFormat::Rgba8UnormSrgb
-        );
-        assert_eq!(built.albedo.data.as_ref().unwrap()[..4], [17, 34, 51, 255]);
-        assert_eq!(
-            built.normal.data.as_ref().unwrap()[..4],
-            [128, 64, 255, 255]
-        );
-        assert_eq!(
-            built.height.data.as_ref().unwrap()[..4],
-            [153, 153, 153, 255],
-            "a single-channel map greys across RGB rather than stacking as red",
-        );
-    }
-
-    /// Narrowing happens on the way in, so the flip still lands on the
-    /// green channel of a 16-bit normal map.
-    #[test]
-    fn a_sixteen_bit_normal_map_flagged_for_dx_still_flips_its_green() {
-        let mut images = Assets::<Image>::default();
-        let albedo = images.add(solid(2, 2, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let normal = images.add(solid_texel(
-            2,
-            2,
-            &[0x00, 0x80, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff],
-            TextureFormat::Rgba16Unorm,
-        ));
-        let set = TextureSet {
-            entries: vec![TextureSetEntry {
-                normal: Some("n.png".into()),
-                flip_normal_y: true,
-                ..TextureSetEntry::new("rock", "a.png")
-            }],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(albedo)],
-            normal: vec![Some(normal)],
-            height: vec![None],
-            occlusion: vec![None; 1],
-            roughness: vec![None; 1],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.normal.data.as_ref().unwrap()[1], 255 - 64);
-    }
-
-    /// Grayscale-plus-alpha lands on `Rg16Uint`: the grey channel spreads
-    /// across RGB and the second channel stays the alpha it was.
-    #[test]
-    fn a_sixteen_bit_grayscale_alpha_height_map_keeps_its_alpha() {
-        let mut images = Assets::<Image>::default();
-        let albedo = images.add(solid(2, 2, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let height = images.add(solid_texel(
-            2,
-            2,
-            &[0x00, 0x40, 0x00, 0x80],
-            TextureFormat::Rg16Uint,
-        ));
-        let set = TextureSet {
-            entries: vec![TextureSetEntry {
-                height: Some("h.png".into()),
-                ..TextureSetEntry::new("rock", "a.png")
-            }],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(albedo)],
-            normal: vec![None],
-            height: vec![Some(height)],
-            occlusion: vec![None; 1],
-            roughness: vec![None; 1],
-        };
-
-        let built = splat_images(&set, &handles, &images).expect("stacks");
-        assert_eq!(built.height.data.as_ref().unwrap()[..4], [64, 64, 64, 128]);
-    }
-
-    /// A format with no narrowing path still fails, and the message names
-    /// the two formats rather than blaming a colour space it cannot know.
-    #[test]
-    fn a_format_with_no_narrowing_path_names_both_formats() {
-        let mut images = Assets::<Image>::default();
-        let albedo = images.add(solid(2, 2, [1, 2, 3, 255], TextureFormat::Rgba8UnormSrgb));
-        let normal = images.add(solid_texel(2, 2, &[0u8; 16], TextureFormat::Rgba32Float));
-        let set = TextureSet {
-            entries: vec![TextureSetEntry {
-                normal: Some("n.exr".into()),
-                ..TextureSetEntry::new("rock", "a.png")
-            }],
-        };
-        let handles = TextureSetImages {
-            albedo: vec![Some(albedo)],
-            normal: vec![Some(normal)],
-            height: vec![None],
-            occlusion: vec![None; 1],
-            roughness: vec![None; 1],
-        };
-
-        let err = splat_images(&set, &handles, &images).expect_err("no narrowing path");
-        assert_eq!(
-            err,
-            SplatBuildError::Unconvertible {
-                from: TextureFormat::Rgba32Float,
-                to: TextureFormat::Rgba8Unorm,
-            }
-        );
-        let message = err.to_string();
-        assert!(message.contains("Rgba32Float"), "{message}");
-        assert!(message.contains("Rgba8Unorm"), "{message}");
-        assert!(!message.contains("sRGB"), "{message}");
+    fn a_decoded_set_is_ready() {
+        let (images, set, handles) = loaded_set(&[(4, 4), (8, 8)]);
+        assert_eq!(slot_images_ready(&set, &handles, &images), Ok(()));
     }
 
     #[test]
@@ -2114,7 +907,7 @@ mod tests {
         let (images, mut set, handles) = loaded_set(&[(4, 4)]);
         set.entries[0].uv_scale = 0.0;
         assert!(matches!(
-            splat_images(&set, &handles, &images),
+            slot_images_ready(&set, &handles, &images),
             Err(SplatBuildError::Invalid(TextureSetError::BadUvScale { .. }))
         ));
     }
@@ -2143,13 +936,7 @@ mod tests {
             &TextureSet {
                 entries: vec![TextureSetEntry::new("grass", "a.png")],
             },
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),
@@ -2246,16 +1033,9 @@ mod tests {
                 },
             ],
         };
-        let arrays = SplatArrayHandles {
-            albedo: Handle::default(),
-            normal: Handle::default(),
-            height: Handle::default(),
-            occlusion: Handle::default(),
-            roughness: Handle::default(),
-        };
         let material = TerrainSplatMaterial::new(
             &set,
-            arrays,
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),
@@ -2291,13 +1071,7 @@ mod tests {
         };
         let material = TerrainSplatMaterial::new(
             &set,
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),
@@ -2317,13 +1091,7 @@ mod tests {
     fn the_surface_uniform_is_sanitized_on_the_way_in() {
         let material = TerrainSplatMaterial::new(
             &TextureSet::default(),
-            SplatArrayHandles {
-                albedo: Handle::default(),
-                normal: Handle::default(),
-                height: Handle::default(),
-                occlusion: Handle::default(),
-                roughness: Handle::default(),
-            },
+            TextureSetImages::default(),
             Handle::default(),
             Handle::default(),
             Handle::default(),

@@ -106,14 +106,14 @@ disable, and uninstall take effect without restarting; superseded native
 mappings are reclaimed when Jackdaw exits.
 
 To load a scene you authored into your own game, depend on `jackdaw_runtime`
-and spawn a `JackdawSceneRoot`:
+and spawn a `ScenePatchInstance`:
 
 ```rust
 use bevy::prelude::*;
 use jackdaw_runtime::prelude::*;
 
 fn spawn_scene(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(JackdawSceneRoot(asset_server.load("scene.bsn")));
+    commands.spawn(ScenePatchInstance(asset_server.load("scene.bsn")));
 }
 ```
 

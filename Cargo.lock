@@ -4644,6 +4644,7 @@ dependencies = [
 name = "jackdaw_terrain"
 version = "0.19.0"
 dependencies = [
+ "ash",
  "bevy",
  "bevy_aurora",
  "bevy_math",

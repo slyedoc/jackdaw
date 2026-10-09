@@ -253,6 +253,11 @@ fn activate<C: Component>(commands: &mut Commands, contexts: impl Iterator<Item 
 #[derive(Component)]
 struct CoveredByEditor;
 
+/// An editor camera rendering into an image (a 2D panel, a preview) and whether it was on
+/// when the editor was hidden, to put back when it is shown.
+#[derive(Component)]
+struct ActiveBeforeHide(bool);
+
 /// A host UI root the editor hid while it covers the window, with the display it had.
 #[derive(Component)]
 struct HiddenByEditor(Display);
@@ -306,7 +311,16 @@ fn show_or_hide_editor(
         (&mut Visibility, &mut Node),
         (With<bevy_window_chrome::WindowShellRoot>, With<EditorEntity>),
     >,
-    mut cameras: Query<(Entity, &mut Camera, Has<Camera2d>), With<EditorEntity>>,
+    mut cameras: Query<
+        (
+            Entity,
+            &mut Camera,
+            Has<Camera2d>,
+            Option<&bevy::camera::RenderTarget>,
+            Option<&ActiveBeforeHide>,
+        ),
+        With<EditorEntity>,
+    >,
     mut host_cameras: Query<
         (Entity, &mut Camera, Option<&bevy::camera::RenderTarget>, Has<CoveredByEditor>),
         Without<EditorEntity>,
@@ -332,14 +346,26 @@ fn show_or_hide_editor(
             commands.entity(entity).remove::<CoveredByEditor>();
         }
     }
-    for (entity, mut camera, ui) in &mut cameras {
-        camera.is_active = on;
-        if ui {
-            if on {
-                commands.entity(entity).insert(bevy::ui::IsDefaultUiCamera);
-            } else {
-                commands.entity(entity).remove::<bevy::ui::IsDefaultUiCamera>();
+    for (entity, mut camera, is_2d, target, before) in &mut cameras {
+        let to_window = matches!(target, None | Some(bevy::camera::RenderTarget::Window(_)));
+        if to_window {
+            // The shell camera: the editor's window, and the one camera its UI draws through.
+            camera.is_active = on;
+            if is_2d {
+                if on {
+                    commands.entity(entity).insert(bevy::ui::IsDefaultUiCamera);
+                } else {
+                    commands.entity(entity).remove::<bevy::ui::IsDefaultUiCamera>();
+                }
             }
+        } else if !on && before.is_none() {
+            commands
+                .entity(entity)
+                .insert(ActiveBeforeHide(camera.is_active));
+            camera.is_active = false;
+        } else if on && let Some(ActiveBeforeHide(was)) = before {
+            camera.is_active = *was;
+            commands.entity(entity).remove::<ActiveBeforeHide>();
         }
     }
     for viewport in &viewports {
@@ -630,7 +656,13 @@ impl Plugin for EditorCorePlugin {
         .add_systems(
             PostUpdate,
             (
-                show_or_hide_editor.run_if(resource_changed::<EditorShown>),
+                // Again for any camera that appears while it is up: a game camera spawned
+                // under the editor is covered too.
+                show_or_hide_editor.run_if(
+                    |shown: Res<EditorShown>, added: Query<(), Added<Camera>>| {
+                        shown.is_changed() || !added.is_empty()
+                    },
+                ),
                 cover_host_ui,
             ),
         )
