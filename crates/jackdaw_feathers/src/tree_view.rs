@@ -872,7 +872,8 @@ pub fn ellipsize_tree_row_labels(
                 fit.full_width = full_width;
             }
             None => {
-                commands.entity(entity).insert(TreeRowLabelFit {
+                // The row may be recycled away this frame: a stale insert is harmless.
+                commands.entity(entity).try_insert(TreeRowLabelFit {
                     full: full.clone(),
                     shown: wanted.clone(),
                     full_width,

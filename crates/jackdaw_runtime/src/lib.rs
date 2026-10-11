@@ -4,16 +4,15 @@
 //! [`JackdawPlugin`] registers the authored types and draws what they describe: brushes,
 //! surfaces, terrain, material overrides, colliders, a baked navmesh.
 //!
-//! A level loads onto the environment it plays in, usually the main one: an environment scene's
-//! root (its sky, exposure, gravity) lands on that entity and its contents become its children;
-//! any other scene just adds its entities there.
+//! A level loads onto the environment it plays in (there is no default one; the game spawns
+//! it): an environment scene's root (its sky, exposure, gravity) lands on that entity and its
+//! contents become its children; any other scene just adds its entities there.
 //!
 //! ```ignore
 //! App::new()
 //!     .add_plugins((DefaultPlugins, jackdaw_runtime::JackdawPlugin))
-//!     .add_systems(Startup, |mut commands: Commands, assets: Res<AssetServer>,
-//!                            main: Res<MainPhysicsEnvironmentEntity>| {
-//!         commands.entity(main.0).insert(ScenePatchInstance(assets.load("scene.bsn")));
+//!     .add_systems(Startup, |mut commands: Commands, assets: Res<AssetServer>| {
+//!         commands.spawn((Environment::default(), ScenePatchInstance(assets.load("scene.bsn"))));
 //!     })
 //!     .run();
 //! ```
@@ -65,7 +64,7 @@ pub mod prelude {
     #[cfg(feature = "terrain")]
     pub use crate::{DetailPressers, DetailSettings, DetailViewer, TerrainViewer};
     pub use bevy::scene::ScenePatchInstance;
-    pub use bevy_aurora::environment::{Environment, MainPhysicsEnvironmentEntity};
+    pub use bevy_aurora::environment::Environment;
 }
 
 pub struct JackdawPlugin;
