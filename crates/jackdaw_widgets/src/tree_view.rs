@@ -39,6 +39,12 @@ pub struct TreeRowLabel;
 #[derive(Component)]
 pub struct TreeRowChildren;
 
+/// How far a tree that scrolls itself (a virtual list, not laid out as one tall column)
+/// can scroll, in logical pixels; on its [`TreeRoot`]. Without it the root's laid-out
+/// content says.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct TreeScrollExtent(pub f32);
+
 /// Where a row of a flat (virtual) tree stands: its level, and the level of the row drawn
 /// below it. The gap under a row reaches from the next row's level up to its own, which is
 /// how a drop there says how many levels up it lands.

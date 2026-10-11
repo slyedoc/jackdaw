@@ -3,8 +3,10 @@
 //! Each panel ([`HierarchyTreeContainer`]) keeps the rows it shows as a flat list
 //! ([`OutlinerView::rows`]): every root, and under every open row its children, each with
 //! its depth. Only the rows in view (and a few either side) exist as UI: a pool of
-//! [`tree_row`]s absolutely placed over a spacer as tall as the whole list, rebound to other
-//! entities as the panel scrolls. A node with fifty thousand children is fifty thousand
+//! [`tree_row`]s absolutely placed in the panel's body, rebound to other entities as the
+//! panel scrolls. The panel scrolls itself: layout only clips it, the offset is its
+//! `ScrollPosition` (so reveal and drag auto-scroll write it as they would any panel's), and
+//! the bar on its right edge is drawn here from the same figures the rows are placed by. A node with fifty thousand children is fifty thousand
 //! entries in a `Vec`, not fifty thousand rows of UI.
 //!
 //! The child lists come from [`OutlinerTree`], a cache of each open node's ordered,
@@ -15,7 +17,7 @@
 use std::collections::{HashMap, HashSet};
 
 use avian3d::environment::PhysicsEnvironment;
-use bevy::{input_focus::InputFocus, prelude::*};
+use bevy::{input_focus::InputFocus, prelude::*, ui::UiGlobalTransform};
 use jackdaw_api_internal::entity_icons::registered_icon;
 use jackdaw_feathers::{
     icons::{Icon, IconFont},
@@ -67,8 +69,10 @@ pub struct OutlinerView {
     expanded: HashSet<Entity>,
     rows: Vec<OutlinerRow>,
     position: HashMap<Entity, usize>,
-    /// The list's height; the row widgets are its children.
+    /// The area the rows are drawn in (the panel less the bar's gutter); their parent.
     spacer: Option<Entity>,
+    /// The scrollbar's track and thumb.
+    bar: Option<(Entity, Entity)>,
     /// Row widgets and the entity each is bound to.
     pool: Vec<(Entity, Option<Entity>)>,
     /// The panel's filter text, lowercased; empty lists the tree.
@@ -164,6 +168,7 @@ pub(crate) fn plugin(app: &mut App) {
     app.init_resource::<OutlinerTree>()
         .init_resource::<OutlinerFocus>()
         .add_observer(on_container_added)
+        .add_observer(scroll_on_wheel)
         .add_observer(on_parent_set)
         .add_observer(on_parent_removed)
         .add_observer(|add: On<Add<Name>>, mut commands: Commands| {
@@ -219,31 +224,150 @@ fn drops_list_on_add<C: Component>(add: On<Add<C>>, mut commands: Commands) {
     commands.queue(move |world: &mut World| drop_list_of(world, entity));
 }
 
-/// A panel gets its spacer: the list's height, the parent of its row widgets.
+/// The scrollbar's width, and the gutter on the panel's right it sits in.
+const BAR_WIDTH: f32 = 6.0;
+const BAR_GUTTER: f32 = BAR_WIDTH + 4.0;
+const BAR_MIN_THUMB: f32 = 24.0;
+
+/// A panel's scrollbar track; the thumb is its child.
+#[derive(Component)]
+struct OutlinerBar {
+    container: Entity,
+}
+
+/// A panel gets its body (where the row widgets are drawn) and its scrollbar.
 fn on_container_added(
     add: On<Add<HierarchyTreeContainer>>,
     mut commands: Commands,
     mut tree: ResMut<OutlinerTree>,
 ) {
+    use bevy::feathers::{theme::ThemeBackgroundColor, tokens as feathers_tokens};
     let container = add.event_target();
-    let spacer = commands
+    let body = commands
         .spawn((
             Node {
-                width: percent(100),
-                height: px(0.0),
-                flex_shrink: 0.0,
+                position_type: PositionType::Absolute,
+                left: px(0.0),
+                top: px(0.0),
+                bottom: px(0.0),
+                right: px(BAR_GUTTER),
+                overflow: Overflow::clip(),
                 ..default()
             },
             Pickable::IGNORE,
             ChildOf(container),
         ))
         .id();
-    commands.entity(container).insert(OutlinerView {
-        spacer: Some(spacer),
-        stale: true,
-        ..default()
-    });
+    let track = commands
+        .spawn((
+            OutlinerBar { container },
+            Node {
+                position_type: PositionType::Absolute,
+                top: px(2.0),
+                bottom: px(2.0),
+                right: px(2.0),
+                width: px(BAR_WIDTH),
+                border_radius: BorderRadius::all(px(BAR_WIDTH / 2.0)),
+                ..default()
+            },
+            ThemeBackgroundColor(feathers_tokens::SCROLLBAR_BG),
+            Visibility::Hidden,
+            ChildOf(container),
+        ))
+        .observe(press_bar_track)
+        .id();
+    let thumb = commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: px(0.0),
+                right: px(0.0),
+                top: px(0.0),
+                height: px(BAR_MIN_THUMB),
+                border_radius: BorderRadius::all(px(BAR_WIDTH / 2.0)),
+                ..default()
+            },
+            ThemeBackgroundColor(feathers_tokens::SCROLLBAR_THUMB),
+            ChildOf(track),
+        ))
+        .observe(drag_bar_thumb)
+        .id();
+    commands.entity(container).insert((
+        OutlinerView {
+            spacer: Some(body),
+            bar: Some((track, thumb)),
+            stale: true,
+            ..default()
+        },
+        jackdaw_widgets::tree_view::TreeScrollExtent::default(),
+    ));
     tree.dirty = true;
+}
+
+/// The wheel over a panel scrolls its list.
+fn scroll_on_wheel(mut wheel: On<crate::Scroll>, mut panels: Query<&mut ScrollPosition, With<OutlinerView>>) {
+    let Ok(mut scroll) = panels.get_mut(wheel.event_target()) else {
+        return;
+    };
+    if wheel.delta.y == 0.0 {
+        return;
+    }
+    scroll.y = (scroll.y + wheel.delta.y).max(0.0);
+    wheel.delta.y = 0.0;
+    if wheel.delta == Vec2::ZERO {
+        wheel.propagate(false);
+    }
+}
+
+/// Dragging the thumb moves the view by as much of the list as the thumb moves of the track.
+fn drag_bar_thumb(
+    mut drag: On<PointerDrag>,
+    parents: Query<&ChildOf>,
+    bars: Query<&OutlinerBar>,
+    computed: Query<&ComputedNode>,
+    mut panels: Query<(&OutlinerView, &mut ScrollPosition)>,
+) {
+    drag.propagate(false);
+    let Ok(&ChildOf(track)) = parents.get(drag.event_target()) else {
+        return;
+    };
+    let (Ok(bar), Ok(track_node)) = (bars.get(track), computed.get(track)) else {
+        return;
+    };
+    let Ok((view, mut scroll)) = panels.get_mut(bar.container) else {
+        return;
+    };
+    let track_length = track_node.size().y * track_node.inverse_scale_factor();
+    let total = view.rows.len() as f32 * ROW_HEIGHT;
+    if track_length <= 0.0 {
+        return;
+    }
+    scroll.y = (scroll.y + drag.delta.y * total / track_length).max(0.0);
+}
+
+/// A press on the track (not the thumb) centres the view on the part of the list there.
+fn press_bar_track(
+    mut press: On<PointerPress>,
+    bars: Query<(&OutlinerBar, &ComputedNode, &UiGlobalTransform)>,
+    mut panels: Query<(&OutlinerView, &mut ScrollPosition, &ComputedNode)>,
+) {
+    press.propagate(false);
+    let Ok((bar, track, transform)) = bars.get(press.event_target()) else {
+        return;
+    };
+    let Ok((view, mut scroll, panel)) = panels.get_mut(bar.container) else {
+        return;
+    };
+    let scale = track.inverse_scale_factor();
+    let top = (transform.translation.y - track.size().y / 2.0) * scale;
+    let length = track.size().y * scale;
+    if length <= 0.0 {
+        return;
+    }
+    let at = ((press.pointer.position.y - top) / length).clamp(0.0, 1.0);
+    let total = view.rows.len() as f32 * ROW_HEIGHT;
+    let view_height = panel.size().y * panel.inverse_scale_factor();
+    scroll.y = (at * total - view_height / 2.0).max(0.0);
 }
 
 fn on_parent_set(
@@ -665,11 +789,6 @@ fn bind_panel(world: &mut World, container: Entity) {
         return;
     };
     let total = view.rows.len() as f32 * ROW_HEIGHT;
-    if let Some(mut node) = world.get_mut::<Node>(spacer)
-        && node.height != px(total)
-    {
-        node.height = px(total);
-    }
 
     // No more of a list is ever in view than the window holds, whatever its panel's size
     // says (a panel laid out to its content is as tall as the whole list).
@@ -701,11 +820,21 @@ fn bind_panel(world: &mut World, container: Entity) {
         } else if top + ROW_HEIGHT > scroll + view_height {
             scroll = top + ROW_HEIGHT - view_height;
         }
-        if let Some(mut position) = world.get_mut::<ScrollPosition>(container) {
-            position.y = scroll;
-        }
     }
-    scroll = scroll.clamp(0.0, (total - view_height).max(0.0));
+    let extent = (total - view_height).max(0.0);
+    scroll = scroll.clamp(0.0, extent);
+    if let Some(mut position) = world.get_mut::<ScrollPosition>(container)
+        && position.y != scroll
+    {
+        position.y = scroll;
+    }
+    let extent = jackdaw_widgets::tree_view::TreeScrollExtent(extent);
+    if world.get::<jackdaw_widgets::tree_view::TreeScrollExtent>(container) != Some(&extent) {
+        world.entity_mut(container).insert(extent);
+    }
+    if let Some((track, thumb)) = view.bar {
+        sync_bar(world, track, thumb, scroll, total, view_height);
+    }
 
     let first = ((scroll / ROW_HEIGHT).floor() as usize).saturating_sub(OVERSCAN);
     let wanted = (view_height / ROW_HEIGHT).ceil() as usize + 2 * OVERSCAN;
@@ -756,7 +885,8 @@ fn bind_panel(world: &mut World, container: Entity) {
                 slot
             }
         };
-        if let Some(open) = sync_row(world, view.pool[slot].0, row, index, next_depth)
+        let top = index as f32 * ROW_HEIGHT - scroll;
+        if let Some(open) = sync_row(world, view.pool[slot].0, row, top, next_depth)
             && set_expanded(&mut view, row.source, open)
         {
             world.resource_mut::<OutlinerTree>().dirty = true;
@@ -776,6 +906,40 @@ fn bind_panel(world: &mut World, container: Entity) {
     }
     view.stale = false;
     world.entity_mut(container).insert(view);
+}
+
+/// Show the bar while the list is longer than the view, its thumb as much of the track as
+/// the view is of the list, where the view is in it.
+fn sync_bar(world: &mut World, track: Entity, thumb: Entity, scroll: f32, total: f32, view: f32) {
+    let shown = total > view + 0.5;
+    let visibility = if shown {
+        Visibility::Inherited
+    } else {
+        Visibility::Hidden
+    };
+    if world.get::<Visibility>(track) != Some(&visibility) {
+        world.entity_mut(track).insert(visibility);
+    }
+    if !shown {
+        return;
+    }
+    let length = world
+        .get::<ComputedNode>(track)
+        .map(|computed| computed.size().y * computed.inverse_scale_factor())
+        .filter(|length| *length > 0.0)
+        .unwrap_or(view);
+    let height = (length * view / total).clamp(BAR_MIN_THUMB.min(length), length);
+    let top = if total > view {
+        (length - height) * scroll / (total - view)
+    } else {
+        0.0
+    };
+    if let Some(mut node) = world.get_mut::<Node>(thumb)
+        && (node.top != px(top) || node.height != px(height))
+    {
+        node.top = px(top);
+        node.height = px(height);
+    }
 }
 
 fn unindex(world: &mut World, container: Entity, source: Entity, row: Entity) {
@@ -828,13 +992,12 @@ fn sync_row(
     world: &mut World,
     widget: Entity,
     row: OutlinerRow,
-    index: usize,
+    top: f32,
     next_depth: usize,
 ) -> Option<bool> {
     let mut drawn = world.entity_mut(widget).take::<RowDrawn>()?;
     let source = row.source;
 
-    let top = index as f32 * ROW_HEIGHT;
     let indent = row.depth as f32 * INDENT_STEP;
     if drawn.top != top || drawn.indent != indent {
         if let Some(mut node) = world.get_mut::<Node>(widget) {

@@ -9,7 +9,7 @@ use bevy_monitors::prelude::{MonitorSelf, Mutation, NotifyChanged};
 use jackdaw_widgets::tree_view::{
     EntityCategory, TreeDragCancelled, TreeDropLine, TreeFocused, TreeNode,
     TreeNodeExpandToggle, TreeNodeExpanded, TreeRoot, TreeRowChildren, TreeRowClicked,
-    TreeRowContent, TreeRowDepth, TreeRowDot, TreeRowDropped, TreeRowDroppedOnRoot,
+    TreeRowContent, TreeRowDepth, TreeRowDot, TreeScrollExtent, TreeRowDropped, TreeRowDroppedOnRoot,
     TreeRowInlineRename,
     TreeRowInsertZone, TreeRowInserted, TreeRowLabel, TreeRowLockToggle, TreeRowLockToggled,
     TreeRowSelected, TreeRowStartRename, TreeRowVisibilityToggle, TreeRowVisibilityToggled,
@@ -1063,7 +1063,7 @@ pub fn auto_scroll_tree_on_drag(
     parents: Query<&ChildOf>,
     roots: Query<Entity, With<TreeRoot>>,
     transforms: Query<(&ComputedNode, &UiGlobalTransform)>,
-    mut scrolls: Query<&mut ScrollPosition>,
+    mut scrolls: Query<(&mut ScrollPosition, Option<&TreeScrollExtent>)>,
 ) {
     let over = line.zone.or(spring.row);
     let Some(over) = over else { return };
@@ -1089,10 +1089,10 @@ pub fn auto_scroll_tree_on_drag(
     } else {
         return;
     };
-    if let Ok(mut scroll) = scrolls.get_mut(root) {
+    if let Ok((mut scroll, extent)) = scrolls.get_mut(root) {
         let content = computed.content_size().y * computed.inverse_scale_factor();
         let view = computed.size().y * computed.inverse_scale_factor();
-        let max = (content - view).max(0.0);
+        let max = extent.map_or((content - view).max(0.0), |extent| extent.0);
         scroll.y = (scroll.y + delta * time.delta_secs()).clamp(0.0, max);
     }
 }

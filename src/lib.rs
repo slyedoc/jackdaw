@@ -2880,9 +2880,9 @@ const SCROLL_LINE_HEIGHT: f32 = 21.0;
 
 #[derive(EntityEvent, Debug)]
 #[entity_event(propagate, auto_propagate)]
-struct Scroll {
-    entity: Entity,
-    delta: Vec2,
+pub(crate) struct Scroll {
+    pub(crate) entity: Entity,
+    pub(crate) delta: Vec2,
 }
 
 fn send_scroll_events(

@@ -564,7 +564,8 @@ pub fn hierarchy_content(icon_font: Handle<Font>) -> impl Bundle {
                     flex_grow: 1.0,
                     flex_basis: px(0.0),
                     min_height: px(0.0),
-                    overflow: Overflow::scroll_y(),
+                    // The outliner scrolls itself (hierarchy/view.rs): layout only clips.
+                    overflow: Overflow::clip(),
                     margin: UiRect::top(px(tokens::SPACING_SM)),
                     ..Default::default()
                 },
