@@ -11,7 +11,7 @@ pub mod ui;
 use std::path::PathBuf;
 
 use bevy::{camera::visibility::RenderLayers, gizmos::config::GizmoConfigStore, prelude::*};
-use bevy_aurora::environment::RenderEnvironments;
+use bevy_aurora::environment::{InEnvironment, RenderEnvironments};
 
 use crate::commands::CommandHistory;
 use crate::project::ProjectRoot;
@@ -116,19 +116,33 @@ fn add_game_tab(host: Option<Res<HostGame>>, mut scenes: ResMut<Scenes>) {
 
 /// What an editor view of the open scene renders: the active tab's world alone.
 pub fn scene_layers(world: &World) -> RenderLayers {
+    let game = game_environment_bit(
+        world
+            .try_query_filtered::<&InEnvironment, (With<Camera3d>, Without<crate::EditorEntity>)>()
+            .and_then(|mut cameras| cameras.iter(world).next().copied()),
+    );
     tab_layers(
         world.get_resource::<RenderEnvironments>(),
         crate::scene_io::scene_environment(world),
+        game,
     )
 }
 
+/// The live game's world: the one its own (non-editor) camera is in.
+fn game_environment_bit(camera: Option<InEnvironment>) -> Option<u8> {
+    camera.map(|environment| environment.0)
+}
+
+/// A tab with its own environment shows that one; the game tab (none of its own) shows the
+/// game camera's; with neither, nothing.
 fn tab_layers(
     worlds: Option<&RenderEnvironments>,
     tab_environment: Option<Entity>,
+    game: Option<u8>,
 ) -> RenderLayers {
-    match tab_environment.and_then(|tab| worlds?.bit(tab)) {
+    match tab_environment.and_then(|tab| worlds?.bit(tab)).or(game) {
         Some(bit) => RenderLayers::layer(bit as usize),
-        None => RenderLayers::layer(0),
+        None => RenderLayers::none(),
     }
 }
 
@@ -147,13 +161,15 @@ fn follow_tab_world(
         )>,
     >,
     gizmos: Option<ResMut<GizmoConfigStore>>,
+    game_cameras: Query<&InEnvironment, (With<Camera3d>, Without<crate::EditorEntity>)>,
     mut commands: Commands,
 ) {
     let tab_environment = scenes
         .tabs
         .get(scenes.active)
         .and_then(|tab| tab.environment);
-    let layers = tab_layers(worlds.as_deref(), tab_environment);
+    let game = game_environment_bit(game_cameras.iter().next().copied());
+    let layers = tab_layers(worlds.as_deref(), tab_environment, game);
     for (camera, current) in &cameras {
         if current != Some(&layers) {
             commands.entity(camera).insert(layers.clone());
@@ -161,7 +177,12 @@ fn follow_tab_world(
     }
     let up = shown.is_some_and(|shown| shown.0)
         && state.is_some_and(|state| *state.get() == crate::AppState::Editor);
-    let gizmo_layers = if up { layers } else { RenderLayers::layer(0) };
+    // Hidden, the gizmos go back to the game's world.
+    let gizmo_layers = if up {
+        layers
+    } else {
+        game.map_or(RenderLayers::none(), |bit| RenderLayers::layer(bit as usize))
+    };
     if let Some(mut store) = gizmos {
         let differs = store
             .iter()

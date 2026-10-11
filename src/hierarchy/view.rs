@@ -753,16 +753,18 @@ fn list_matches(
     true
 }
 
-/// What a bound row last drew, so a frame's sync only writes what changed.
+/// What a bound row last drew, so a frame's sync only writes what changed. `None` is "not
+/// drawn yet": a widget rebound to another row starts over, so a value that happens to match
+/// the default (the first row's top, a root's indent) is still written.
 #[derive(Component, Default)]
 struct RowDrawn {
     /// The disclosure last written; the row's own differing from it is a flip made on the
     /// row (its toggle, a drag resting on it), which the list takes rather than undoes.
     open: Option<bool>,
-    top: f32,
-    indent: f32,
+    top: Option<f32>,
+    indent: Option<f32>,
     has_children: Option<bool>,
-    label: String,
+    label: Option<String>,
     glyph: Option<(String, Color)>,
     selected: Option<bool>,
     locked: Option<bool>,
@@ -999,13 +1001,13 @@ fn sync_row(
     let source = row.source;
 
     let indent = row.depth as f32 * INDENT_STEP;
-    if drawn.top != top || drawn.indent != indent {
+    if drawn.top != Some(top) || drawn.indent != Some(indent) {
         if let Some(mut node) = world.get_mut::<Node>(widget) {
             node.top = px(top);
             node.padding.left = px(indent);
         }
-        drawn.top = top;
-        drawn.indent = indent;
+        drawn.top = Some(top);
+        drawn.indent = Some(indent);
     }
     let depth = TreeRowDepth {
         depth: row.depth,
@@ -1048,7 +1050,7 @@ fn first_child_with<C: Component>(world: &World, parent: Entity) -> Option<Entit
 
 fn sync_label(world: &mut World, content: Entity, source: Entity, drawn: &mut RowDrawn) {
     let label = row_label(world, source);
-    if drawn.label == label {
+    if drawn.label.as_ref() == Some(&label) {
         return;
     }
     let Some(text) = first_child_with::<TreeRowLabel>(world, content) else {
@@ -1064,7 +1066,7 @@ fn sync_label(world: &mut World, content: Entity, source: Entity, drawn: &mut Ro
     if let Ok(mut entity) = world.get_entity_mut(text) {
         entity.remove::<TreeRowLabelFit>();
     }
-    drawn.label = label;
+    drawn.label = Some(label);
 }
 
 fn sync_glyph(world: &mut World, content: Entity, source: Entity, drawn: &mut RowDrawn) {
