@@ -27,7 +27,9 @@ fn parking(app: &mut App) -> Entity {
 }
 
 fn target(app: &App, root: Entity) -> Option<Entity> {
-    app.world().get::<UiTargetCamera>(root).map(UiTargetCamera::entity)
+    app.world()
+        .get::<UiTargetCamera>(root)
+        .map(UiTargetCamera::entity)
 }
 
 #[test]
@@ -40,7 +42,11 @@ fn the_2d_panel_router_leaves_an_instanced_ui_scene_to_the_world_view() {
         .id();
     let instanced = app
         .world_mut()
-        .spawn((SceneEntity, UiSceneRoot::default(), SceneBase("hud.bsn".into())))
+        .spawn((
+            SceneEntity,
+            UiSceneRoot::default(),
+            SceneBase("hud.bsn".into()),
+        ))
         .id();
 
     app.update();
@@ -65,7 +71,11 @@ fn an_instanced_ui_scene_parks_when_there_is_no_world_view() {
     let mut app = routing_app();
     let instanced = app
         .world_mut()
-        .spawn((SceneEntity, UiSceneRoot::default(), SceneBase("hud.bsn".into())))
+        .spawn((
+            SceneEntity,
+            UiSceneRoot::default(),
+            SceneBase("hud.bsn".into()),
+        ))
         .id();
 
     app.update();

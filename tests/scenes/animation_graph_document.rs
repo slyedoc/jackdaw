@@ -482,9 +482,11 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     let character = jackdaw::scene_io::scene_roots(app.world_mut())
         .into_iter()
         .find(|&root| {
-            app.world().inspect_entity(root).is_ok_and(|mut components| {
-                components.any(|(_, info)| info.name().to_string().ends_with("AnimationRig"))
-            })
+            app.world()
+                .inspect_entity(root)
+                .is_ok_and(|mut components| {
+                    components.any(|(_, info)| info.name().to_string().ends_with("AnimationRig"))
+                })
         })
         .expect("the character opened, its root carrying the rig");
 

@@ -96,10 +96,7 @@ pub struct AssetIngestPlugin;
 
 impl Plugin for AssetIngestPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            handle_file_drops.run_if(crate::editor_active),
-        );
+        app.add_systems(Update, handle_file_drops.run_if(crate::editor_active));
     }
 }
 

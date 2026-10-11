@@ -322,7 +322,11 @@ fn draw_weights(
         };
         let weight = asset.mask.bone_weight(&bone);
         let radius = if picked.0 == Some(bone) { 0.05 } else { 0.025 };
-        gizmos.sphere(Isometry3d::from_translation(at), radius, weight_color(weight));
+        gizmos.sphere(
+            Isometry3d::from_translation(at),
+            radius,
+            weight_color(weight),
+        );
     }
 }
 
@@ -334,7 +338,10 @@ pub(super) fn write_mask(view: &CanvasView, masks: &Assets<BoneMaskAsset>) {
     let Some(asset) = masks.get(handle) else {
         return;
     };
-    let Some(skeleton) = asset.skeleton.path().map(|p| p.path().to_string_lossy().into_owned())
+    let Some(skeleton) = asset
+        .skeleton
+        .path()
+        .map(|p| p.path().to_string_lossy().into_owned())
     else {
         error!("save {path}: the mask's skeleton has no asset path");
         return;

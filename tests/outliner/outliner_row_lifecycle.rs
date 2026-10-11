@@ -1,14 +1,13 @@
-//! What an Outliner row costs while nobody is looking at it. Rows are built when
-//! a branch is opened and torn down when it closes, so a panel costs what it
+//! What an Outliner row costs while nobody is looking at it. A panel lists what is
+//! open and builds rows only for the part of the list in view, so it costs what it
 //! draws rather than everything the session has ever opened.
 
 use crate::util;
 
 use bevy::prelude::*;
-use jackdaw::hierarchy::{HierarchyShowAll, HierarchyTreeContainer};
+use jackdaw::hierarchy::{HierarchyShowAll, HierarchyTreeContainer, OutlinerFocus};
 use jackdaw_widgets::tree_view::{
-    TreeFocused, TreeIndex, TreeNode, TreeNodeExpanded, TreeRowChildren, TreeRowContent,
-    TreeRowSelected,
+    TreeIndex, TreeNode, TreeNodeExpanded, TreeRowContent, TreeRowSelected,
 };
 
 /// An Outliner panel over a scene with one branch two levels deep. Returns the
@@ -74,29 +73,13 @@ fn row_for(app: &App, panel: Entity, source: Entity) -> Entity {
         .unwrap_or_else(|| panic!("{source} has no row in {panel}"))
 }
 
-/// The names of the rows drawn under `source`'s row, in panel order.
+/// The names of the rows listed under `source`'s row, in panel order.
 fn child_row_names(world: &World, panel: Entity, source: Entity) -> Vec<String> {
-    let Some(row) = world.resource::<TreeIndex>().get(panel, source) else {
-        return Vec::new();
-    };
-    let Some(container) = world.get::<Children>(row).and_then(|children| {
-        children
-            .iter()
-            .find(|&child| world.get::<TreeRowChildren>(child).is_some())
-    }) else {
-        return Vec::new();
-    };
-    world
-        .get::<Children>(container)
-        .map(|children| {
-            children
-                .iter()
-                .filter_map(|child| world.get::<TreeNode>(child))
-                .filter_map(|node| world.get::<Name>(node.0))
-                .map(|name| name.as_str().to_string())
-                .collect()
-        })
-        .unwrap_or_default()
+    jackdaw::hierarchy::listed_children(world, panel, source)
+        .into_iter()
+        .filter_map(|child| world.get::<Name>(child))
+        .map(|name| name.as_str().to_string())
+        .collect()
 }
 
 #[test]
@@ -205,7 +188,7 @@ fn a_selected_entity_gets_a_marked_row_when_its_branch_is_reopened() {
     );
 }
 
-/// The keyboard walks the rows that are drawn, so closing a branch it was inside
+/// The keyboard walks the rows that are listed, so closing a branch it was inside
 /// has to resume the walk on the row that was closed.
 #[test]
 fn the_keyboard_walk_resumes_on_the_row_that_was_closed() {
@@ -213,54 +196,72 @@ fn the_keyboard_walk_resumes_on_the_row_that_was_closed() {
     let (panel, branch, children, _leaf) = panel_over_a_branch(&mut app);
 
     expand(&mut app, panel, branch);
-    let child_row = row_for(&app, panel, children[2]);
-    app.world_mut().resource_mut::<TreeFocused>().0 = Some(child_row);
+    app.world_mut().resource_mut::<OutlinerFocus>().0 = Some((panel, children[2]));
 
     collapse(&mut app, panel, branch);
 
-    let focused = app
-        .world()
-        .resource::<TreeFocused>()
-        .0
-        .expect("the walk still has a row");
-    assert!(
-        app.world().get_entity(focused).is_ok(),
-        "the walk is standing on a despawned row"
-    );
     assert_eq!(
-        app.world().get::<TreeNode>(focused).map(|node| node.0),
-        Some(branch),
+        app.world().resource::<OutlinerFocus>().0,
+        Some((panel, branch)),
         "the walk resumes on the row that was closed"
     );
 }
 
-/// Opening a node with thousands of children builds one page of rows and a
-/// "+ N more" row, not a row per child in one frame.
+/// Opening a node with thousands of children lists them all but builds rows only
+/// for the ones in view, and selecting the last one brings its row into view.
 #[test]
-fn opening_a_huge_branch_builds_one_page_of_rows() {
+fn opening_a_huge_branch_builds_rows_only_for_the_view() {
     let mut app = util::editor_test_app();
     app.world_mut().insert_resource(HierarchyShowAll(true));
     let panel = app
         .world_mut()
-        .spawn((HierarchyTreeContainer, Node::default(), Visibility::Inherited))
+        .spawn((
+            HierarchyTreeContainer,
+            Node::default(),
+            Visibility::Inherited,
+        ))
         .id();
     app.update();
     let world = app.world_mut();
     let tile = world.spawn((Name::new("Tile"), Node::default())).id();
     jackdaw::scene_io::adopt_entity(world, tile);
-    for i in 0..500 {
-        let child = world
-            .spawn((Name::new(format!("Doodad {i:03}")), Node::default(), ChildOf(tile)))
-            .id();
-        jackdaw::scene_io::adopt_entity(world, child);
-    }
+    let doodads: Vec<Entity> = (0..5000)
+        .map(|i| {
+            let child = world
+                .spawn((
+                    Name::new(format!("Doodad {i:04}")),
+                    Node::default(),
+                    ChildOf(tile),
+                ))
+                .id();
+            jackdaw::scene_io::adopt_entity(world, child);
+            child
+        })
+        .collect();
     app.update();
 
     expand(&mut app, panel, tile);
-    assert_eq!(child_row_names(app.world(), panel, tile).len(), 200);
-    let mut texts = app.world_mut().query::<&Text>();
+    assert_eq!(child_row_names(app.world(), panel, tile).len(), 5000);
+    let built = app
+        .world_mut()
+        .query::<&TreeNode>()
+        .iter(app.world())
+        .count();
+    assert!(built < 200, "{built} rows built for a view of a few dozen");
+
+    let last = *doodads.last().unwrap();
+    assert!(app.world().resource::<TreeIndex>().get(panel, last).is_none());
+    jackdaw::selection::select_only(app.world_mut(), last);
+    app.update();
+    app.update();
     assert!(
-        texts.iter(app.world()).any(|text| text.0 == "+ 300 more"),
-        "the rest wait behind a more row"
+        app.world().resource::<TreeIndex>().get(panel, last).is_some(),
+        "selecting the last child builds its row"
+    );
+    assert!(
+        app.world()
+            .get::<ScrollPosition>(panel)
+            .is_some_and(|scroll| scroll.y > 0.0),
+        "and scrolls the panel down to it"
     );
 }

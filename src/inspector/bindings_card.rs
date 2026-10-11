@@ -1421,10 +1421,7 @@ fn spawn_path_row(
         .position(|option| *option == type_path)
         .unwrap_or(0);
     commands
-        .spawn_scene(picker(
-            offered.iter().map(|path| short_of(path)),
-            selected,
-        ))
+        .spawn_scene(picker(offered.iter().map(|path| short_of(path)), selected))
         .insert((
             BindingOptions(offered),
             BindingControl::for_event_field(

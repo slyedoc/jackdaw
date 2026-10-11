@@ -49,24 +49,30 @@ const LEVEL: &str = "bevy_ecs::hierarchy::Children [\n    :\"rig.bsn\"\n    bevy
 #[test]
 fn an_instance_is_edited_through_its_source() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    std::fs::copy(fixture_dir().join("jackdaw.toml"), tmp.path().join("jackdaw.toml"))
-        .expect("the manifest copies");
+    std::fs::copy(
+        fixture_dir().join("jackdaw.toml"),
+        tmp.path().join("jackdaw.toml"),
+    )
+    .expect("the manifest copies");
     let assets = tmp.path().join("assets");
     std::fs::create_dir_all(&assets).expect("an assets folder");
     std::fs::write(assets.join("rig.bsn"), RIG).expect("rig");
     std::fs::write(assets.join("level.bsn"), LEVEL).expect("level");
 
     let mut app = util::editor_test_app_at(&assets);
-    app.world_mut().insert_resource(jackdaw::project::ProjectRoot {
-        root: tmp.path().to_path_buf(),
-        config: default(),
-    });
+    app.world_mut()
+        .insert_resource(jackdaw::project::ProjectRoot {
+            root: tmp.path().to_path_buf(),
+            config: default(),
+        });
     app.world_mut()
         .resource_mut::<NextState<jackdaw::AppState>>()
         .set(jackdaw::AppState::Editor);
     settle(&mut app);
     jackdaw::scenes::operators::scene_open_system(app.world_mut(), &assets.join("level.bsn"));
-    until(&mut app, "the rig's bone", |app| named(app, "Bone").is_some());
+    until(&mut app, "the rig's bone", |app| {
+        named(app, "Bone").is_some()
+    });
 
     // Selecting inside the instance selects the instance.
     let bone = named(&mut app, "Bone").unwrap();
@@ -79,7 +85,9 @@ fn an_instance_is_edited_through_its_source() {
     jackdaw::selection::select_only(app.world_mut(), bone);
     settle(&mut app);
     assert_eq!(
-        app.world().resource::<jackdaw::selection::Selection>().entities,
+        app.world()
+            .resource::<jackdaw::selection::Selection>()
+            .entities,
         vec![instance],
         "a pick inside an instance selects the instance",
     );
@@ -87,9 +95,14 @@ fn an_instance_is_edited_through_its_source() {
     // Edit Source: the base in front, the bone selected.
     jackdaw::instances::edit_source(app.world_mut(), bone);
     until(&mut app, "the bone selected in rig.bsn", |app| {
-        let primary = app.world().resource::<jackdaw::selection::Selection>().primary();
+        let primary = app
+            .world()
+            .resource::<jackdaw::selection::Selection>()
+            .primary();
         primary.is_some_and(|e| {
-            app.world().get::<Name>(e).is_some_and(|n| n.as_str() == "Bone")
+            app.world()
+                .get::<Name>(e)
+                .is_some_and(|n| n.as_str() == "Bone")
                 && app.world().get::<SceneBase>(e).is_none()
         })
     });

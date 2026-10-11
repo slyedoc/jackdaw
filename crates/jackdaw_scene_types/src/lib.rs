@@ -32,9 +32,9 @@ pub use node_id::{SCENE_NODE_ID_TYPE_PATH, SPARSE_MIN, SceneNodeId};
 pub use types::{
     Brush, BrushFaceData, BrushPlane, BrushTopology, CustomProperties, DerivedFaceMesh,
     DetailLayer, DetailMesh, DetailPresser, GltfSource, NAVMESH_EXCLUDE_TYPE_PATH, NavmeshExclude,
-    PrefabBaseline,
-    PropertyValue, ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain, TerrainChannel,
-    TerrainChannelElement, TerrainNavmesh, TerrainPaletteEntry, TerrainQuantization, Wind,
+    PrefabBaseline, PropertyValue, ScatterGroup, ScatterInstance, SceneRootTag, SceneWind, Terrain,
+    TerrainChannel, TerrainChannelElement, TerrainNavmesh, TerrainPaletteEntry,
+    TerrainQuantization, Wind,
 };
 
 use bevy::prelude::*;

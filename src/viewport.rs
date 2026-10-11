@@ -13,8 +13,8 @@ use jackdaw_api::prelude::*;
 use wgpu_types::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 
 use crate::infinite_grid::{InfiniteGrid, InfiniteGridPlugin};
-use jackdaw_api_internal::keymap::PresetInput;
 use bevy_enhanced_input::prelude::ContextActivity;
+use jackdaw_api_internal::keymap::PresetInput;
 use jackdaw_camera::{EditorCamera, JackdawCameraPlugin, editor_camera};
 use path_slash::PathExt as _;
 
@@ -154,6 +154,7 @@ pub(crate) struct ViewportCursor<'w, 's> {
     active: Res<'w, ActiveViewport>,
     ui_scale: Res<'w, UiScale>,
     hover_map: Res<'w, bevy::picking::hover::HoverMap>,
+    ui_nodes: Query<'w, 's, (), With<ComputedNode>>,
 }
 
 impl ViewportCursor<'_, '_> {
@@ -161,12 +162,16 @@ impl ViewportCursor<'_, '_> {
     /// tool palette, is under the cursor rather than the viewport's own
     /// `SceneViewport` node.
     pub fn blocked_by_overlay(&self) -> bool {
-        hover_blocks_click(&self.hover_map, self.active.ui_node)
+        hover_blocks_click(&self.hover_map, self.active.ui_node, |e| {
+            self.ui_nodes.contains(e)
+        })
     }
 
     pub fn viewport_pointer(&self) -> Option<Vec2> {
         let viewport_entity = self.active.ui_node?;
-        if hover_blocks_click(&self.hover_map, Some(viewport_entity)) {
+        if hover_blocks_click(&self.hover_map, Some(viewport_entity), |e| {
+            self.ui_nodes.contains(e)
+        }) {
             return None;
         }
         self.cursor()
@@ -232,11 +237,13 @@ impl ViewportCursor<'_, '_> {
     }
 }
 
-/// True when the hover map contains an entity other than `viewport_entity`.
-/// With no viewport to compare against, nothing can be over one.
+/// True when the hover map contains a UI node other than `viewport_entity`. Scene entities
+/// in it (the tracer's pointer picking puts what is under the cursor there) are behind the
+/// viewport, not over it. With no viewport to compare against, nothing can be over one.
 fn hover_blocks_click(
     hover_map: &bevy::picking::hover::HoverMap,
     viewport_entity: Option<Entity>,
+    is_ui: impl Fn(Entity) -> bool,
 ) -> bool {
     let Some(viewport_entity) = viewport_entity else {
         return false;
@@ -244,7 +251,7 @@ fn hover_blocks_click(
     hover_map
         .values()
         .flat_map(|hits| hits.keys())
-        .any(|&entity| entity != viewport_entity)
+        .any(|&entity| entity != viewport_entity && is_ui(entity))
 }
 
 /// Cursor position in ui-logical pixels, the space `Val::Px` and
@@ -281,6 +288,7 @@ pub(crate) struct InteractionGuards<'w, 's> {
     pub draw_state: Res<'w, crate::draw_brush::DrawBrushState>,
     pub edit_mode: Res<'w, crate::brush::EditMode>,
     pub terrain_edit_mode: Res<'w, crate::terrain::TerrainEditMode>,
+    pub landscape_brush: Res<'w, crate::landscape::LandscapeBrush>,
     pub active_modal: ActiveModalQuery<'w, 's>,
 }
 
@@ -461,7 +469,7 @@ pub(crate) fn build_3d_presentation(world: &mut World, parent: Entity) -> Entity
                 ..default()
             },
             RenderTarget::Image(image_handle.into()),
-            Transform::from_xyz(0.0, 4.0, 8.0).looking_at(Vec3::ZERO, Vec3::Y),
+            Transform::from_xyz(0.0, 104.0, 8.0).looking_at(Vec3::new(0.0, 100.0, 0.0), Vec3::Y),
             // Order-independent transparency, MSAA and FXAA were the raster back end's;
             // the tracer resolves transparency by tracing through it and antialiases with
             // DLSS Ray Reconstruction.
@@ -1249,7 +1257,7 @@ mod tests {
     fn viewport_own_node_does_not_block_the_click() {
         let viewport = Entity::from_raw_u32(1).unwrap();
         let hover_map = hover_map_with(viewport);
-        assert!(!hover_blocks_click(&hover_map, Some(viewport)));
+        assert!(!hover_blocks_click(&hover_map, Some(viewport), |_| true));
     }
 
     #[test]
@@ -1257,18 +1265,30 @@ mod tests {
         let viewport = Entity::from_raw_u32(1).unwrap();
         let palette_button = Entity::from_raw_u32(2).unwrap();
         let hover_map = hover_map_with(palette_button);
-        assert!(hover_blocks_click(&hover_map, Some(viewport)));
+        assert!(hover_blocks_click(&hover_map, Some(viewport), |_| true));
+    }
+
+    #[test]
+    fn a_scene_entity_under_the_cursor_does_not_block_the_click() {
+        let viewport = Entity::from_raw_u32(1).unwrap();
+        let tent = Entity::from_raw_u32(2).unwrap();
+        let hover_map = hover_map_with(tent);
+        assert!(!hover_blocks_click(&hover_map, Some(viewport), |e| e == viewport));
     }
 
     #[test]
     fn an_empty_hover_map_does_not_block_the_click() {
         let viewport = Entity::from_raw_u32(1).unwrap();
-        assert!(!hover_blocks_click(&HoverMap::default(), Some(viewport)));
+        assert!(!hover_blocks_click(
+            &HoverMap::default(),
+            Some(viewport),
+            |_| true
+        ));
     }
 
     #[test]
     fn no_active_viewport_does_not_block_the_click() {
         let hover_map = hover_map_with(Entity::from_raw_u32(2).unwrap());
-        assert!(!hover_blocks_click(&hover_map, None));
+        assert!(!hover_blocks_click(&hover_map, None, |_| true));
     }
 }

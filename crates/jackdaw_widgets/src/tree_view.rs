@@ -39,6 +39,15 @@ pub struct TreeRowLabel;
 #[derive(Component)]
 pub struct TreeRowChildren;
 
+/// Where a row of a flat (virtual) tree stands: its level, and the level of the row drawn
+/// below it. The gap under a row reaches from the next row's level up to its own, which is
+/// how a drop there says how many levels up it lands.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TreeRowDepth {
+    pub depth: usize,
+    pub next_depth: usize,
+}
+
 /// Tracks whether a tree node's children have been lazily populated.
 /// Set to `true` after first expansion spawns children; prevents re-population on re-expand.
 #[derive(Component, Default)]
@@ -318,6 +327,10 @@ pub struct TreeRowInserted {
     /// Which side of `target` the gap is: `0` immediately before it among
     /// its siblings, `1` immediately after.
     pub index: usize,
+    /// How many levels above `target` the drop lands: the gap under the last
+    /// row of a branch is also the gap under the branch, and under its parent.
+    /// `0` is beside `target` itself.
+    pub up: usize,
 }
 
 /// Event fired when a tree row is dropped onto the root container (deparent)

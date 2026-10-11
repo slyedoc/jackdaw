@@ -8,10 +8,10 @@ use bevy::feathers::controls::{
     ColorInputValue, FeathersColorInput, FeathersSelect, OptionIndex, color_input_self_update,
     list_rows_from_strings,
 };
-use bevy::ui_widgets::NumericValue;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::ui::Checked;
+use bevy::ui_widgets::NumericValue;
 use bevy::ui_widgets::{SliderValue, ValueChange};
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::{
@@ -378,7 +378,13 @@ fn textures_signature(data_path: &str, refs: &TexturesTabRefs) -> TexturesSignat
 /// view or the terrain is added: the panel and its operators work on the selection.
 fn adopt_lone_terrain(
     mut selection: ResMut<Selection>,
-    terrains: Query<Entity, (With<jackdaw_scene_types::Terrain>, With<crate::scene_io::SceneEntity>)>,
+    terrains: Query<
+        Entity,
+        (
+            With<jackdaw_scene_types::Terrain>,
+            With<crate::scene_io::SceneEntity>,
+        ),
+    >,
     added: Query<(), Added<jackdaw_scene_types::Terrain>>,
     bodies: Query<&ComputedNode, With<TerrainPanelBody>>,
     mut was_shown: Local<bool>,
@@ -2277,7 +2283,8 @@ fn spawn_import_image_row(
             ChildOf(target),
         ));
     } else {
-        let mut captions: Vec<String> = targets.iter().map(|(_, caption)| caption.clone()).collect();
+        let mut captions: Vec<String> =
+            targets.iter().map(|(_, caption)| caption.clone()).collect();
         let mut values: Vec<String> = targets.iter().map(|(target, _)| target.clone()).collect();
         let selected = match targets
             .iter()
@@ -2380,9 +2387,7 @@ fn on_import_scrub_change(
     } else {
         0.0
     };
-    commands
-        .entity(source)
-        .insert(NumericValue::F32(value));
+    commands.entity(source).insert(NumericValue::F32(value));
     match field {
         ImportField::Min => import_state.min = value,
         ImportField::Max => import_state.max = value,
@@ -2488,9 +2493,7 @@ fn on_shape_scrub_change(
     };
     let value = clamp_cell_size(event.value);
     // Every tick, final or not: this is what the user reads while dragging.
-    commands
-        .entity(source)
-        .insert(NumericValue::F32(value));
+    commands.entity(source).insert(NumericValue::F32(value));
     if !event.is_final {
         return;
     }
@@ -2519,9 +2522,7 @@ fn sync_shape_fields(
     for (entity, field) in &shape_fields {
         let ShapeField::CellSize = field;
         let value = terrain.cell_size;
-        commands
-            .entity(entity)
-            .insert(NumericValue::F32(value));
+        commands.entity(entity).insert(NumericValue::F32(value));
     }
 }
 

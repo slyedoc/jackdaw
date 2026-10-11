@@ -9,7 +9,6 @@
 //! append-only within a document, because an index is what every placement
 //! refers to, so an entry is emptied rather than removed.
 
-
 use bevy_math::Vec3;
 
 /// Extensions a palette entry may name.

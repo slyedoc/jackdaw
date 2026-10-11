@@ -23,10 +23,10 @@ use bevy::{
 };
 use bevy_animation_graph::core::{
     animation_clip::{GraphClip, loader::GraphClipSerial},
-    bone_mask_asset::BoneMaskAsset,
     animation_graph::{AnimationGraph, NodeId, SourcePin, TargetPin},
     animation_graph_player::AnimationGraphPlayer,
     animation_node::AnimationNode,
+    bone_mask_asset::BoneMaskAsset,
     context::{
         node_states::StateKey,
         spec_context::{NodeInput, NodeOutput, NodeSpec, SpecResources},
@@ -44,8 +44,8 @@ use std::any::TypeId;
 
 use std::path::PathBuf;
 
-pub mod document;
 pub(crate) mod characters;
+pub mod document;
 pub(crate) mod mask;
 pub(crate) mod scrub;
 

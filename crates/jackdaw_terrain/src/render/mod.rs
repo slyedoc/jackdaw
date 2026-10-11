@@ -42,9 +42,7 @@ pub use scatter::{
 use crate::heightmap::Heightmap;
 use crate::sidecar::{AutoTerrainSettings, SurfaceSettings, TerrainMaterialSlot};
 use crate::splat::ControlTexels;
-use crate::texture_set::{
-    MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError,
-};
+use crate::texture_set::{MAX_TEXTURES, TextureSet, TextureSetEntry, TextureSetError};
 
 pub use crate::sidecar::DEFAULT_BLEND_SHARPNESS;
 

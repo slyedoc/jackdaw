@@ -349,7 +349,9 @@ fn a_file_opened_beside_another_tab_renders_in_that_tab() {
     >();
     for layers in cameras.iter(app.world()) {
         assert!(
-            layers.is_some_and(|l| l.intersects(&bevy::camera::visibility::RenderLayers::layer(bit as usize))),
+            layers.is_some_and(
+                |l| l.intersects(&bevy::camera::visibility::RenderLayers::layer(bit as usize))
+            ),
             "the viewport sees the active tab: {layers:?}",
         );
     }

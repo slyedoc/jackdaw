@@ -318,6 +318,16 @@ impl JackdawExtension for InspectorExtension {
         );
 
         ctx.register_window(
+            WindowDescriptor::new("jackdaw.inspector.landscape")
+                .with_name("Landscape")
+                .with_default_area(DefaultArea::RightSidebar)
+                .with_priority(2)
+                .with_build(|window| {
+                    window.spawn(crate::landscape::landscape_panel_content());
+                }),
+        );
+
+        ctx.register_window(
             WindowDescriptor::new("jackdaw.inspector.terrain")
                 .with_name("Terrain")
                 .with_default_area(DefaultArea::RightSidebar)

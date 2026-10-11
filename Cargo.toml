@@ -45,6 +45,8 @@ members = ["crates/*"]
 [dependencies]
 bevy = { workspace = true, features = ["system_font_discovery"] }
 bevy_aurora.workspace = true
+aurora_landscape.workspace = true
+bytemuck = "1"
 # Types only: the editor registers the binding components so they are
 # authorable and round-trip through BSN. `JackdawBindPlugin` (evaluator
 # + observers) stays out of the editor world; bindings run in the game.
@@ -284,6 +286,8 @@ bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 aurora_material = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 # The mesh as data, no Vulkan: for the crates that build traced meshes.
 aurora_mesh = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+# Layered terrain (height / material / scatter stacks over GPU pages).
+aurora_landscape = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 anyhow = { version = "1", default-features = false }
 dirs = "6"

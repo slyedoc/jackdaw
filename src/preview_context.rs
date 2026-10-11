@@ -21,6 +21,7 @@ use std::any::TypeId;
 
 use bevy::ecs::reflect::ReflectComponent;
 use bevy::feathers::controls::FeathersCheckbox;
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputPrecision};
 use bevy::feathers::theme::ThemedText;
 use bevy::feathers::tokens as feathers_tokens;
 use bevy::picking::hover::Hovered;
@@ -29,11 +30,10 @@ use bevy::reflect::{
     GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration, TypeRegistry,
 };
 use bevy::ui::{Checked, InteractionDisabled};
+use bevy::ui_widgets::NumericValue;
 use bevy::ui_widgets::ValueChange;
 use jackdaw_bind::{BindContext, BindPath, Binding, Bindings, ParsedPath, ResolvedBindings};
 use jackdaw_feathers::field_row::{FieldRowProps, spawn_field_row};
-use bevy::feathers::controls::{NumberInputPrecision, FeathersNumberInput};
-use bevy::ui_widgets::NumericValue;
 use jackdaw_feathers::text_edit::{TextEditCommitEvent, TextEditProps, text_edit};
 use jackdaw_feathers::tokens;
 use jackdaw_feathers::tooltip::Tooltip;

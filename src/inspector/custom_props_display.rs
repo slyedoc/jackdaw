@@ -211,20 +211,23 @@ pub(super) fn spawn_custom_properties_display(
                 commands
                     .spawn_scene(bevy::feathers_inspector::color_picker(*val))
                     .insert(ChildOf(row))
-                    .observe(move |change: On<bevy::ui_widgets::ValueChange<Color>>, mut commands: Commands| {
-                        if !change.is_final {
-                            return;
-                        }
-                        let (name, color) = (commit_name.clone(), change.value);
-                        commands.queue(move |world: &mut World| {
-                            apply_custom_property_with_undo(
-                                world,
-                                source_entity,
-                                &name,
-                                PropertyValue::Color(color),
-                            );
-                        });
-                    });
+                    .observe(
+                        move |change: On<bevy::ui_widgets::ValueChange<Color>>,
+                              mut commands: Commands| {
+                            if !change.is_final {
+                                return;
+                            }
+                            let (name, color) = (commit_name.clone(), change.value);
+                            commands.queue(move |world: &mut World| {
+                                apply_custom_property_with_undo(
+                                    world,
+                                    source_entity,
+                                    &name,
+                                    PropertyValue::Color(color),
+                                );
+                            });
+                        },
+                    );
             }
             PropertyValue::Entity(val) => {
                 // Entity values are read-only in the Custom Properties UI

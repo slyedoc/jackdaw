@@ -7,8 +7,8 @@ use crate::util;
 
 use std::path::Path;
 
-use bevy::picking::hover::Hovered;
 use bevy::feathers_inspector::{InspectorEdits, InspectorRoot};
+use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::reflect::ParsedPath;
 use bevy::ui_widgets::ValueChange;

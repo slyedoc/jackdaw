@@ -146,10 +146,11 @@ fn viewport_drag_detect(
     gizmo_hover: Res<GizmoHoverState>,
     mirror_plane_hover: Res<crate::brush::mirror_plane_overlay::MirrorPlaneHover>,
     mut drag_state: ResMut<ViewportDragState>,
-    (edit_mode, draw_state, terrain_edit_mode): (
+    (edit_mode, draw_state, terrain_edit_mode, landscape_brush): (
         Res<crate::brush::EditMode>,
         Res<crate::draw_brush::DrawBrushState>,
         Res<crate::terrain::TerrainEditMode>,
+        Res<crate::landscape::LandscapeBrush>,
     ),
     (cursor_hits, parents, brushes, editor_entities): (
         crate::cursor_pick::CursorHits,
@@ -179,7 +180,7 @@ fn viewport_drag_detect(
     }
 
     // Block viewport drag during terrain sculpt or paint mode
-    if terrain_edit_mode.brush_active() {
+    if terrain_edit_mode.brush_active() || landscape_brush.active() {
         return;
     }
 
@@ -281,6 +282,7 @@ fn viewport_drag_update(
     mut cursor_query: Query<&mut CursorOptions, With<Window>>,
     edit_mode: Res<crate::brush::EditMode>,
     terrain_edit_mode: Res<crate::terrain::TerrainEditMode>,
+    landscape_brush: Res<crate::landscape::LandscapeBrush>,
 ) {
     if !mouse.pressed(MouseButton::Left) {
         drag_state.pending = None;
@@ -288,7 +290,7 @@ fn viewport_drag_update(
     }
 
     // Cancel pending drag if terrain sculpt or paint mode became active
-    if terrain_edit_mode.brush_active() {
+    if terrain_edit_mode.brush_active() || landscape_brush.active() {
         drag_state.pending = None;
         return;
     }

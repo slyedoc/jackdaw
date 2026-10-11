@@ -7,9 +7,9 @@
 use crate::util;
 
 use bevy::prelude::*;
+use bevy::ui_widgets::Activate;
 use bevy::ui_widgets::ValueChange;
 use jackdaw::selection::Selection;
-use bevy::ui_widgets::Activate;
 use jackdaw_widgets_runtime::{Dropdown, DropdownOption, Progress};
 
 const PROGRESS: &str = "jackdaw_widgets_runtime::Progress";

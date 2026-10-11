@@ -1000,8 +1000,8 @@ fn collect_placements(
 
 #[cfg(test)]
 mod tests {
-    use bevy::prelude::*;
     use bevy::bsn_asset::{WriteSettings, write_scene_roots_under_text};
+    use bevy::prelude::*;
 
     use super::*;
 
@@ -1208,9 +1208,13 @@ mod tests {
             Terrain::default(),
             ChildOf(parent),
         ));
-        let scene =
-            write_scene_roots_under_text(source.world_mut(), None, &[parent], &WriteSettings::default())
-                .expect("the scene writes");
+        let scene = write_scene_roots_under_text(
+            source.world_mut(),
+            None,
+            &[parent],
+            &WriteSettings::default(),
+        )
+        .expect("the scene writes");
 
         let loaded = load_export_app(&scene).expect("scene reloads through the export shell");
         let world = loaded.world();

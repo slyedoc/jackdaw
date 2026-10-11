@@ -487,13 +487,11 @@ impl Plugin for BrushPlugin {
             )
             .add_systems(
                 Update,
-                edit_mode_systems::sync_brush_halfedge_on_edit_mode
-                    .run_if(crate::editor_active),
+                edit_mode_systems::sync_brush_halfedge_on_edit_mode.run_if(crate::editor_active),
             )
             .add_systems(
                 Update,
-                topology_migration::migrate_legacy_brush_topology
-                    .run_if(crate::editor_active),
+                topology_migration::migrate_legacy_brush_topology.run_if(crate::editor_active),
             );
     }
 }

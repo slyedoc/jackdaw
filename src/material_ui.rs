@@ -699,20 +699,22 @@ pub(crate) fn spawn_color_row(
             rgba[0], rgba[1], rgba[2], rgba[3],
         )))
         .insert((MaterialFieldMarker, ChildOf(body)))
-        .observe(move |change: On<ValueChange<Color>>, mut commands: Commands| {
-            let c = change.value.to_srgba();
-            let rgba = [c.red, c.green, c.blue, c.alpha];
-            let handle = write_handle.clone();
-            commands.queue(move |world: &mut World| {
-                if let Some(mut material) = world
-                    .resource_mut::<Assets<AuroraMaterial>>()
-                    .get_mut(&handle)
-                {
-                    write(&mut material, rgba);
-                }
-                repaint_color_row_face(world, face, rgba);
-            });
-        });
+        .observe(
+            move |change: On<ValueChange<Color>>, mut commands: Commands| {
+                let c = change.value.to_srgba();
+                let rgba = [c.red, c.green, c.blue, c.alpha];
+                let handle = write_handle.clone();
+                commands.queue(move |world: &mut World| {
+                    if let Some(mut material) = world
+                        .resource_mut::<Assets<AuroraMaterial>>()
+                        .get_mut(&handle)
+                    {
+                        write(&mut material, rgba);
+                    }
+                    repaint_color_row_face(world, face, rgba);
+                });
+            },
+        );
     commands.entity(field.row).insert((
         face,
         MaterialColorBinding {

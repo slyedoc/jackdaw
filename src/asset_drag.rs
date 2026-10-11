@@ -36,10 +36,8 @@ pub struct AssetDragPlugin;
 
 impl Plugin for AssetDragPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<ActiveAssetDrag>().add_systems(
-            Update,
-            manage_asset_drag_ghost.run_if(crate::editor_active),
-        );
+        app.init_resource::<ActiveAssetDrag>()
+            .add_systems(Update, manage_asset_drag_ghost.run_if(crate::editor_active));
     }
 }
 

@@ -12,7 +12,8 @@ use jackdaw::scenes::external_watch::{
 const ALPHA: &str = "bevy_ecs::hierarchy::Children [\n    #Alpha\n    bevy_transform::components::transform::Transform\n]\n";
 const BETA: &str = "bevy_ecs::hierarchy::Children [\n    #Beta\n    bevy_transform::components::transform::Transform\n]\n";
 /// A type this build does not know, which every load path refuses.
-const RETIRED: &str = "bevy_ecs::hierarchy::Children [\n    #Overlay\n    jackdaw_ui::UiCanvas\n]\n";
+const RETIRED: &str =
+    "bevy_ecs::hierarchy::Children [\n    #Overlay\n    jackdaw_ui::UiCanvas\n]\n";
 
 fn make_app() -> App {
     use bevy::winit::WinitPlugin;

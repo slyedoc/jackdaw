@@ -228,7 +228,10 @@ fn path_below(world: &World, instance: Entity, entity: Entity) -> Vec<String> {
 
 /// A selection reaching inside an instance becomes the instance: its insides are its base's.
 fn select_instances_not_their_insides(world: &mut World) {
-    let selected = world.resource::<crate::selection::Selection>().entities.clone();
+    let selected = world
+        .resource::<crate::selection::Selection>()
+        .entities
+        .clone();
     if !selected.iter().any(|&e| is_inherited(world, e)) {
         return;
     }
@@ -346,7 +349,11 @@ fn track_reloads(
         let AssetEvent::Modified { id } = event else {
             continue;
         };
-        let Some(base) = held.0.iter().find(|(_, h)| h.id() == *id).map(|(b, _)| b.clone())
+        let Some(base) = held
+            .0
+            .iter()
+            .find(|(_, h)| h.id() == *id)
+            .map(|(b, _)| b.clone())
         else {
             continue;
         };
@@ -386,7 +393,8 @@ fn refresh_changed_instances(world: &mut World) {
     if world.resource::<BaseGenerations>().saved.is_empty() {
         return;
     }
-    let mut instances = world.query_filtered::<(Entity, &SceneBase, Option<&SeenGeneration>), With<SceneEntity>>();
+    let mut instances =
+        world.query_filtered::<(Entity, &SceneBase, Option<&SeenGeneration>), With<SceneEntity>>();
     let mut stale = Vec::new();
     let mut unseen = Vec::new();
     for (entity, base, seen) in instances.iter(world) {

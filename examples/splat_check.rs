@@ -47,8 +47,11 @@ fn author(dir: &Path) {
     std::fs::create_dir_all(dir.join("materials")).expect("materials dir");
     std::fs::create_dir_all(dir.join("textures")).expect("textures dir");
     for (name, file) in SLOTS {
-        std::fs::copy(Path::new(TILESET).join(file), dir.join("textures").join(file))
-            .expect("tileset texture");
+        std::fs::copy(
+            Path::new(TILESET).join(file),
+            dir.join("textures").join(file),
+        )
+        .expect("tileset texture");
         std::fs::write(
             dir.join(format!("materials/splatcheck_{name}.material.bsn")),
             format!(
@@ -109,9 +112,9 @@ fn open_scene(
     assets: Res<AssetServer>,
     main: Res<MainPhysicsEnvironmentEntity>,
 ) {
-    commands
-        .entity(main.0)
-        .insert(ScenePatchInstance(assets.load("splat_check/splat_check.bsn")));
+    commands.entity(main.0).insert(ScenePatchInstance(
+        assets.load("splat_check/splat_check.bsn"),
+    ));
     commands.spawn((
         Camera3d::default(),
         FreeCamera::default(),

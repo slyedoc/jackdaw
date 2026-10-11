@@ -12,9 +12,9 @@ use bevy::prelude::*;
 use jackdaw::boot_ops::{run_op_clause, run_op_clause_as_user};
 use jackdaw::commands::CommandHistory;
 use jackdaw::entity_ops::{EntityClipboard, SystemClipboard};
+use jackdaw::scene_io::SceneEntity;
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
-use jackdaw::scene_io::SceneEntity;
 
 fn clipboard_app() -> util::TestApp {
     let mut app = util::editor_test_app();
@@ -142,8 +142,7 @@ fn a_paste_lands_beside_the_selection_under_a_free_name() {
         Some("Alpha2".to_string())
     );
     assert!(
-        app.world()
-            .get::<SceneEntity>(selected[0]).is_some(),
+        app.world().get::<SceneEntity>(selected[0]).is_some(),
         "the paste is in the document, so a save keeps it"
     );
 }
@@ -285,8 +284,7 @@ fn a_subtree_copied_in_one_tab_pastes_into_another() {
         .map(|(entity, _)| entity)
         .expect("the pasted entity");
     assert!(
-        app.world()
-            .get::<SceneEntity>(pasted).is_some(),
+        app.world().get::<SceneEntity>(pasted).is_some(),
         "the paste is in the second tab's document"
     );
 }

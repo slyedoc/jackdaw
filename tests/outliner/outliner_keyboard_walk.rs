@@ -1,8 +1,8 @@
 //! The arrow keys walk the outliner.
 //!
-//! The walk reads the keyboard itself rather than going through the keymap, and
-//! the outliner's list is a `TreeRoot` rather than a `TreeView`. So the keys are
-//! pressed through the window's own stream and the rows are the outliner's own.
+//! The walk reads the keyboard itself rather than going through the keymap, and it
+//! walks the outliner's own list. So the keys are pressed through the window's own
+//! stream and the rows are the outliner's own.
 
 use crate::util;
 use crate::util::OperatorResultExt as _;
@@ -13,7 +13,8 @@ use bevy::{
 };
 use jackdaw::hierarchy::{HierarchyShowAll, HierarchyTreeContainer};
 use jackdaw::test_input::SyntheticInput;
-use jackdaw_widgets::tree_view::{TreeFocused, TreeIndex, TreeNode, TreeNodeExpanded};
+use jackdaw::hierarchy::OutlinerFocus;
+use jackdaw_widgets::tree_view::{TreeIndex, TreeNodeExpanded};
 
 fn settle(app: &mut App) {
     for _ in 0..8 {
@@ -52,10 +53,7 @@ fn outliner_app() -> (util::TestApp, Entity, Vec<Entity>, Entity) {
             .expect("headless apps still have a primary window");
         window.resolution = WindowResolution::new(1600, 1000);
     }
-    app.add_systems(
-        Update,
-        jackdaw_feathers::tree_view::tree_keyboard_navigation,
-    );
+    app.add_systems(Update, jackdaw::hierarchy::outliner_keyboard_navigation);
     // The walk stands down while a text field has focus, and the project screen
     // this app starts on leaves one focused.
     app.world_mut()
@@ -95,12 +93,12 @@ fn outliner_app() -> (util::TestApp, Entity, Vec<Entity>, Entity) {
     (app, panel, roots, child)
 }
 
-/// The source entity of the row the walk is standing on.
+/// The entity of the row the walk is standing on.
 fn walking_on(app: &App) -> Option<Entity> {
     app.world()
-        .resource::<TreeFocused>()
+        .resource::<OutlinerFocus>()
         .0
-        .and_then(|row| app.world().get::<TreeNode>(row).map(|node| node.0))
+        .map(|(_, source)| source)
 }
 
 /// Whether `source`'s row is open.

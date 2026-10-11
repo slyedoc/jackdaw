@@ -151,8 +151,6 @@ impl TerrainScatterState {
             .map(|asset| asset.path.clone())
             .collect()
     }
-
-
 }
 
 /// What the last run did, shown in the panel and logged.
@@ -366,9 +364,7 @@ pub(crate) fn terrain_scatter_group_select(
     label = "Add Scatter Asset",
     description = "Add a model to the scatter palette.",
     allows_undo = false,
-    params(
-        path(String, doc = "Model path. Defaults to the panel's asset field."),
-    )
+    params(path(String, doc = "Model path. Defaults to the panel's asset field."),)
 )]
 pub(crate) fn terrain_scatter_asset_add(
     params: In<OperatorParameters>,
@@ -1229,13 +1225,7 @@ fn run_scatter(world: &mut World, params: &OperatorParameters) {
              stands upright; promote a placement to tilt it",
         );
     }
-    let stored = match scatter_data::stamp(
-        world,
-        &terrain.data_path,
-        &key,
-        &assets,
-        pending,
-    ) {
+    let stored = match scatter_data::stamp(world, &terrain.data_path, &key, &assets, pending) {
         Ok(stored) => stored,
         Err(reason) => {
             set_report(
@@ -1373,14 +1363,7 @@ fn stamp(world: &mut World, request: StampRequest) {
                 let Some(parent) = *slot.lock().expect("scatter group slot") else {
                     return Entity::PLACEHOLDER;
                 };
-                spawn_instance(
-                    world,
-                    parent,
-                    &path,
-                    &name,
-                    transform,
-                    provenance.clone(),
-                )
+                spawn_instance(world, parent, &path, &name, transform, provenance.clone())
             }),
             label: "Scatter instance".to_string(),
         }));

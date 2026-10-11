@@ -258,6 +258,11 @@ pub(crate) fn save_scene_inner(world: &mut World) -> Result<(), BevyError> {
         scene_path.metadata.name = "Untitled".to_string();
     }
 
+    // Landscape brush layers name their page files in the scene text: write the files and
+    // point the layers at them before the text is emitted.
+    crate::landscape::export_landscape_pages(world, Path::new(&path))
+        .map_err(|err| BevyError::from(format!("failed to write landscape pages: {err}")))?;
+
     let contents = {
         let parent_path = Path::new(&path)
             .parent()

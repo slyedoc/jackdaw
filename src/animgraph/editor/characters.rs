@@ -84,7 +84,8 @@ pub(super) fn index(root: &Path, library: &Library, characters: &mut Characters)
         if !text.contains("AnimationRig") {
             continue;
         }
-        let (Some(graph), Some(skeleton)) = (rig_field(&text, "graph"), rig_field(&text, "skeleton"))
+        let (Some(graph), Some(skeleton)) =
+            (rig_field(&text, "graph"), rig_field(&text, "skeleton"))
         else {
             continue;
         };
@@ -219,7 +220,13 @@ fn file_row(commands: &mut Commands, entry: &Entry, indent: usize) -> Entity {
         .id()
 }
 
-fn toggle_row(commands: &mut Commands, label: String, key: &'static str, open: bool, indent: usize) -> Entity {
+fn toggle_row(
+    commands: &mut Commands,
+    label: String,
+    key: &'static str,
+    open: bool,
+    indent: usize,
+) -> Entity {
     let marker = if open { "v" } else { ">" };
     row(commands, format!("{marker} {label}"), indent, false)
         .observe(
@@ -300,7 +307,15 @@ pub(super) fn spawn_pane(
                 );
             }
         }
-        rows.push(row(commands, format!("skeleton  {}", file_label(&character.skeleton)), 1, false).id());
+        rows.push(
+            row(
+                commands,
+                format!("skeleton  {}", file_label(&character.skeleton)),
+                1,
+                false,
+            )
+            .id(),
+        );
         if !character.unused.is_empty() {
             let open = expanded.contains(UNUSED);
             rows.push(toggle_row(
@@ -389,7 +404,8 @@ fn new_character(world: &mut World, rig: &str, skeleton: &str) {
         .unwrap_or(rig)
         .trim_end_matches(".bsn")
         .to_string();
-    let Some(file) = super::super::create_character_from(world, &root.join("anim"), rig, skeleton, &stem)
+    let Some(file) =
+        super::super::create_character_from(world, &root.join("anim"), rig, skeleton, &stem)
     else {
         return;
     };
@@ -402,14 +418,18 @@ fn new_mask(world: &mut World, graph: &str, skeleton: &str) {
     let Some(root) = world.resource::<AnimGraphRoot>().0.clone() else {
         return;
     };
-    let dir = Path::new(graph).parent().map(Path::to_path_buf).unwrap_or_default();
+    let dir = Path::new(graph)
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
     let Some(path) = (1..1000)
         .map(|n| dir.join(format!("mask_{n}.mask.ron")))
         .find(|p| !root.join(p).exists())
     else {
         return;
     };
-    let text = format!("(\n    skeleton: {skeleton:?},\n    base: Positive,\n    weights: {{}},\n)\n");
+    let text =
+        format!("(\n    skeleton: {skeleton:?},\n    base: Positive,\n    weights: {{}},\n)\n");
     if let Err(err) = std::fs::write(root.join(&path), text) {
         warn!("animgraph: {}: {err}", path.display());
         return;
@@ -434,4 +454,3 @@ pub(super) fn plugin(app: &mut App) {
         .init_resource::<PendingSelect>()
         .add_systems(Update, select_pending);
 }
-

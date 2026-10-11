@@ -483,23 +483,27 @@ fn spawn_region_fields(
             Node { width: percent(100) }
         })
         .insert(ChildOf(parent))
-        .observe(|event: On<ValueChange<Entity>>, options: Query<&OptionIndex>, mut commands: Commands| {
-            let Ok(&OptionIndex(selected)) = options.get(event.value) else {
-                return;
-            };
-            let mode = RegionVisibility::ALL
-                .get(selected)
-                .copied()
-                .unwrap_or_default();
-            commands
-                .operator(super::regions::TerrainRegionVisibilityOp::ID)
-                .param("mode", mode.param())
-                .settings(CallOperatorSettings {
-                    creates_history_entry: false,
-                    execution_context: ExecutionContext::Invoke,
-                })
-                .call();
-        });
+        .observe(
+            |event: On<ValueChange<Entity>>,
+             options: Query<&OptionIndex>,
+             mut commands: Commands| {
+                let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+                    return;
+                };
+                let mode = RegionVisibility::ALL
+                    .get(selected)
+                    .copied()
+                    .unwrap_or_default();
+                commands
+                    .operator(super::regions::TerrainRegionVisibilityOp::ID)
+                    .param("mode", mode.param())
+                    .settings(CallOperatorSettings {
+                        creates_history_entry: false,
+                        execution_context: ExecutionContext::Invoke,
+                    })
+                    .call();
+            },
+        );
 
     let group = spawn_bar_group(commands, parent);
     commands.entity(group).insert((
@@ -541,25 +545,29 @@ fn spawn_paint_target_picker(commands: &mut Commands, parent: Entity, domain: Pa
             Node { width: percent(100) }
         })
         .insert(ChildOf(parent))
-        .observe(|event: On<ValueChange<Entity>>, options: Query<&OptionIndex>, mut commands: Commands| {
-            let Ok(&OptionIndex(selected)) = options.get(event.value) else {
-                return;
-            };
-            let target = match selected {
-                1 => "textures",
-                2 => "color",
-                3 => "detail",
-                _ => "channels",
-            };
-            commands
-                .operator(TerrainPaintTargetOp::ID)
-                .param("target", target)
-                .settings(CallOperatorSettings {
-                    creates_history_entry: true,
-                    execution_context: ExecutionContext::Invoke,
-                })
-                .call();
-        });
+        .observe(
+            |event: On<ValueChange<Entity>>,
+             options: Query<&OptionIndex>,
+             mut commands: Commands| {
+                let Ok(&OptionIndex(selected)) = options.get(event.value) else {
+                    return;
+                };
+                let target = match selected {
+                    1 => "textures",
+                    2 => "color",
+                    3 => "detail",
+                    _ => "channels",
+                };
+                commands
+                    .operator(TerrainPaintTargetOp::ID)
+                    .param("target", target)
+                    .settings(CallOperatorSettings {
+                        creates_history_entry: true,
+                        execution_context: ExecutionContext::Invoke,
+                    })
+                    .call();
+            },
+        );
 }
 
 /// The Color-mode bar: the brush's shape and strength, the colour it lays
@@ -631,22 +639,20 @@ fn spawn_color_paint_bar(
             on(color_input_self_update)
         })
         .insert(ChildOf(swatch))
-        .observe(
-            |event: On<ValueChange<Color>>, mut commands: Commands| {
-                let c = event.value.to_srgba();
-                let (r, g, b) = (c.red, c.green, c.blue);
-                commands
-                    .operator(TerrainPaintTintOp::ID)
-                    .param("r", f64::from(r))
-                    .param("g", f64::from(g))
-                    .param("b", f64::from(b))
-                    .settings(CallOperatorSettings {
-                        creates_history_entry: false,
-                        execution_context: ExecutionContext::Invoke,
-                    })
-                    .call();
-            },
-        );
+        .observe(|event: On<ValueChange<Color>>, mut commands: Commands| {
+            let c = event.value.to_srgba();
+            let (r, g, b) = (c.red, c.green, c.blue);
+            commands
+                .operator(TerrainPaintTintOp::ID)
+                .param("r", f64::from(r))
+                .param("g", f64::from(g))
+                .param("b", f64::from(b))
+                .settings(CallOperatorSettings {
+                    creates_history_entry: false,
+                    execution_context: ExecutionContext::Invoke,
+                })
+                .call();
+        });
 
     // The variation wash: three dials and the button that applies them, beside
     // the brush because it is what a tint pass usually starts with.
@@ -1287,9 +1293,9 @@ fn sync_brush_fields(
             if is_focused_for_editing(world, entity, focus) {
                 continue;
             }
-            world.entity_mut(entity).insert(
-                bevy::ui_widgets::NumericValue::F32(value),
-            );
+            world
+                .entity_mut(entity)
+                .insert(bevy::ui_widgets::NumericValue::F32(value));
         }
     });
 }
@@ -1329,9 +1335,9 @@ fn sync_texture_opacity_field(
             if is_focused_for_editing(world, entity, focus) {
                 continue;
             }
-            world.entity_mut(entity).insert(
-                bevy::ui_widgets::NumericValue::F32(value),
-            );
+            world
+                .entity_mut(entity)
+                .insert(bevy::ui_widgets::NumericValue::F32(value));
         }
     });
 }

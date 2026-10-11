@@ -29,10 +29,7 @@ impl Plugin for PhysicsToolPlugin {
     fn build(&self, app: &mut App) {
         // Exclusive-world system runs separately (can't chain with normal systems
         // reliably in Bevy 0.18).
-        app.add_systems(
-            Update,
-            on_edit_mode_transition.run_if(crate::editor_active),
-        );
+        app.add_systems(Update, on_edit_mode_transition.run_if(crate::editor_active));
         app.add_systems(
             Update,
             (sync_selection_disable_state, physics_tool_drag)

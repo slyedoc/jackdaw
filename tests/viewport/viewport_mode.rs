@@ -382,7 +382,9 @@ fn two_scene_tabs(app: &mut App) {
     scenes.tabs.push(SceneTab::new_untitled(1));
     scenes.tabs.push(SceneTab::new_untitled(2));
     scenes.tabs[0].path = Some(scene_file("#Overlay\njackdaw_scene_types::UiSceneRoot\n"));
-    scenes.tabs[1].path = Some(scene_file("#World\nbevy_transform::components::transform::Transform\n"));
+    scenes.tabs[1].path = Some(scene_file(
+        "#World\nbevy_transform::components::transform::Transform\n",
+    ));
     scenes.active = 1;
 }
 
@@ -469,7 +471,8 @@ fn a_tab_that_was_never_switched_follows_its_scenes_kind() {
         .resource_mut::<Scenes>()
         .tabs
         .push(SceneTab::new_untitled(3));
-    app.world_mut().resource_mut::<Scenes>().tabs[2].path = Some(scene_file("#Screen\njackdaw_scene_types::UiSceneRoot\n"));
+    app.world_mut().resource_mut::<Scenes>().tabs[2].path =
+        Some(scene_file("#Screen\njackdaw_scene_types::UiSceneRoot\n"));
 
     swap_active_tab(app.world_mut(), 0);
     app.update();

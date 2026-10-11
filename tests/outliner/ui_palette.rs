@@ -6,12 +6,12 @@ use bevy::picking::cursor::EntityCursor;
 
 use bevy::input_focus::tab_navigation::TabGroup;
 use bevy::prelude::*;
-use jackdaw::scene_io::SceneEntity;
 use jackdaw::add_entity_picker::{
     UI_SECTION_PREFIX, WIDGET_ACTION_PREFIX, add_menu_rows, collect_add_menu_items,
 };
 use jackdaw::commands::CommandHistory;
 use jackdaw::hierarchy::HierarchyTreeContainer;
+use jackdaw::scene_io::SceneEntity;
 use jackdaw::selection::Selection;
 use jackdaw::ui_palette::{
     PaletteError, instantiate_widget, instantiate_widget_under, register_authored_subtree,
@@ -491,15 +491,14 @@ fn a_subtree_is_registered_parent_before_children() {
 }
 
 /// Child rows spawn lazily, so mark the parent row expanded to see them.
+/// Open `source`'s row in every Outliner panel.
 fn mark_expanded(world: &mut World, source: Entity) {
-    let mut rows = world.query::<(
-        &jackdaw_widgets::tree_view::TreeNode,
-        &mut jackdaw_widgets::tree_view::TreeChildrenPopulated,
-    )>();
-    for (node, mut populated) in rows.iter_mut(world) {
-        if node.0 == source {
-            populated.0 = true;
-        }
+    let panels: Vec<Entity> = world
+        .query_filtered::<Entity, With<HierarchyTreeContainer>>()
+        .iter(world)
+        .collect();
+    for panel in panels {
+        jackdaw::hierarchy::set_outliner_expanded(world, panel, source, true);
     }
 }
 
@@ -1846,42 +1845,6 @@ fn every_widget_names_its_entity_without_a_space() {
             "{id} names its entity `{name}`, which no clause can carry",
         );
     }
-}
-
-/// The waiting list is bounded, and letting a child go loses a scene entity the
-/// outliner will never draw, so it has to leave a trace.
-#[test]
-fn a_row_the_list_gives_up_on_is_named_rather_than_lost_quietly() {
-    let mut app = palette_app();
-    let world = app.world_mut();
-    let root = open_ui_scene(world);
-    world.spawn((
-        HierarchyTreeContainer,
-        Node::default(),
-        Visibility::Inherited,
-    ));
-    app.update();
-    let world = app.world_mut();
-    mark_expanded(world, root);
-
-    // Named and parented in the document's tree but never registered, so the
-    // row is withheld every pass.
-    let never = world
-        .spawn((Name::new("NeverRegistered"), Node::default(), ChildOf(root)))
-        .id();
-    for _ in 0..80 {
-        app.update();
-    }
-
-    assert!(
-        jackdaw::hierarchy::rows_the_outliner_gave_up_on(app.world()).contains(&never),
-        "the list says which entity it gave up on",
-    );
-    assert_eq!(
-        rows_for(app.world_mut(), never),
-        0,
-        "and the row is indeed not there",
-    );
 }
 
 /// A spacer and a separator hold nothing but their marker, and a progress bar's

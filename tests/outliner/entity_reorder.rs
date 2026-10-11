@@ -7,10 +7,10 @@ use bevy::prelude::*;
 use jackdaw::boot_ops::run_op_clause_as_user;
 use jackdaw::commands::CommandHistory;
 use jackdaw::hierarchy::{HierarchyShowAll, HierarchyTreeContainer};
+use jackdaw::scene_io::SceneEntity;
 use jackdaw::selection::Selection;
 use jackdaw_api::prelude::*;
-use jackdaw::scene_io::SceneEntity;
-use jackdaw_widgets::tree_view::{TreeIndex, TreeNode, TreeRowChildren, TreeRowInserted};
+use jackdaw_widgets::tree_view::{TreeIndex, TreeRowInserted};
 
 /// Run one clause the way a chord runs it. `creates_history_entry`, which a
 /// scripted call leaves off, is what makes the dispatcher open a snapshot span,
@@ -193,6 +193,7 @@ fn a_drop_in_the_gap_between_two_rows_reorders_the_siblings() {
             dragged_source: children[0],
             target: children[2],
             index: 1,
+            up: 0,
         });
     app.update();
     app.update();
@@ -208,6 +209,7 @@ fn a_drop_in_the_gap_between_two_rows_reorders_the_siblings() {
         dragged_source: children[0],
         target: children[1],
         index: 0,
+        up: 0,
     });
     app.update();
     app.update();
@@ -261,31 +263,14 @@ fn a_reorder_moves_the_row_in_every_outliner_panel() {
     }
 }
 
-/// Names of the child rows under `source`'s row in `panel`, in the order the
+/// Names of the rows listed under `source`'s row in `panel`, in the order the
 /// panel draws them.
 fn row_order(world: &World, panel: Entity, source: Entity) -> Vec<String> {
-    let Some(row) = world.resource::<TreeIndex>().get(panel, source) else {
-        return Vec::new();
-    };
-    let Some(children) = world.get::<Children>(row) else {
-        return Vec::new();
-    };
-    let Some(container) = children
-        .iter()
-        .find(|child| world.get::<TreeRowChildren>(*child).is_some())
-    else {
-        return Vec::new();
-    };
-    world
-        .get::<Children>(container)
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|row| world.get::<TreeNode>(row))
-                .filter_map(|node| world.get::<Name>(node.0))
-                .map(|name| name.as_str().to_string())
-                .collect()
-        })
-        .unwrap_or_default()
+    jackdaw::hierarchy::listed_children(world, panel, source)
+        .into_iter()
+        .filter_map(|child| world.get::<Name>(child))
+        .map(|name| name.as_str().to_string())
+        .collect()
 }
 
 #[test]
@@ -381,6 +366,7 @@ fn a_drop_moves_the_whole_selection_in_the_order_the_tree_shows() {
         dragged_source: children[0],
         target: children[2],
         index: 1,
+        up: 0,
     });
     app.update();
     app.update();
@@ -435,6 +421,7 @@ fn a_drop_carrying_a_parent_and_its_child_moves_the_subtree_once() {
         dragged_source: parent,
         target: last,
         index: 1,
+        up: 0,
     });
     app.update();
     app.update();
@@ -470,6 +457,7 @@ fn a_multi_selection_drop_is_one_history_entry() {
         dragged_source: children[0],
         target: children[2],
         index: 1,
+        up: 0,
     });
     app.update();
     app.update();
@@ -658,35 +646,10 @@ fn after_zone_of(app: &App, row: Entity) -> Entity {
 }
 
 /// The zone a drag lands on at the gap below the nest, and that gap's geometry.
-/// The zone is the outermost row's: a row's after-gap is drawn over every gap
-/// nested inside it. That ordering is asserted rather than assumed.
+/// The rows are a flat list, so the gap under the nest is the leaf's after-gap: the
+/// last row drawn, standing for every level from the row after it up to its own.
 fn picked_gap(app: &mut App, nest: &Nest) -> (Entity, Gap) {
-    use jackdaw_widgets::tree_view::{TreeRowChildren, TreeRowInsertZone};
-
-    for row in nest.rows {
-        let children: Vec<Entity> = app
-            .world()
-            .get::<Children>(row)
-            .expect("a row has children")
-            .iter()
-            .collect();
-        let container = children
-            .iter()
-            .position(|&child| app.world().get::<TreeRowChildren>(child).is_some())
-            .expect("a row holds its children in a container");
-        let gap = children
-            .iter()
-            .position(|&child| {
-                app.world()
-                    .get::<TreeRowInsertZone>(child)
-                    .is_some_and(|zone| zone.after)
-            })
-            .expect("a row has an after-gap");
-        assert!(
-            gap > container,
-            "a row's after-gap is drawn over what is nested in it",
-        );
-    }
+    use jackdaw_widgets::tree_view::TreeRowContent;
 
     let logical = |entity: Entity| -> Rect {
         let computed = app
@@ -700,12 +663,21 @@ fn picked_gap(app: &mut App, nest: &Nest) -> (Entity, Gap) {
         let scale = computed.inverse_scale_factor();
         Rect::from_center_size(transform.translation * scale, computed.size() * scale)
     };
+    // A row spans the panel; its level shows in where its content starts.
+    let content = |row: Entity| -> Entity {
+        app.world()
+            .get::<Children>(row)
+            .expect("a row has children")
+            .iter()
+            .find(|&child| app.world().get::<TreeRowContent>(child).is_some())
+            .expect("a row has content")
+    };
     let strip = logical(after_zone_of(app, nest.leaf_row));
     let gap = Gap {
         y: strip.center().y,
-        middle_indent: logical(nest.rows[1]).min.x,
+        middle_indent: logical(content(nest.rows[1])).min.x,
     };
-    (after_zone_of(app, nest.rows[0]), gap)
+    (after_zone_of(app, nest.leaf_row), gap)
 }
 
 /// The primary window as a pointer location's target.

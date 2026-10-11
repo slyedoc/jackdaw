@@ -318,6 +318,7 @@ impl JackdawExtension for JackdawCoreExtension {
         crate::terrain::texture_ops::add_to_extension(ctx);
         crate::terrain::tint_ops::add_to_extension(ctx);
         crate::terrain::detail_ops::add_to_extension(ctx);
+        crate::landscape::add_to_extension(ctx);
         crate::terrain::autoterrain_ops::add_to_extension(ctx);
         crate::texture_files::add_to_extension(ctx);
         crate::project_window::add_to_extension(ctx);

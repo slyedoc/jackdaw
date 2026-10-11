@@ -31,7 +31,10 @@ fn a_fresh_tab_starts_unloaded() {
         matches!(tab.content, TabContent::Unloaded),
         "fresh tab has nothing spawned yet"
     );
-    assert!(tab.environment.is_none(), "and no environment until activated");
+    assert!(
+        tab.environment.is_none(),
+        "and no environment until activated"
+    );
 }
 
 #[test]
@@ -850,8 +853,7 @@ fn activating_an_ordinary_tab_still_spawns_it() {
     );
 }
 
-const WORLD_BSN: &str =
-    "bevy_ecs::hierarchy::Children [\n    #World\n    bevy_transform::components::transform::Transform\n]\n";
+const WORLD_BSN: &str = "bevy_ecs::hierarchy::Children [\n    #World\n    bevy_transform::components::transform::Transform\n]\n";
 
 const UI_SCENE_BSN: &str = "bevy_ecs::hierarchy::Children [\n    #Overlay\n    bevy_ui::ui_node::Node\n    jackdaw_scene_types::UiSceneRoot\n]\n";
 

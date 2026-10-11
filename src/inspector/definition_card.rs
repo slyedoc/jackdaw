@@ -7,8 +7,8 @@
 //! all the panel has to show.
 
 use bevy::ecs::system::SystemState;
-use bevy::prelude::*;
 use bevy::feathers_inspector::InspectorRoot;
+use bevy::prelude::*;
 use jackdaw_api::op::Operator as _;
 use jackdaw_api::prelude::AssetKinds;
 use jackdaw_feathers::{
@@ -116,7 +116,11 @@ pub(crate) fn fill_definition_card(world: &mut World, inspector: Entity, source:
 }
 
 /// The definition's asset, as the inspector addresses it.
-fn definition_root(world: &World, path: &std::path::Path, type_path: &str) -> Option<InspectorRoot> {
+fn definition_root(
+    world: &World,
+    path: &std::path::Path,
+    type_path: &str,
+) -> Option<InspectorRoot> {
     let handle = world
         .get_resource::<crate::asset_index::AssetIndex>()?
         .get(path)?

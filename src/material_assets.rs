@@ -564,10 +564,7 @@ pub(crate) fn plugin(app: &mut App) {
     ))
     .init_resource::<PendingMaterialDelete>()
     .init_resource::<EditedMaterials>()
-    .add_systems(
-        Update,
-        write_edited_materials.run_if(crate::editor_active),
-    )
+    .add_systems(Update, write_edited_materials.run_if(crate::editor_active))
     .add_observer(on_delete_dialog_opened)
     .add_observer(on_delete_dialog_closed)
     .add_observer(on_material_delete_confirmed);

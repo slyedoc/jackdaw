@@ -8,8 +8,8 @@
 use std::any::TypeId;
 
 use bevy::feathers_inspector::{
-    BuildCx, DefaultInspectorWidgetsPlugin, FieldCtx, InspectorBinding, InspectorEdits, InspectorField, InspectorRoot,
-    ReflectInspectorWidget,
+    BuildCx, DefaultInspectorWidgetsPlugin, FieldCtx, InspectorBinding, InspectorEdits,
+    InspectorField, InspectorRoot, ReflectInspectorWidget,
 };
 use bevy::prelude::*;
 use bevy::reflect::{ParsedPath, PartialReflect, TypeRegistry};
@@ -28,7 +28,10 @@ pub(super) fn plugin(app: &mut App) {
     }
     app.insert_resource(InspectorEdits(route_edit))
         .add_systems(PostStartup, register_widgets)
-        .add_systems(Update, (fill_asset_slots, fill_entity_links, tag_field_rows));
+        .add_systems(
+            Update,
+            (fill_asset_slots, fill_entity_links, tag_field_rows),
+        );
 }
 
 /// The editor's spelling of a reflection path: no leading dot before a field name.
@@ -219,7 +222,11 @@ fn fill_asset_slots(world: &mut World) {
     }
     let icon_font = world.resource::<IconFont>().0.clone();
     for (entity, slot) in slots {
-        world.entity_mut(entity).get_mut::<AssetSlot>().unwrap().filled = true;
+        world
+            .entity_mut(entity)
+            .get_mut::<AssetSlot>()
+            .unwrap()
+            .filled = true;
         let Some((source, type_path)) = slot.root.and_then(|root| inspected(world, &root)) else {
             continue;
         };
@@ -298,12 +305,7 @@ fn tag_field_rows(
 }
 
 /// Parse a string value into a reflected value, returning true on success.
-fn spawn_entity_link(
-    commands: &mut Commands,
-    parent: Entity,
-    target: Entity,
-    label: &str,
-) {
+fn spawn_entity_link(commands: &mut Commands, parent: Entity, target: Entity, label: &str) {
     commands.spawn((
         Text::new(label),
         TextFont {

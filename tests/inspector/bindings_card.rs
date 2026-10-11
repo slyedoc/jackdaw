@@ -6,8 +6,8 @@ use crate::util;
 
 use bevy::feathers::controls::{FeathersSelect, OptionIndex};
 use bevy::picking::hover::Hovered;
-use bevy::ui_widgets::ValueChange;
 use bevy::prelude::*;
+use bevy::ui_widgets::ValueChange;
 use jackdaw::inspector::bindings_card::{
     AddBindingMenu, BindControl, BindKind, BindingControl, BindingRowLabel, BindingsCardBody,
     PathSlot,
@@ -230,7 +230,11 @@ fn control(app: &mut App, binding: usize, wanted: BindControl) -> Entity {
 fn pick(app: &mut App, combo: Entity, selected: usize, _label: &str, _value: Option<&str>) {
     let row = descendants(app.world_mut(), combo)
         .into_iter()
-        .find(|entity| app.world().get::<OptionIndex>(*entity).is_some_and(|index| index.0 == selected))
+        .find(|entity| {
+            app.world()
+                .get::<OptionIndex>(*entity)
+                .is_some_and(|index| index.0 == selected)
+        })
         .unwrap_or_else(|| app.world_mut().spawn(OptionIndex(selected)).id());
     app.world_mut().trigger(ValueChange {
         source: combo,

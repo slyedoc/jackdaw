@@ -7,9 +7,10 @@ use bevy::{
 };
 use bevy_monitors::prelude::{MonitorSelf, Mutation, NotifyChanged};
 use jackdaw_widgets::tree_view::{
-    EntityCategory, TreeChildrenPopulated, TreeDragCancelled, TreeDropLine, TreeFocused, TreeNode,
+    EntityCategory, TreeDragCancelled, TreeDropLine, TreeFocused, TreeNode,
     TreeNodeExpandToggle, TreeNodeExpanded, TreeRoot, TreeRowChildren, TreeRowClicked,
-    TreeRowContent, TreeRowDot, TreeRowDropped, TreeRowDroppedOnRoot, TreeRowInlineRename,
+    TreeRowContent, TreeRowDepth, TreeRowDot, TreeRowDropped, TreeRowDroppedOnRoot,
+    TreeRowInlineRename,
     TreeRowInsertZone, TreeRowInserted, TreeRowLabel, TreeRowLockToggle, TreeRowLockToggled,
     TreeRowSelected, TreeRowStartRename, TreeRowVisibilityToggle, TreeRowVisibilityToggled,
     TreeSpringLoad,
@@ -21,10 +22,12 @@ use crate::tokens;
 
 pub const ROW_BG: Color = Color::NONE;
 const INDENT_WIDTH: f32 = 16.0;
+/// How far each level of a flat tree is indented.
+pub const INDENT_STEP: f32 = INDENT_WIDTH + tokens::SPACING_SM;
 const TOGGLE_WIDTH: f32 = 18.0;
 const DOT_COLUMN_WIDTH: f32 = 14.0;
 /// How tall a tree row is: the text plus the padding and border around it.
-const ROW_HEIGHT: f32 = tokens::TEXT_SIZE_PX + 2.0 * tokens::SPACING_XS + 2.0;
+pub const ROW_HEIGHT: f32 = tokens::TEXT_SIZE_PX + 2.0 * tokens::SPACING_XS + 2.0;
 
 /// How tall the strip standing for the gap between two rows is: a third of a
 /// row each side of the boundary.
@@ -79,56 +82,29 @@ pub fn category_color(category: EntityCategory, inherited: bool) -> Color {
     }
 }
 
-/// Creates a tree row bundle for displaying an entity in the hierarchy.
-/// `inherited` mutes the dot color while the icon still reflects the category.
+/// A row of a flat (virtual) tree: one of a pool the list rebinds as it scrolls. It is
+/// absolutely placed at its `top`, indented by its `padding.left`, and stands for whichever
+/// entity its [`TreeNode`] names, so every handler reads that at the time of the event.
 ///
-/// The row spawns with an empty expand toggle; call
-/// [`set_row_expand_toggle`] to give it a disclosure control.
-pub fn tree_row(
-    label: &str,
-    selected: bool,
-    source: Entity,
-    category: EntityCategory,
-    inherited: bool,
-    icon_override: Option<Icon>,
-    style: &TreeRowStyle,
-) -> impl Bundle {
+/// The row spawns blank, with an empty expand toggle; the list writes its label, glyph and
+/// state, and calls [`set_row_expand_toggle`] to give it a disclosure control.
+pub fn tree_row(style: &TreeRowStyle) -> impl Bundle {
     (
-        TreeNode(source),
         TreeNodeExpanded(false),
-        TreeChildrenPopulated(false),
+        TreeRowDepth::default(),
         MonitorSelf,
         NotifyChanged::<TreeNodeExpanded>::default(),
         Node {
+            position_type: PositionType::Absolute,
+            left: px(0.0),
+            right: px(0.0),
+            top: px(0.0),
+            height: px(ROW_HEIGHT),
             flex_direction: FlexDirection::Column,
-            width: percent(100),
             ..default()
         },
         children![
-            tree_row_content(
-                label,
-                selected,
-                source,
-                category,
-                inherited,
-                icon_override,
-                style
-            ),
-            (
-                TreeRowChildren,
-                Node {
-                    flex_direction: FlexDirection::Column,
-                    // Indent via padding, not margin: a left margin on a
-                    // full-width box is clamped to `parent_width - margin`, so
-                    // each level would pull the row's right edge inward.
-                    padding: UiRect::left(px(INDENT_WIDTH + tokens::SPACING_SM)),
-                    border: UiRect::left(px(1.0)),
-                    width: percent(100),
-                    display: Display::None,
-                    ..default()
-                },
-                BorderColor::all(tokens::CONNECTION_LINE),
-            ),
+            tree_row_content(style),
             // Last, so the gaps sit over the row's own drop target where the
             // two meet.
             insertion_zone(false),
@@ -137,29 +113,16 @@ pub fn tree_row(
         observe(
             |mutation: On<Mutation<TreeNodeExpanded>>,
              expanded_query: Query<(&TreeNodeExpanded, &Children)>,
-             children_container: Query<Entity, With<TreeRowChildren>>,
              content_query: Query<&Children, With<TreeRowContent>>,
              toggle_query: Query<&Children, With<TreeNodeExpandToggle>>,
-             mut node_query: Query<&mut Node>,
              mut commands: Commands| {
                 let entity = mutation.event_target();
                 let Ok((expanded, children)) = expanded_query.get(entity) else {
                     return;
                 };
-
+                // A childless leaf carries no disclosure at all, so it keeps its
+                // blank toggle even when marked expanded.
                 for child in children.iter() {
-                    if children_container.contains(child)
-                        && let Ok(mut node) = node_query.get_mut(child)
-                    {
-                        node.display = if expanded.0 {
-                            Display::Flex
-                        } else {
-                            Display::None
-                        };
-                    }
-
-                    // A childless leaf carries no disclosure at all, so it
-                    // keeps its blank toggle even when marked expanded.
                     let Ok(content_children) = content_query.get(child) else {
                         continue;
                     };
@@ -237,29 +200,17 @@ fn insertion_zone(after: bool) -> impl Bundle {
             |mut over: On<PointerDragOver>,
              zones: Query<&TreeRowInsertZone>,
              parents: Query<&ChildOf>,
-             children: Query<&Children>,
-             tree_nodes: Query<&TreeNode>,
-             expanded: Query<&TreeNodeExpanded>,
-             row_children: Query<(), With<TreeRowChildren>>,
+             depths: Query<&TreeRowDepth>,
+             roots: Query<Entity, With<TreeRoot>>,
              transforms: Query<(&ComputedNode, &UiGlobalTransform)>,
              mut line: ResMut<TreeDropLine>| {
                 over.propagate(false);
                 let zone = over.event_target();
                 let cursor = over.pointer.position;
-                let depth = resolve_drop_depth(
-                    zone,
-                    cursor,
-                    &zones,
-                    &parents,
-                    &children,
-                    &tree_nodes,
-                    &expanded,
-                    &row_children,
-                    &transforms,
-                )
-                .map_or(0, |(_, depth)| depth);
+                let level = drop_level(zone, cursor, &zones, &parents, &depths, &roots, &transforms)
+                    .map_or(0, |(_, depth, up)| depth - up);
                 line.zone = Some(zone);
-                line.indent = depth as f32 * (INDENT_WIDTH + tokens::SPACING_SM);
+                line.indent = level as f32 * INDENT_STEP;
             },
         ),
         observe(
@@ -274,11 +225,10 @@ fn insertion_zone(after: bool) -> impl Bundle {
             |mut drop: On<PointerDragDrop>,
              mut commands: Commands,
              parents: Query<&ChildOf>,
-             children: Query<&Children>,
              tree_nodes: Query<&TreeNode>,
-             expanded: Query<&TreeNodeExpanded>,
              zones: Query<&TreeRowInsertZone>,
-             row_children: Query<(), With<TreeRowChildren>>,
+             depths: Query<&TreeRowDepth>,
+             roots: Query<Entity, With<TreeRoot>>,
              transforms: Query<(&ComputedNode, &UiGlobalTransform)>,
              mut line: ResMut<TreeDropLine>| {
                 drop.propagate(false);
@@ -288,17 +238,9 @@ fn insertion_zone(after: bool) -> impl Bundle {
                     return;
                 };
                 let cursor = drop.pointer.position;
-                let Some((row, _)) = resolve_drop_depth(
-                    zone,
-                    cursor,
-                    &zones,
-                    &parents,
-                    &children,
-                    &tree_nodes,
-                    &expanded,
-                    &row_children,
-                    &transforms,
-                ) else {
+                let Some((row, _, up)) =
+                    drop_level(zone, cursor, &zones, &parents, &depths, &roots, &transforms)
+                else {
                     return;
                 };
                 let Ok(target) = tree_nodes.get(row) else {
@@ -313,187 +255,44 @@ fn insertion_zone(after: bool) -> impl Bundle {
                     dragged_source,
                     target: target.0,
                     index: usize::from(side.after),
+                    up,
                 });
             },
         ),
     )
 }
 
-/// Which row's gap the pointer is in, and at what depth.
+/// Which row's gap the pointer is in, the row's level, and how many levels above it the
+/// drop lands.
 ///
-/// An expanded row's after-gap is drawn on the same pixels as its last
-/// descendant's, so the zone the picking backend hands over does not say which
-/// drop was meant. The candidates come from the row tree
-/// ([`coincident_after_gaps`]) and the pointer's x picks between them against
-/// the indent each level is drawn at.
-///
-/// Returns `(row, depth)`. `None` for a zone that is not under a row.
-fn resolve_drop_depth(
+/// The gap under a row is also the gap under every branch that row ends, down to the level
+/// of the row drawn next, so the pointer's x picks the level against the indent each is
+/// drawn at. A gap above a row is beside that row alone. `None` for a zone not on a row.
+fn drop_level(
     zone: Entity,
     cursor: Vec2,
     zones: &Query<&TreeRowInsertZone>,
     parents: &Query<&ChildOf>,
-    children: &Query<&Children>,
-    tree_nodes: &Query<&TreeNode>,
-    expanded: &Query<&TreeNodeExpanded>,
-    row_children: &Query<(), With<TreeRowChildren>>,
+    depths: &Query<&TreeRowDepth>,
+    roots: &Query<Entity, With<TreeRoot>>,
     transforms: &Query<(&ComputedNode, &UiGlobalTransform)>,
-) -> Option<(Entity, usize)> {
-    let Ok(&ChildOf(row)) = parents.get(zone) else {
-        return None;
-    };
-    tree_nodes.get(row).ok()?;
-    let depth = row_depth(row, parents, row_children);
-    // Only the gap below a row can coincide with anything.
+) -> Option<(Entity, usize, usize)> {
+    let &ChildOf(row) = parents.get(zone).ok()?;
+    let depth = depths.get(row).ok()?;
     if !zones.get(zone).is_ok_and(|side| side.after) {
-        return Some((row, depth));
+        return Some((row, depth.depth, 0));
     }
-
-    let candidates = coincident_after_gaps(
-        row,
-        depth,
-        parents,
-        children,
-        tree_nodes,
-        expanded,
-        row_children,
-    );
-    Some(level_at_cursor(&candidates, cursor.x, transforms))
-}
-
-/// Every row whose after-gap is drawn on the same pixels as `row`'s,
-/// shallowest first, `row` included.
-fn coincident_after_gaps(
-    row: Entity,
-    depth: usize,
-    parents: &Query<&ChildOf>,
-    children: &Query<&Children>,
-    tree_nodes: &Query<&TreeNode>,
-    expanded: &Query<&TreeNodeExpanded>,
-    row_children: &Query<(), With<TreeRowChildren>>,
-) -> Vec<(Entity, usize)> {
-    let mut above = Vec::new();
-    let mut current = row;
-    let mut current_depth = depth;
-    // The bound guards against a cycle rather than limiting tree depth.
-    for _ in 0..64 {
-        let Some(parent_row) = enclosing_row_if_last(current, parents, children, row_children)
-        else {
-            break;
-        };
-        if tree_nodes.get(parent_row).is_err() || current_depth == 0 {
-            break;
-        }
-        current_depth -= 1;
-        above.push((parent_row, current_depth));
-        current = parent_row;
-    }
-    above.reverse();
-
-    let mut candidates = above;
-    candidates.push((row, depth));
-
-    let mut current = row;
-    let mut current_depth = depth;
-    for _ in 0..64 {
-        let Some(last) =
-            last_visible_child_row(current, children, tree_nodes, expanded, row_children)
-        else {
-            break;
-        };
-        current_depth += 1;
-        candidates.push((last, current_depth));
-        current = last;
-    }
-    candidates
-}
-
-/// The last row drawn under `row`, when `row` is expanded and holds any.
-fn last_visible_child_row(
-    row: Entity,
-    children: &Query<&Children>,
-    tree_nodes: &Query<&TreeNode>,
-    expanded: &Query<&TreeNodeExpanded>,
-    row_children: &Query<(), With<TreeRowChildren>>,
-) -> Option<Entity> {
-    if !expanded.get(row).is_ok_and(|expanded| expanded.0) {
-        return None;
-    }
-    let container = children
-        .get(row)
-        .ok()?
-        .iter()
-        .find(|&child| row_children.get(child).is_ok())?;
-    children
-        .get(container)
-        .ok()?
-        .iter()
-        .rev()
-        .find(|&child| tree_nodes.get(child).is_ok())
-}
-
-/// The candidate the pointer is pointing at: the deepest one whose own indent
-/// it has reached, and the shallowest when it has reached none.
-///
-/// Both sides of the comparison are logical pixels: `UiGlobalTransform` and
-/// `ComputedNode` are physical, `Pointer::pointer_location` is logical.
-fn level_at_cursor(
-    candidates: &[(Entity, usize)],
-    cursor_x: f32,
-    transforms: &Query<(&ComputedNode, &UiGlobalTransform)>,
-) -> (Entity, usize) {
-    let mut chosen = candidates[0];
-    for &(row, depth) in candidates {
-        let Ok((computed, transform)) = transforms.get(row) else {
-            continue;
-        };
-        let scale = computed.inverse_scale_factor();
-        let left = (transform.translation.x - computed.size().x / 2.0) * scale;
-        if cursor_x >= left {
-            chosen = (row, depth);
-        }
-    }
-    chosen
-}
-
-/// How many levels deep `row` sits, counting the child containers crossed
-/// on the way to the tree's root.
-fn row_depth(
-    row: Entity,
-    parents: &Query<&ChildOf>,
-    row_children: &Query<(), With<TreeRowChildren>>,
-) -> usize {
-    let mut depth = 0;
-    let mut current = row;
-    // The bound guards against a cycle rather than limiting tree depth.
-    for _ in 0..64 {
-        let Ok(&ChildOf(parent)) = parents.get(current) else {
-            return depth;
-        };
-        if row_children.get(parent).is_ok() {
-            depth += 1;
-        }
-        current = parent;
-    }
-    depth
-}
-
-/// The row `row` is nested in, when `row` is the last thing under it, so
-/// the two share an after-gap. `None` otherwise.
-fn enclosing_row_if_last(
-    row: Entity,
-    parents: &Query<&ChildOf>,
-    children: &Query<&Children>,
-    row_children: &Query<(), With<TreeRowChildren>>,
-) -> Option<Entity> {
-    let &ChildOf(container) = parents.get(row).ok()?;
-    row_children.get(container).ok()?;
-    let last = children.get(container).ok()?.iter().next_back()?;
-    if last != row {
-        return None;
-    }
-    let &ChildOf(parent_row) = parents.get(container).ok()?;
-    Some(parent_row)
+    let lowest = depth.next_depth.min(depth.depth);
+    // Both sides in logical pixels: `UiGlobalTransform` and `ComputedNode` are
+    // physical, the pointer's position logical.
+    let left = ancestor_tree_root(row, parents, roots)
+        .and_then(|root| transforms.get(root).ok())
+        .map_or(0.0, |(computed, transform)| {
+            (transform.translation.x - computed.size().x / 2.0) * computed.inverse_scale_factor()
+        });
+    let reached = ((cursor.x - left) / INDENT_STEP).floor().max(0.0) as usize;
+    let level = reached.clamp(lowest, depth.depth);
+    Some((row, depth.depth, depth.depth - level))
 }
 
 /// The row's expand toggle container, reached as
@@ -575,26 +374,7 @@ fn set_checked(world: &mut World, entity: Entity, checked: bool) {
     }
 }
 
-fn tree_row_content(
-    label: &str,
-    selected: bool,
-    source: Entity,
-    category: EntityCategory,
-    inherited: bool,
-    icon_override: Option<Icon>,
-    style: &TreeRowStyle,
-) -> impl Bundle {
-    let bg = if selected {
-        tokens::SELECTED_BG
-    } else {
-        ROW_BG
-    };
-    let border = if selected {
-        tokens::SELECTED_BORDER
-    } else {
-        Color::NONE
-    };
-
+fn tree_row_content(style: &TreeRowStyle) -> impl Bundle {
     (
         TreeRowContent,
         Node {
@@ -606,15 +386,15 @@ fn tree_row_content(
             width: percent(100),
             ..default()
         },
-        BackgroundColor(bg),
-        BorderColor::all(border),
+        BackgroundColor(ROW_BG),
+        BorderColor::all(Color::NONE),
         children![
             expand_toggle(),
-            category_dot(category, inherited, icon_override, &style.icon_font),
+            category_dot(EntityCategory::Entity, false, None, &style.icon_font),
             (
                 TreeRowLabel,
                 TreeRowLabelEllipsis,
-                Text::new(label),
+                Text::new(""),
                 TextFont {
                     font_size: tokens::TEXT_SIZE,
                     ..default()
@@ -640,19 +420,28 @@ fn tree_row_content(
                 bevy::picking::hover::Hovered::default(),
                 ThemedText,
             ),
-            lock_toggle(source, &style.icon_font),
-            visibility_toggle(source, &style.icon_font)
+            lock_toggle(&style.icon_font),
+            visibility_toggle(&style.icon_font)
         ],
-        observe(move |mut click: On<PointerClick>, mut commands: Commands| {
-            if click.button != PointerButton::Primary {
-                return;
-            }
-            click.propagate(false);
-            commands.trigger(TreeRowClicked {
-                entity: click.event_target(),
-                source_entity: source,
-            });
-        }),
+        observe(
+            |mut click: On<PointerClick>,
+             mut commands: Commands,
+             parents: Query<&ChildOf>,
+             tree_nodes: Query<&TreeNode>| {
+                if click.button != PointerButton::Primary {
+                    return;
+                }
+                click.propagate(false);
+                let Some(source) = find_source_entity(click.event_target(), &parents, &tree_nodes)
+                else {
+                    return;
+                };
+                commands.trigger(TreeRowClicked {
+                    entity: click.event_target(),
+                    source_entity: source,
+                });
+            },
+        ),
         observe(
             |hover: On<PointerOver>,
              mut bg_query: Query<
@@ -811,7 +600,7 @@ fn expand_toggle() -> impl Bundle {
 ///
 /// The consumer refreshes the glyph by writing the button's own caption text;
 /// see the editor's `refresh_row_lock_glyph`.
-fn lock_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle + use<> {
+fn lock_toggle(icon_font: &Handle<Font>) -> impl Bundle + use<> {
     (
         TreeRowLockToggle,
         crate::button::icon_button(
@@ -825,7 +614,13 @@ fn lock_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle + use<> 
         ),
         bevy::picking::hover::Hovered::default(),
         observe(
-            move |click: On<crate::button::ButtonClickEvent>, mut commands: Commands| {
+            |click: On<crate::button::ButtonClickEvent>,
+             mut commands: Commands,
+             parents: Query<&ChildOf>,
+             tree_nodes: Query<&TreeNode>| {
+                let Some(source) = find_source_entity(click.entity, &parents, &tree_nodes) else {
+                    return;
+                };
                 commands.trigger(TreeRowLockToggled {
                     entity: click.entity,
                     source_entity: source,
@@ -840,7 +635,7 @@ fn lock_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle + use<> 
 pub const LOCK_IDLE_ALPHA: f32 = 0.4;
 
 /// Eye icon for toggling entity visibility.
-fn visibility_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle {
+fn visibility_toggle(icon_font: &Handle<Font>) -> impl Bundle {
     (
         TreeRowVisibilityToggle,
         Node {
@@ -859,16 +654,25 @@ fn visibility_toggle(source: Entity, icon_font: &Handle<Font>) -> impl Bundle {
             },
             TextColor(tokens::TEXT_SECONDARY.with_alpha(0.4)),
         )],
-        observe(move |mut click: On<PointerClick>, mut commands: Commands| {
-            if click.button != PointerButton::Primary {
-                return;
-            }
-            click.propagate(false);
-            commands.trigger(TreeRowVisibilityToggled {
-                entity: click.event_target(),
-                source_entity: source,
-            });
-        }),
+        observe(
+            |mut click: On<PointerClick>,
+             mut commands: Commands,
+             parents: Query<&ChildOf>,
+             tree_nodes: Query<&TreeNode>| {
+                if click.button != PointerButton::Primary {
+                    return;
+                }
+                click.propagate(false);
+                let Some(source) = find_source_entity(click.event_target(), &parents, &tree_nodes)
+                else {
+                    return;
+                };
+                commands.trigger(TreeRowVisibilityToggled {
+                    entity: click.event_target(),
+                    source_entity: source,
+                });
+            },
+        ),
         observe(
             |hover: On<PointerOver>,
              children_query: Query<&Children>,

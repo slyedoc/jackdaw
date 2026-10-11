@@ -168,6 +168,11 @@ fn builtin(taxonomy: &mut CreationTaxonomy) {
         entry("geometry", "Pyramid", op_action::<EntityAddPyramidOp>()),
         entry("regions", "Terrain", op_action::<EntityAddTerrainOp>()),
         entry(
+            "regions",
+            "Landscape",
+            op_action::<crate::landscape::EntityAddLandscapeOp>(),
+        ),
+        entry(
             "lights",
             "Point Light",
             op_action::<EntityAddPointLightOp>(),

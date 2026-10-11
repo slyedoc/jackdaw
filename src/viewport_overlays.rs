@@ -39,18 +39,12 @@ impl Plugin for ViewportOverlaysPlugin {
         app.init_resource::<OverlaySettings>()
             .init_gizmo_group::<EntityGizmoGroup>()
             .add_systems(Startup, configure_entity_gizmos)
-            .add_systems(
-                Update,
-                ensure_axis_labels.run_if(crate::editor_active),
-            )
+            .add_systems(Update, ensure_axis_labels.run_if(crate::editor_active))
             .add_systems(
                 PostUpdate,
                 draw_selection_bounding_boxes.in_set(JackdawDrawSystems),
             )
-            .add_systems(
-                Update,
-                ensure_volumetric_fog.run_if(crate::editor_active),
-            )
+            .add_systems(Update, ensure_volumetric_fog.run_if(crate::editor_active))
             .add_systems(
                 PostUpdate,
                 (

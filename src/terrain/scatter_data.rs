@@ -9,7 +9,6 @@
 //! An older scene whose scatter is entities keeps working: nothing here
 //! touches those groups until `adopt` converts one.
 
-
 use bevy::prelude::*;
 use jackdaw_terrain::region::RegionCoord;
 use jackdaw_terrain::render::{ScatterChunk, ScatterDirty, TerrainScatter};
@@ -592,22 +591,8 @@ mod tests {
     fn re_running_a_group_replaces_its_placements_rather_than_adding_to_them() {
         let mut world = store_with(document());
         let assets = vec!["models/tree.gltf".to_string()];
-        stamp(
-            &mut world,
-            "t.jdterrain",
-            "woods",
-            &assets,
-            placements(3),
-        )
-        .expect("stores");
-        stamp(
-            &mut world,
-            "t.jdterrain",
-            "woods",
-            &assets,
-            placements(2),
-        )
-        .expect("stores");
+        stamp(&mut world, "t.jdterrain", "woods", &assets, placements(3)).expect("stores");
+        stamp(&mut world, "t.jdterrain", "woods", &assets, placements(2)).expect("stores");
         let store = world.resource::<TerrainDataStore>();
         assert_eq!(store.get("t.jdterrain").unwrap().placement_count(), 2);
         assert_eq!(
@@ -620,22 +605,8 @@ mod tests {
     fn clearing_a_group_leaves_the_others_alone() {
         let mut world = store_with(document());
         let assets = vec!["models/tree.gltf".to_string()];
-        stamp(
-            &mut world,
-            "t.jdterrain",
-            "woods",
-            &assets,
-            placements(3),
-        )
-        .expect("stores");
-        stamp(
-            &mut world,
-            "t.jdterrain",
-            "meadow",
-            &assets,
-            placements(2),
-        )
-        .expect("stores");
+        stamp(&mut world, "t.jdterrain", "woods", &assets, placements(3)).expect("stores");
+        stamp(&mut world, "t.jdterrain", "meadow", &assets, placements(2)).expect("stores");
         assert_eq!(clear(&mut world, "t.jdterrain", "woods"), Some(3));
         assert_eq!(
             group_counts(world.resource::<TerrainDataStore>(), "t.jdterrain"),
@@ -764,14 +735,8 @@ mod tests {
         let mut world = store_with(document());
         let assets = vec!["models/tree.gltf".to_string()];
         for _ in 0..8 {
-            stamp(
-                &mut world,
-                "t.jdterrain",
-                "woods",
-                &assets,
-                placements(2),
-            )
-            .expect("the terrain has a document");
+            stamp(&mut world, "t.jdterrain", "woods", &assets, placements(2))
+                .expect("the terrain has a document");
         }
         let store = world.resource::<TerrainDataStore>();
         let data = store.get("t.jdterrain").unwrap();

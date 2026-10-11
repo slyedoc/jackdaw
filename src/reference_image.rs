@@ -71,8 +71,7 @@ impl Plugin for ReferenceImagePlugin {
             .init_resource::<ReferenceImageQuad>()
             .add_systems(
                 Update,
-                (maintain_reference_images, poll_reference_image_pick)
-                    .run_if(crate::editor_active),
+                (maintain_reference_images, poll_reference_image_pick).run_if(crate::editor_active),
             );
     }
 }

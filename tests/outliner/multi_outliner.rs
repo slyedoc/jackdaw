@@ -1,6 +1,6 @@
 //! Multi-instance Outliner: two `HierarchyTreeContainer`s reflect every
-//! scene-graph change in lockstep, one row per container for an added root, rows
-//! reseated on a reparent, and removed on a despawn.
+//! scene-graph change in lockstep, one row per container for an added root, a
+//! reparented entity listed under its new parent, and rows removed on a despawn.
 //!
 //! Also pins that a `UiSceneRoot` is a root for outliner purposes: UI roots carry
 //! `UiTransform` via `Node` and never `Transform`, so a `Transform`-keyed root
@@ -109,49 +109,28 @@ fn reparent_scene_entity_moves_row_in_every_outliner() {
         }
     }
 
-    // Mark the parent as having children populated, or the reparent observer
-    // treats it as a not-yet-expanded subtree instead of reseating rows.
-    {
-        let mut q = world.query::<(
-            &TreeNode,
-            &mut jackdaw_widgets::tree_view::TreeChildrenPopulated,
-        )>();
-        for (tree_node, mut populated) in q.iter_mut(world) {
-            if tree_node.0 == parent {
-                populated.0 = true;
-            }
-        }
+    // Both panels have the parent open, so the child is listed under it there.
+    for container in [outliner_a, outliner_b] {
+        jackdaw::hierarchy::set_outliner_expanded(world, container, parent, true);
     }
 
     world.entity_mut(child).insert(ChildOf(parent));
     app.update();
 
     let world = app.world_mut();
-    let index = world.resource::<TreeIndex>();
-
-    // The parent's `TreeRowChildren` descendant should be the child row's new
-    // ancestor.
     for container in [outliner_a, outliner_b] {
-        let parent_row = index
-            .get(container, parent)
-            .expect("parent row in container");
-        let child_row = index.get(container, child).expect("child row in container");
-
-        let mut current = child_row;
-        let mut found_parent = false;
-        for _ in 0..6 {
-            let Some(co) = world.get::<ChildOf>(current) else {
-                break;
-            };
-            if co.parent() == parent_row {
-                found_parent = true;
-                break;
-            }
-            current = co.parent();
-        }
-        assert!(
-            found_parent,
-            "child row in {container} should reparent under {parent_row} after the source was reparented",
+        assert_eq!(
+            jackdaw::hierarchy::listed_children(world, container, parent),
+            vec![child],
+            "{container} lists the child under its new parent",
+        );
+        let view = world
+            .get::<jackdaw::hierarchy::OutlinerView>(container)
+            .expect("a panel has a list");
+        assert_eq!(
+            view.rows().iter().filter(|row| row.source == child).count(),
+            1,
+            "{container} lists the child once, not also at the top",
         );
     }
 }

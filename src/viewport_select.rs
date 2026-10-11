@@ -8,7 +8,9 @@ use crate::{
     viewport_util::window_to_viewport_cursor_for,
 };
 use bevy::input_focus::InputFocus;
+use bevy::picking::Pickable;
 use bevy::prelude::*;
+use bevy::scene::SceneBase;
 use bevy::ui::ui_transform::UiGlobalTransform;
 use jackdaw_api::prelude::*;
 use jackdaw_scene_types::Brush;
@@ -173,9 +175,9 @@ pub(crate) fn handle_viewport_click(
     // would otherwise fall through to `selection.clear()` and strip
     // `Selected` from the just-spawned brush.
     mut was_drawing: Local<bool>,
-    time: Res<Time>,
     // The last click's pick and when, so a second on the same thing opens its source.
     mut last_click: Local<Option<(Entity, f64)>>,
+    (pickables, scene_roots, time): (Query<&Pickable>, Query<(), With<SceneBase>>, Res<Time>),
 ) {
     let drawing_now = guards.draw_state.active.is_some();
     let just_finished_draw = *was_drawing && !drawing_now;
@@ -188,6 +190,7 @@ pub(crate) fn handle_viewport_click(
         || guards.gizmo_hover.hovered_axis.is_some()
         || just_finished_draw
         || guards.terrain_edit_mode.brush_active()
+        || guards.landscape_brush.active()
     {
         return;
     }
@@ -226,33 +229,50 @@ pub(crate) fn handle_viewport_click(
     // What the ray hit first, before resolving to a selectable ancestor: inside an instance,
     // that is the entity Edit Source selects in its base.
     let mut first_hit = None;
+    // Whether the ray hit anything a click can stand for; only a miss falls back to picking
+    // by screen distance (lights, empties).
+    let mut ray_hit = false;
 
     if camera.viewport_to_world(cam_tf, local_cursor).is_ok() {
-        // Filter out editor-internal mesh entities (material preview
-        // spheres, gizmo meshes, draw previews, etc), which carry
-        // `EditorEntity`. Locked reference images are also excluded so
-        // clicks pass through them to the geometry behind.
-        let editor_filter = |entity: Entity| {
-            !editor_entities.contains(entity) && !is_locked_reference(&reference_images, entity)
+        // What each hit stands for: itself, or for editor-internal geometry (landscape tiles)
+        // the scene entity it belongs to; `None` for editor helpers (gizmos, previews) and
+        // locked reference images, which clicks pass through. `Pickable` is honoured the way
+        // bevy_picking's backends do: not hoverable is skipped, blocking stops the list.
+        let owner = |mut entity: Entity| loop {
+            if is_locked_reference(&reference_images, entity) {
+                return None;
+            }
+            if !editor_entities.contains(entity) {
+                return Some(entity);
+            }
+            entity = parents.get(entity).ok()?.parent();
         };
-        let hits: Vec<Entity> = cursor_hits
-            .filtered(&editor_filter)
-            .map(|hit| hit.entity)
-            .collect();
-        first_hit = hits.first().copied();
-
-        for hit_entity in &hits {
-            if let Some(ancestor) = find_selectable_ancestor(
-                *hit_entity,
-                &scene_entities,
-                &parents,
-                &brushes,
-                &reference_images,
-            ) {
-                best_entity = Some(ancestor);
+        let mut hits: Vec<Entity> = Vec::new();
+        for hit in cursor_hits.all() {
+            let pickable = pickables.get(hit.entity).ok();
+            if pickable.is_none_or(|p| p.is_hoverable)
+                && let Some(entity) = owner(hit.entity)
+            {
+                hits.push(entity);
+            }
+            if pickable.is_some_and(|p| p.should_block_lower) {
                 break;
             }
         }
+        first_hit = hits.first().copied();
+        ray_hit = !hits.is_empty();
+
+        let resolve = |entity: Entity| {
+            find_selectable_ancestor(
+                entity,
+                &scene_entities,
+                &parents,
+                &brushes,
+                &scene_roots,
+                &reference_images,
+            )
+        };
+        best_entity = hits.iter().find_map(|&hit| resolve(hit));
         // If we'd select a different entity, but the current selection is also
         // under the cursor (overlapping geometry), keep the current selection.
         // This prevents re-selecting the original after Ctrl+D duplication.
@@ -260,23 +280,17 @@ pub(crate) fn handle_viewport_click(
             && let Some(current_primary) = selection.primary()
             && candidate != current_primary
         {
-            for hit_entity in &hits {
-                if find_selectable_ancestor(
-                    *hit_entity,
-                    &scene_entities,
-                    &parents,
-                    &brushes,
-                    &reference_images,
-                ) == Some(current_primary)
-                {
-                    return;
-                }
+            if hits
+                .iter()
+                .any(|&hit| resolve(hit) == Some(current_primary))
+            {
+                return;
             }
         }
     }
 
     // Fall back to screen-space proximity for non-mesh entities (lights, empties)
-    if best_entity.is_none() {
+    if best_entity.is_none() && !ray_hit {
         let mut best_dist = 30.0_f32;
         for (entity, global_tf) in &scene_entities {
             if is_locked_reference(&reference_images, entity) {
@@ -563,46 +577,35 @@ fn is_locked_reference(
     refs.get(entity).is_ok_and(|r| r.locked)
 }
 
-/// Walk up the `ChildOf` hierarchy from a raycast hit entity to find the
-/// selectable ancestor. A brush resolves to itself regardless of nesting.
-/// A non-brush scene entity whose parent is also a scene entity walks up
-/// to the scene-entity root (resolves GLTF sub-meshes to the model root).
-/// Locked reference images resolve to `None` so viewport clicks pass
-/// through to whatever sits behind them.
+/// What a click on `entity` selects: a brush itself, else the nearest `.bsn` instance at or
+/// above it (`SceneBase`), else the nearest scene entity at or above it. Locked reference
+/// images resolve to `None` so viewport clicks pass through to whatever sits behind them.
 fn find_selectable_ancestor(
-    mut entity: Entity,
+    entity: Entity,
     scene_entities: &Query<(Entity, &GlobalTransform), (Without<EditorEntity>, With<Transform>)>,
     parents: &Query<&ChildOf>,
     brushes: &Query<(), With<Brush>>,
+    scene_roots: &Query<(), With<SceneBase>>,
     reference_images: &Query<&crate::reference_image::ReferenceImage>,
 ) -> Option<Entity> {
-    loop {
-        if is_locked_reference(reference_images, entity) {
-            return None;
-        }
-        if scene_entities.contains(entity) {
-            // A brush always resolves to itself; never walk past it to a parent.
-            if brushes.contains(entity) {
-                return Some(entity);
-            }
-            // For non-brush scene entities, check whether the parent is also
-            // a scene entity. If so, prefer the parent (resolves GLTF sub-meshes
-            // to the model root).
-            if let Ok(child_of) = parents.get(entity) {
-                let parent = child_of.0;
-                if scene_entities.contains(parent) {
-                    entity = parent;
-                    continue;
-                }
-            }
-            return Some(entity);
-        }
-        if let Ok(child_of) = parents.get(entity) {
-            entity = child_of.0;
-        } else {
-            return None;
-        }
+    if is_locked_reference(reference_images, entity) {
+        return None;
     }
+    if brushes.contains(entity) && scene_entities.contains(entity) {
+        return Some(entity);
+    }
+    let mut nearest = None;
+    let mut at = Some(entity);
+    while let Some(current) = at {
+        if scene_entities.contains(current) {
+            if scene_roots.contains(current) {
+                return Some(current);
+            }
+            nearest = nearest.or(Some(current));
+        }
+        at = parents.get(current).ok().map(ChildOf::parent);
+    }
+    nearest
 }
 
 #[cfg(test)]

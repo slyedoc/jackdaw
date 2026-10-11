@@ -333,7 +333,6 @@ impl TextureSet {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,5 +546,4 @@ mod tests {
             vec!["a.png", "n.png", "h.png"]
         );
     }
-
 }

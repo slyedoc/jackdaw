@@ -2190,7 +2190,9 @@ fn a_focus_asked_for_by_a_tab_the_user_left_does_not_front_the_panel() {
         // Tab 0 is the UI scene restore opens first; tab 1 is the
         // ordinary scene it opens second and leaves in front.
         scenes.tabs[0].path = Some(scene_file("#Overlay\njackdaw_scene_types::UiSceneRoot\n"));
-        scenes.tabs[1].path = Some(scene_file("#World\nbevy_transform::components::transform::Transform\n"));
+        scenes.tabs[1].path = Some(scene_file(
+            "#World\nbevy_transform::components::transform::Transform\n",
+        ));
         scenes.active = 1;
     }
 

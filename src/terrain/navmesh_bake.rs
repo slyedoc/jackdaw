@@ -3203,7 +3203,13 @@ mod tests {
         let mesh = world
             .resource_mut::<Assets<AuroraMesh>>()
             .add(AuroraMesh::from_shape(Cuboid::new(2.0, 2.0, 2.0)));
-        let parent = world.spawn((crate::scene_io::SceneEntity, Transform::default(), Visibility::Hidden)).id();
+        let parent = world
+            .spawn((
+                crate::scene_io::SceneEntity,
+                Transform::default(),
+                Visibility::Hidden,
+            ))
+            .id();
         world.spawn((
             crate::scene_io::SceneEntity,
             AuroraMesh3d(mesh),

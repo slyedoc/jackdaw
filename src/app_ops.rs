@@ -34,4 +34,3 @@ pub(crate) fn app_open_keybinds(
     commands.trigger(crate::keybind_settings::OpenKeybindSettingsEvent);
     OperatorResult::Finished
 }
-

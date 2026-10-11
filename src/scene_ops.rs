@@ -92,4 +92,3 @@ pub(crate) fn scene_save_selection_as_prefab(
     });
     OperatorResult::Finished
 }
-

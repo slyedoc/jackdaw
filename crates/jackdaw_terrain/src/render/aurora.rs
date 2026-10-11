@@ -225,7 +225,9 @@ fn sync_rows(
                 state.next - 1
             });
             if u64::from(row) >= ROWS {
-                warn_once!("terrain splat: more than {ROWS} terrain materials; the rest draw plain");
+                warn_once!(
+                    "terrain splat: more than {ROWS} terrain materials; the rest draw plain"
+                );
                 continue;
             }
             let mirror = materials.add(AuroraMaterial {
@@ -251,7 +253,12 @@ fn sync_rows(
             entry.maps_dirty = true;
         }
         if entry.maps_dirty {
-            fill(&rd, &mut entry.control, images.get(&splat.control), res * res);
+            fill(
+                &rd,
+                &mut entry.control,
+                images.get(&splat.control),
+                res * res,
+            );
             fill(&rd, &mut entry.slope, images.get(&splat.slope), res * res);
             entry.maps_dirty = entry.control.is_none();
         }

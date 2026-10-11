@@ -85,4 +85,3 @@ pub(crate) fn disable_keyboard_input_when_typing(
     // transform entry is capturing it, so typed digits go to the entry.
     sources.keyboard = !focus.keyboard_is_spoken_for() && numeric.axis.is_none();
 }
-

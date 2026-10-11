@@ -21,7 +21,6 @@ use jackdaw_feathers::{
     utils::{show_select_option, shown_select_option},
 };
 
-
 /// The reflect path of the component this card stands in for, and the card's
 /// `ComponentDisplayTypePath`.
 pub fn node_type_path() -> &'static str {
@@ -293,14 +292,7 @@ pub(crate) fn fill_node_card_body(world: &mut World, source: Entity, body: Entit
     let mut state: SystemState<Commands> = SystemState::new(world);
     if let Ok(mut commands) = state.get_mut(world) {
         commands.entity(body).insert(NodeCardBody);
-        build_node_card(
-            &mut commands,
-            body,
-            source,
-            &node,
-            &icon_font,
-            &collapse,
-        );
+        build_node_card(&mut commands, body, source, &node, &icon_font, &collapse);
     }
     state.apply(world);
     world.flush();
@@ -354,8 +346,20 @@ fn build_node_card(
     for field in [&OVERFLOW_X, &OVERFLOW_Y, &CLIP_VISUAL_BOX] {
         spawn_enum_combo(commands, overflow, source, node, field);
     }
-    node_field(commands, overflow, source, "scrollbar_width", "scrollbar width");
-    node_field(commands, overflow, source, "overflow_clip_margin.margin", "clip margin");
+    node_field(
+        commands,
+        overflow,
+        source,
+        "scrollbar_width",
+        "scrollbar width",
+    );
+    node_field(
+        commands,
+        overflow,
+        source,
+        "overflow_clip_margin.margin",
+        "clip margin",
+    );
 
     let position = section(
         commands,
@@ -830,9 +834,7 @@ pub(crate) fn on_optional_number_change(
     }
     let value = event.value;
     let is_final = event.is_final;
-    commands
-        .entity(source)
-        .insert(NumericValue::F64(value));
+    commands.entity(source).insert(NumericValue::F64(value));
     commands.queue(move |world: &mut World| {
         let Some(mut state) = world.get_mut::<NodeOptionalNumber>(root) else {
             return;

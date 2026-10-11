@@ -96,6 +96,7 @@ pub(crate) mod preview_model;
 pub mod project;
 pub mod project_settings;
 // TODO(bsn-consolidation): always empty now; delete with the schema-only inspector paths.
+pub(crate) mod landscape;
 pub mod project_types;
 pub mod project_window;
 pub mod reference_image;
@@ -237,7 +238,11 @@ pub fn editor_active(state: Res<State<AppState>>, shown: Res<EditorShown>) -> bo
     *state.get() == AppState::Editor && shown.0
 }
 
-fn activate<C: Component>(commands: &mut Commands, contexts: impl Iterator<Item = Entity>, on: bool) {
+fn activate<C: Component>(
+    commands: &mut Commands,
+    contexts: impl Iterator<Item = Entity>,
+    on: bool,
+) {
     use bevy_enhanced_input::prelude::ContextActivity;
     for context in contexts {
         commands.entity(context).insert(if on {
@@ -302,14 +307,18 @@ fn cover_host_ui(
 
 /// Hide or show what the editor draws and listens with: its window shell (out of layout while
 /// hidden), its cameras (the UI camera hands the default-UI role back to the host's), and its
-/// input contexts. While it is shown the host's window cameras stand down: the editor covers
-/// the window, and its viewport is the view of the world.
+/// input contexts. While it is up (entered and shown) the host's window cameras stand down: the
+/// editor covers the window, and its viewport is the view of the world.
 fn show_or_hide_editor(
+    state: Res<State<AppState>>,
     shown: Res<EditorShown>,
     mut commands: Commands,
     mut shells: Query<
         (&mut Visibility, &mut Node),
-        (With<bevy_window_chrome::WindowShellRoot>, With<EditorEntity>),
+        (
+            With<bevy_window_chrome::WindowShellRoot>,
+            With<EditorEntity>,
+        ),
     >,
     mut cameras: Query<
         (
@@ -322,7 +331,12 @@ fn show_or_hide_editor(
         With<EditorEntity>,
     >,
     mut host_cameras: Query<
-        (Entity, &mut Camera, Option<&bevy::camera::RenderTarget>, Has<CoveredByEditor>),
+        (
+            Entity,
+            &mut Camera,
+            Option<&bevy::camera::RenderTarget>,
+            Has<CoveredByEditor>,
+        ),
         Without<EditorEntity>,
     >,
     viewports: Query<Entity, With<viewport::MainViewportCamera>>,
@@ -331,9 +345,13 @@ fn show_or_hide_editor(
     core: Query<Entity, With<core_extension::CoreExtensionInputContext>>,
     flyers: Query<Entity, With<jackdaw_camera::EditorCamera>>,
 ) {
-    let on = shown.0;
+    let on = *state.get() == AppState::Editor && shown.0;
     for (mut visibility, mut node) in &mut shells {
-        *visibility = if on { Visibility::Inherited } else { Visibility::Hidden };
+        *visibility = if on {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         node.display = if on { Display::Flex } else { Display::None };
     }
     for (entity, mut camera, target, covered) in &mut host_cameras {
@@ -355,7 +373,9 @@ fn show_or_hide_editor(
                 if on {
                     commands.entity(entity).insert(bevy::ui::IsDefaultUiCamera);
                 } else {
-                    commands.entity(entity).remove::<bevy::ui::IsDefaultUiCamera>();
+                    commands
+                        .entity(entity)
+                        .remove::<bevy::ui::IsDefaultUiCamera>();
                 }
             }
         } else if !on && before.is_none() {
@@ -597,6 +617,7 @@ impl Plugin for EditorCorePlugin {
         .add_plugins(fps_overlay::plugin)
         .add_plugins(perf_probe::plugin)
         .add_plugins(gizmo_overlays::plugin)
+        .add_plugins(landscape::LandscapeEditorPlugin)
         .add_systems(Update, view_ops::drive_dolly)
         .add_systems(Last, view_ops::track_pointer_focus)
         .add_plugins(jackdaw_avian_integration::PhysicsOverlaysPlugin::<
@@ -659,8 +680,10 @@ impl Plugin for EditorCorePlugin {
                 // Again for any camera that appears while it is up: a game camera spawned
                 // under the editor is covered too.
                 show_or_hide_editor.run_if(
-                    |shown: Res<EditorShown>, added: Query<(), Added<Camera>>| {
-                        shown.is_changed() || !added.is_empty()
+                    |state: Res<State<AppState>>,
+                     shown: Res<EditorShown>,
+                     added: Query<(), Added<Camera>>| {
+                        state.is_changed() || shown.is_changed() || !added.is_empty()
                     },
                 ),
                 cover_host_ui,
@@ -689,10 +712,7 @@ impl Plugin for EditorCorePlugin {
         // Outside the editor state, since the launcher opens and closes
         // projects too.
         .add_systems(First, project::mirror_open_project)
-        .add_systems(
-            Update,
-            rebuild_menu_if_dirty.run_if(editor_active),
-        )
+        .add_systems(Update, rebuild_menu_if_dirty.run_if(editor_active))
         .add_systems(OnExit(AppState::Editor), cleanup_editor)
         .add_systems(
             Update,
@@ -2585,7 +2605,6 @@ pub(crate) fn menu_hover(
     }
 }
 
-
 /// Reset the dock layout to its default.
 #[operator(
     id = "window.reset_layout",
@@ -2856,7 +2875,6 @@ fn cleanup_editor(world: &mut World) {
         ec.despawn();
     }
 }
-
 
 const SCROLL_LINE_HEIGHT: f32 = 21.0;
 

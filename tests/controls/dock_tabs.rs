@@ -56,8 +56,7 @@ fn a_click_on_a_background_tab_brings_it_forward() {
         let mut windows = app
             .world_mut()
             .query_filtered::<&mut Window, With<PrimaryWindow>>();
-        windows.single_mut(app.world_mut()).unwrap().resolution =
-            WindowResolution::new(1600, 1000);
+        windows.single_mut(app.world_mut()).unwrap().resolution = WindowResolution::new(1600, 1000);
     }
     let project = tempfile::tempdir().unwrap().keep();
     app.insert_resource(jackdaw::project::ProjectRoot {

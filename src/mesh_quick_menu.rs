@@ -140,10 +140,7 @@ pub struct MeshQuickMenuPlugin;
 impl Plugin for MeshQuickMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MeshQuickMenu>()
-            .add_systems(
-                Update,
-                mesh_quick_menu_input.run_if(crate::editor_active),
-            )
+            .add_systems(Update, mesh_quick_menu_input.run_if(crate::editor_active))
             .add_observer(dispatch_quick_menu_selection);
     }
 }

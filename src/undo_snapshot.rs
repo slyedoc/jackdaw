@@ -337,8 +337,11 @@ mod tests {
             face.material = handle.clone();
         }
 
-        app.world_mut()
-            .spawn((crate::scene_io::SceneEntity, Name::new("Cube"), brush.clone()));
+        app.world_mut().spawn((
+            crate::scene_io::SceneEntity,
+            Name::new("Cube"),
+            brush.clone(),
+        ));
 
         // Register the entity in the live document and sync its Brush patch the
         // same way an editor edit does (this is the path that drops the handle).
@@ -366,7 +369,8 @@ mod tests {
         // Reload the captured text into a fresh world; the face material must
         // resolve to a real asset with the original base color.
         let mut fresh = material_snapshot_app();
-        crate::scene_io::spawn_bsn_text(fresh.world_mut(), &text, "").expect("reload captured scene");
+        crate::scene_io::spawn_bsn_text(fresh.world_mut(), &text, "")
+            .expect("reload captured scene");
 
         let reloaded_brush = {
             let mut query = fresh.world_mut().query::<&Brush>();

@@ -26,7 +26,6 @@ use bevy::scene::ScenePatch;
 use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
 use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
-
 use crate::placement::{ScatterPalette, ScatterPaletteEntry, ScatterPlacement, is_prefab_asset};
 use crate::region::RegionCoord;
 use crate::sidecar::RegionTerrainData;

@@ -26,10 +26,7 @@ impl Plugin for CameraPreviewPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<CameraPreviewState>()
             .add_systems(OnEnter(crate::AppState::Editor), setup_camera_preview)
-            .add_systems(
-                Update,
-                mirror_selected_camera.run_if(crate::editor_active),
-            )
+            .add_systems(Update, mirror_selected_camera.run_if(crate::editor_active))
             .add_observer(on_preview_strip_added);
     }
 }

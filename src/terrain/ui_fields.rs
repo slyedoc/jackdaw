@@ -20,15 +20,15 @@
 use std::ops::Range;
 
 use bevy::feathers::controls::FeathersCheckbox;
+use bevy::feathers::controls::{FeathersNumberInput, NumberInputPrecision, SoftLimit};
 use bevy::feathers::theme::ThemedText;
 use bevy::picking::hover::Hovered;
 use bevy::prelude::*;
 use bevy::text::FontSource;
 use bevy::ui::Checked;
+use bevy::ui_widgets::NumericValue;
 use jackdaw_api::prelude::*;
 use jackdaw_feathers::icons::FeathersDefaultFont;
-use bevy::feathers::controls::{NumberInputPrecision, FeathersNumberInput, SoftLimit};
-use bevy::ui_widgets::NumericValue;
 pub(super) use jackdaw_feathers::slider_row::FieldKind;
 use jackdaw_feathers::slider_row::SliderRowProps;
 use jackdaw_feathers::tokens;

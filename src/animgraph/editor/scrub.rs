@@ -182,10 +182,19 @@ fn scrub_keys(
 /// A copy of the selected event (same track, name and span) at `time`; with nothing selected, a
 /// plain `event` on the first track, or on a new `events` track if the clip has none.
 fn add_event_at(clip: &mut GraphClip, time: f32, selected: &mut Selected) {
-    let template = selected.track.as_ref().zip(selected.node).and_then(|(track, id)| {
-        let item = clip.event_tracks.get(track)?.events.iter().find(|e| e.id == id)?;
-        Some((track.clone(), item.value.clone()))
-    });
+    let template = selected
+        .track
+        .as_ref()
+        .zip(selected.node)
+        .and_then(|(track, id)| {
+            let item = clip
+                .event_tracks
+                .get(track)?
+                .events
+                .iter()
+                .find(|e| e.id == id)?;
+            Some((track.clone(), item.value.clone()))
+        });
     let (track, mut value) = template.unwrap_or_else(|| {
         let mut names: Vec<&String> = clip.event_tracks.keys().collect();
         names.sort();
@@ -225,7 +234,12 @@ fn advance(
     mut cursor: ResMut<TimelineCursor>,
     mut players: Query<&mut AnimationGraphPlayer, With<Scrubbing>>,
 ) {
-    let Some(duration) = view.clip.as_ref().and_then(|h| clips.get(h)).map(|c| c.duration) else {
+    let Some(duration) = view
+        .clip
+        .as_ref()
+        .and_then(|h| clips.get(h))
+        .map(|c| c.duration)
+    else {
         return;
     };
     if scrub.playing && duration > 0.0 {
@@ -277,7 +291,12 @@ pub(super) fn ruler_press(
     mut scrub: ResMut<Scrub>,
 ) {
     press.propagate(false);
-    let Some(duration) = view.clip.as_ref().and_then(|h| clips.get(h)).map(|c| c.duration) else {
+    let Some(duration) = view
+        .clip
+        .as_ref()
+        .and_then(|h| clips.get(h))
+        .map(|c| c.duration)
+    else {
         return;
     };
     if let Some(t) = time_under_pointer(&view, duration, &windows, &canvases) {
@@ -296,7 +315,12 @@ pub(super) fn ruler_drag(
     mut cursor: ResMut<TimelineCursor>,
 ) {
     drag.propagate(false);
-    let Some(duration) = view.clip.as_ref().and_then(|h| clips.get(h)).map(|c| c.duration) else {
+    let Some(duration) = view
+        .clip
+        .as_ref()
+        .and_then(|h| clips.get(h))
+        .map(|c| c.duration)
+    else {
         return;
     };
     if let Some(t) = time_under_pointer(&view, duration, &windows, &canvases) {
