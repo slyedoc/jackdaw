@@ -121,7 +121,7 @@ fn sync_live(
     }
 }
 
-/// Tiles, page trees and colliders are derived from the landscape every frame: kept out of
+/// Tiles, page trees, colliders and LOD rings are derived from the landscape: kept out of
 /// the outliner, the inspector, picking and the saved scene. Page colliders are also kept out
 /// of the colliders overlay (a heightfield's wireframe is millions of lines a frame).
 fn hide_runtime_entities(
@@ -133,6 +133,7 @@ fn hide_runtime_entities(
                 Added<LandscapeTile>,
                 Added<LandscapeRoot>,
                 Added<PageCollider>,
+                Added<aurora_landscape::LandscapeRing>,
             )>,
             Without<EditorEntity>,
         ),
