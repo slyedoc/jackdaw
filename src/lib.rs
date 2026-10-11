@@ -900,8 +900,9 @@ fn auto_hide_internal_entities(
                 continue;
             }
 
+            // The entity can go before this lands (a thumbnail job throws its subject away).
             if let Ok(mut ec) = commands.get_entity(entity) {
-                ec.insert(EditorHidden);
+                ec.try_insert(EditorHidden);
             }
         }
     }
