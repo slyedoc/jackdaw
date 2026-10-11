@@ -3,7 +3,7 @@
 //! A mesh wears [`LayeredSurface3d`]. The tracer never sees that asset -- it reads
 //! `AuroraMaterial3d` and a `SurfaceClass` -- so this module keeps a mirror `AuroraMaterial`
 //! per layered material and tags the entity with the class, which routes its SBT record to
-//! `layered.rchit`.
+//! `layered.slang`.
 
 use ash::vk;
 use bevy::platform::collections::HashMap;
@@ -48,7 +48,7 @@ fn register_class(
 ) {
     let class = registry.register(SurfaceGroup {
         label: "jackdaw_surface::layered".to_string(),
-        closest_hit: asset_server.load(aurora_asset("shaders/layered.rchit")),
+        closest_hit: asset_server.load(aurora_asset("shaders/layered.slang")),
         any_hit: None,
     });
     let buffer: Buffer<LayeredParams> = render_device.create_host_buffer(
