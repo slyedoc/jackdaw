@@ -319,6 +319,7 @@ pub(super) fn tool_name(tool: Option<BrushKind>) -> &'static str {
         Some(BrushKind::Flatten) => "flatten",
         Some(BrushKind::Paint) => "paint",
         Some(BrushKind::Erase) => "erase",
+        Some(BrushKind::Hole) => "hole",
     }
 }
 
@@ -344,6 +345,7 @@ pub(crate) fn landscape_tool(
         "flatten" => Some(BrushKind::Flatten),
         "paint" => Some(BrushKind::Paint),
         "erase" => Some(BrushKind::Erase),
+        "hole" => Some(BrushKind::Hole),
         _ => None,
     };
     brush.tool = if brush.tool == tool { None } else { tool };

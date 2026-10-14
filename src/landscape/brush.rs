@@ -308,7 +308,9 @@ pub(super) fn draw_brush_ring(
         return;
     };
     let origin = transform.translation();
-    let colour = if brush.tool.is_some_and(BrushKind::paints) {
+    let colour = if brush.tool == Some(BrushKind::Hole) {
+        Color::srgb(1.0, 0.25, 0.3)
+    } else if brush.tool.is_some_and(BrushKind::paints) {
         Color::srgb(0.3, 0.8, 1.0)
     } else {
         Color::srgb(1.0, 0.75, 0.2)

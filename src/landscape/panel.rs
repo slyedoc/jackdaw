@@ -203,6 +203,7 @@ pub(super) fn update_landscape_panel(
         ("Flatten", BrushKind::Flatten),
         ("Paint", BrushKind::Paint),
         ("Erase", BrushKind::Erase),
+        ("Hole", BrushKind::Hole),
     ] {
         let variant = if state.tool == Some(tool) {
             ButtonVariant::Active
