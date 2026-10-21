@@ -194,7 +194,6 @@ bevy = { git = "https://github.com/bevyengine/bevy", branch = "main", default-fe
     "bevy_gltf",
     "gltf_animation",
     "bevy_gizmos",
-    "bevy_audio",
     "bevy_remote",
     "bevy_world_serialization",
     "file_watcher",
@@ -366,7 +365,6 @@ bevy_animation = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_anti_alias = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_app = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_asset = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
-bevy_audio = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_camera = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_camera_controller = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
 bevy_clipboard = { git = "https://github.com/slyedoc/bevy", branch = "aurora" }
@@ -426,6 +424,11 @@ avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
 # Taken by crates.io version here; the fork branches satisfy those requirements.
 [patch.crates-io]
 avian3d = { git = "https://github.com/slyedoc/avian", branch = "aurora" }
+# aurora rides unreleased ash master (Vulkan 1.4.352, descriptor heap); gpu-allocator needs the
+# fork renaming push_next to build against it.
+ash = { git = "https://github.com/slyedoc/ash", branch = "aurora" }
+ash-window = { git = "https://github.com/slyedoc/ash", branch = "aurora" }
+gpu-allocator = { git = "https://github.com/slyedoc/gpu-allocator", branch = "ash-push-rename" }
 bevy_enhanced_input = { git = "https://github.com/slyedoc/bevy_enhanced_input", branch = "bevy-main" }
 bevy_rerecast = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
 bevy_rerecast_core = { git = "https://github.com/slyedoc/rerecast", branch = "bevy-main" }
