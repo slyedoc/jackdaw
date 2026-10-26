@@ -6,7 +6,7 @@
 //! kept rather than blanked.
 
 use crate::util;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 use std::path::{Path, PathBuf};
 

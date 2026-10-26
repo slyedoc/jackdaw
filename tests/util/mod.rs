@@ -26,7 +26,7 @@ impl std::ops::DerefMut for TestApp {
 
 impl Drop for TestApp {
     fn drop(&mut self) {
-        bevy_aurora::ray_render_plugin::shutdown_renderer(self.0.world_mut());
+        aurora::ray_render_plugin::shutdown_renderer(self.0.world_mut());
     }
 }
 
@@ -61,7 +61,7 @@ fn ambient_app_with(assets: bevy::asset::AssetPlugin) -> TestApp {
     // What `src/main.rs` adds to `AuroraDefaultPlugins`, without the OS window: the renderer
     // runs windowless and the editor's viewports trace into their image targets.
     app.add_plugins(
-        bevy_aurora::AuroraDefaultPlugins
+        aurora::AuroraDefaultPlugins
             .build()
             .disable::<bevy::winit::WinitPlugin>()
             .add(bevy::state::app::StatesPlugin)

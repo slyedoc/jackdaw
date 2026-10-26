@@ -7,9 +7,9 @@ use bevy::{
 use wgpu_types::TextureFormat;
 
 use crate::default_style;
-use bevy_aurora::environment::Environment;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::environment::Environment;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
 pub(super) struct MaterialPreviewPlugin;
 

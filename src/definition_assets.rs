@@ -1062,7 +1062,7 @@ fn compiled_kinds() -> [AssetKind; 5] {
         AssetKind::compiled(
             MATERIAL_KIND,
             "Material",
-            <bevy_aurora::material::AuroraMaterial as bevy::reflect::TypePath>::type_path(),
+            <aurora::material::AuroraMaterial as bevy::reflect::TypePath>::type_path(),
         )
         .with_icon(Icon::Palette),
         AssetKind::compiled(PREFAB_KIND, "Prefab", crate::asset_files::PREFAB_TYPE)

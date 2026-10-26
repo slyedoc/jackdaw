@@ -6,7 +6,7 @@
 //! Headless, so no texture decodes and the surfaces carry the untextured
 //! material rather than the splat one.
 
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::path::Path;
 
 use bevy::asset::AssetApp;

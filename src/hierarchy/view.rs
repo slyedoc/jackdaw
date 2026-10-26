@@ -199,7 +199,7 @@ pub(crate) fn plugin(app: &mut App) {
         .add_observer(drops_list_on_add::<PointLight>)
         .add_observer(drops_list_on_add::<DirectionalLight>)
         .add_observer(drops_list_on_add::<SpotLight>)
-        .add_observer(drops_list_on_add::<bevy_aurora::mesh::AuroraMesh3d>)
+        .add_observer(drops_list_on_add::<aurora::mesh::AuroraMesh3d>)
         .add_systems(
             PostUpdate,
             (

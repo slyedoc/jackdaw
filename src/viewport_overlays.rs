@@ -1,4 +1,4 @@
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::f32::consts::FRAC_PI_2;
 
 use crate::brush::{self, BrushMeshCache};
@@ -1036,7 +1036,7 @@ fn draw_coordinate_indicator(
 #[cfg(test)]
 mod selection_bounds_tests {
     use bevy::camera::primitives::Aabb;
-    use bevy_aurora::mesh::Triangles;
+    use aurora::mesh::Triangles;
 
     use super::*;
 

@@ -7,7 +7,7 @@ use std::any::TypeId;
 use std::path::{Path, PathBuf};
 
 use bevy::{prelude::*, scene::AuthoredComponents};
-use bevy_aurora::{
+use aurora::{
     environment::Environment,
     sky::{EnvironmentExposure, Sky},
 };
@@ -119,7 +119,7 @@ fn an_authored_setting_saves_as_the_files_root_and_reopens_on_the_environment() 
     );
     assert!(root.contains("Atmosphere"), "and the sky:\n{text}");
     assert!(
-        !root.contains("bevy_aurora::environment::Environment"),
+        !root.contains("aurora::environment::Environment"),
         "settings only: whoever spawns the file makes it an environment:\n{text}"
     );
     assert!(
@@ -164,7 +164,7 @@ fn a_respawned_scene_puts_back_the_settings_it_had_and_drops_the_ones_it_did_not
     );
 
     // The text an undo snapshot respawns: the environment as it was, a sky and no exposure.
-    let text = "bevy_aurora::environment::Environment\nbevy_aurora::sky::Sky::Atmosphere\nChildren [\n    #Pebble\n    bevy_transform::components::transform::Transform\n]\n";
+    let text = "aurora::environment::Environment\naurora::sky::Sky::Atmosphere\nChildren [\n    #Pebble\n    bevy_transform::components::transform::Transform\n]\n";
     jackdaw::scene_io::spawn_bsn_text(app.world_mut(), text, "assets/valley.bsn")
         .expect("the text spawns");
     settle(&mut app);
@@ -250,7 +250,7 @@ fn an_environment_added_from_the_menu_nests_in_the_scene_and_saves_with_it() {
     );
     let bits = app
         .world()
-        .resource::<bevy_aurora::environment::RenderEnvironments>();
+        .resource::<aurora::environment::RenderEnvironments>();
     assert!(bits.bit(nested).is_some(), "it renders in a bit of its own");
     assert_ne!(bits.bit(nested), bits.bit(tab));
 
@@ -258,7 +258,7 @@ fn an_environment_added_from_the_menu_nests_in_the_scene_and_saves_with_it() {
     let text = std::fs::read_to_string(&scene).expect("saved");
     let (_, children) = text.split_once("Children").expect(&text);
     assert!(
-        children.contains("bevy_aurora::environment::Environment"),
+        children.contains("aurora::environment::Environment"),
         "saved as one of the scene's entities:\n{text}"
     );
 }
@@ -323,7 +323,7 @@ fn a_file_opened_beside_another_tab_renders_in_that_tab() {
     let tab = environment(&app);
     let bit = app
         .world()
-        .resource::<bevy_aurora::environment::RenderEnvironments>()
+        .resource::<aurora::environment::RenderEnvironments>()
         .bit(tab)
         .expect("the tab has a render bit");
     assert!(bit > 0, "a tab renders apart from the editor's own bit");
@@ -338,7 +338,7 @@ fn a_file_opened_beside_another_tab_renders_in_that_tab() {
         .expect("the tab's bone");
     assert_eq!(
         app.world()
-            .get::<bevy_aurora::environment::InEnvironment>(bone)
+            .get::<aurora::environment::InEnvironment>(bone)
             .map(|e| e.0),
         Some(bit),
         "the nested rig's bones render in the tab's bit",
@@ -370,11 +370,11 @@ fn a_nested_environment_saves_without_its_bit() {
     let text = std::fs::read_to_string(&scene).expect("saved");
     let line = text
         .lines()
-        .find(|l| l.contains("bevy_aurora::environment::Environment"))
+        .find(|l| l.contains("aurora::environment::Environment"))
         .unwrap_or_else(|| panic!("the nested environment is saved:\n{text}"));
     assert_eq!(
         line.trim(),
-        "bevy_aurora::environment::Environment",
+        "aurora::environment::Environment",
         "the file asks for an environment, not a bit:\n{text}"
     );
 

@@ -29,8 +29,8 @@ use crate::EditorEntity;
 use crate::default_style;
 use crate::scene_io::SceneFilePath;
 use crate::selection::Selection;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainNavmeshState>()

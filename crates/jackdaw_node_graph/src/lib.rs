@@ -8,7 +8,7 @@
 //! # Architecture
 //! - Graph data lives as ECS entities with reflected components so it
 //!   round-trips through the editor's JSN AST serializer.
-//! - Connection wires are `bevy_aurora::ui_render::UiPolyline`s: the cubic is
+//! - Connection wires are `aurora::ui_render::UiPolyline`s: the cubic is
 //!   sampled into segments and aurora draws each as a rounded quad, batched
 //!   into the same pipeline as the rest of the UI.
 //! - Interaction is driven by a [`GraphGesture`] state machine that consumes

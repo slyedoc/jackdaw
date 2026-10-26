@@ -6,7 +6,7 @@
 //! with no viewport.
 
 use crate::util;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 use std::path::PathBuf;
 

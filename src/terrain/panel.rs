@@ -56,7 +56,7 @@ use crate::material_ui::{
     spawn_action_header, spawn_preview, spawn_section,
 };
 use crate::selection::Selection;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainGenerateState>()

@@ -18,7 +18,7 @@ use crate::{
     material_browser::MaterialRegistry,
     selection::Selection,
 };
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// The extensions the editor shows a picture for.
 const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "bmp", "tga", "webp", "ktx2"];

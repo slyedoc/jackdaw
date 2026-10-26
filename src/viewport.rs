@@ -413,7 +413,7 @@ fn viewport_target_image() -> Image {
         TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT;
     image.sampler = ImageSampler::linear();
     // No pixels: aurora builds the real Vulkan render target in this asset's place
-    // (`bevy_aurora::camera_target`), so bytes here would be uploaded as an ordinary
+    // (`aurora::camera_target`), so bytes here would be uploaded as an ordinary
     // texture and then thrown away the moment the camera claimed the asset.
     image.data = None;
     image

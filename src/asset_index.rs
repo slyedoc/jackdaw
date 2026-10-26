@@ -30,7 +30,7 @@ use path_slash::PathExt as _;
 use crate::asset_files::{AssetFileKind, AssetKindCache, walk_document_files};
 use crate::definition_assets::MATERIAL_KIND;
 use crate::project::ProjectRoot;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// What the editor loaded out of an asset file.
 #[derive(Clone, Debug)]
@@ -986,7 +986,7 @@ mod tests {
         std::fs::write(&path, text).expect("the file is written");
     }
 
-    const GRASS: &str = "#grass\nbevy_aurora::material::AuroraMaterial {}\n";
+    const GRASS: &str = "#grass\naurora::material::AuroraMaterial {}\n";
 
     /// The runtime counts a name over every document its walk saw, and so does
     /// this: a scene sharing a stem with an asset makes the name ambiguous in

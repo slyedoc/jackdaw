@@ -43,7 +43,7 @@ use super::{
 };
 use crate::type_metadata::{TypeChrome, TypeMetadata};
 use bevy::picking::hover::Hovered;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// What the inspector reads to place its target: whether it edits a definition asset or a file
 /// rather than a scene entity. Bundled into one param so the systems that read it stay under

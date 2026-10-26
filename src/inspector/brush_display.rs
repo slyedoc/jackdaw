@@ -16,7 +16,7 @@ use jackdaw_api::prelude::*;
 use jackdaw_feathers::{button::ButtonOperatorCall, tokens};
 
 use super::{BrushFaceField, BrushFaceFieldBinding, BrushFacePropsContainer};
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// Initial text staged on a brush face text input container. The
 /// `Insert`-triggered `seed_brush_face_text` observer writes it into the

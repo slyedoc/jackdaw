@@ -16,7 +16,7 @@ use aurora_landscape::{
     sculpt::{LayerPagesFile, LoadedPagesFile},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
-use bevy_aurora::render_device::RenderDevice;
+use aurora::render_device::RenderDevice;
 use jackdaw_scene_types::SceneNodeId;
 
 use crate::scene_io::SceneEntity;

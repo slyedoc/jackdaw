@@ -1,12 +1,12 @@
 //! The cursor's ray into the hovered viewport, traced on the GPU every frame by
-//! `bevy_aurora::picking`. Tools read what is under the cursor through [`CursorHits`].
+//! `aurora::picking`. Tools read what is under the cursor through [`CursorHits`].
 //!
 //! The ray is aimed in `PostUpdate` and traced with the frame; its hits are there for every
 //! system of the next frame. They trail the cursor by that one frame, which nothing a tool
 //! does with them can show, since its reaction draws in the next frame either way.
 
 use bevy::{camera::visibility::RenderLayers, ecs::system::SystemParam, prelude::*};
-use bevy_aurora::{
+use aurora::{
     environment::{InEnvironment, environment_mask},
     picking::{RayCaster, RayHit, RayHits},
 };

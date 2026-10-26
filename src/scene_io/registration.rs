@@ -3,7 +3,7 @@ use bevy::{
     ecs::reflect::AppTypeRegistry, platform::collections::HashSet, prelude::*,
     reflect::std_traits::ReflectDefault, scene::AuthoredComponents,
 };
-use bevy_aurora::environment::Environment;
+use aurora::environment::Environment;
 
 use crate::scenes::Scenes;
 

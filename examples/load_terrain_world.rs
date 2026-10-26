@@ -25,9 +25,9 @@ use std::path::{Path, PathBuf};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_aurora::AuroraDefaultPlugins;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::AuroraDefaultPlugins;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_runtime::prelude::*;
 use jackdaw_terrain::navmesh::{self, NO_NEIGHBOR, NavPolygon, NavmeshArtifact};
 use jackdaw_terrain::sidecar::{self, RegionTerrainData, TerrainMaterialSlot};
@@ -57,7 +57,7 @@ jackdaw_scene_types::types::Terrain {
 /// beside it; a bare colour is enough to show the catalog resolving.
 const GRASS: &str = "\
 #grass
-bevy_aurora::material::AuroraMaterial {
+aurora::material::AuroraMaterial {
     base_color: bevy_color::color::Color::Srgba(bevy_color::srgba::Srgba { red: 0.35, green: 0.5, blue: 0.25, alpha: 1.0 }),
 }
 ";

@@ -68,7 +68,7 @@ fn null_material_brush_loads_headless_under_render_feature() {
 /// the client. The plugin must detect the existing registration and leave it alone.
 #[test]
 fn existing_material_storage_is_left_intact() {
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     let mut app = App::new();
     app.add_plugins(MinimalPlugins);

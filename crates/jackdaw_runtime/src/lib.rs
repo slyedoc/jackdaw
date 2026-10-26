@@ -32,7 +32,7 @@ use bevy::scene::ScenePatchInstance;
 #[cfg(feature = "render")]
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot};
 #[cfg(feature = "render")]
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 pub mod bsn_files;
 
@@ -64,7 +64,7 @@ pub mod prelude {
     #[cfg(feature = "terrain")]
     pub use crate::{DetailPressers, DetailSettings, DetailViewer, TerrainViewer};
     pub use bevy::scene::ScenePatchInstance;
-    pub use bevy_aurora::environment::Environment;
+    pub use aurora::environment::Environment;
 }
 
 pub struct JackdawPlugin;

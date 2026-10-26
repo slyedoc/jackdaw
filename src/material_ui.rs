@@ -37,7 +37,7 @@ use jackdaw_feathers::{
 };
 
 use crate::material_preview::{MaterialPreviewState, PreviewShape};
-use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
+use aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 
 pub(crate) fn plugin(app: &mut App) {
     app.add_observer(on_material_checkbox_commit)
@@ -2010,7 +2010,7 @@ mod texture_slot_tests {
     use crate::inspector::asset_row::AssetFieldRow;
     use bevy::ecs::system::RunSystemOnce;
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     /// The texture slots of a material are asset rows, so the material card and
     /// the terrain panel's slot editor both show a path, a picker and a drop

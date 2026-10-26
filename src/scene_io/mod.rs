@@ -214,14 +214,14 @@ pub fn write_settings(world: &mut World) -> bevy::bsn_asset::WriteSettings {
         )>>()
         .iter(world)
         .collect();
-    let mesh = TypeId::of::<bevy_aurora::mesh::AuroraMesh3d>();
+    let mesh = TypeId::of::<aurora::mesh::AuroraMesh3d>();
     bevy::bsn_asset::WriteSettings {
         skip_components,
         skip_entities,
         skip_value: Some(std::sync::Arc::new(move |type_id, value| {
             type_id == mesh
                 && value
-                    .try_downcast_ref::<bevy_aurora::mesh::AuroraMesh3d>()
+                    .try_downcast_ref::<aurora::mesh::AuroraMesh3d>()
                     .is_some_and(|mesh| mesh.0.path().is_none())
         })),
         asset_paths: world

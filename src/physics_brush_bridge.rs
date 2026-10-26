@@ -10,7 +10,7 @@
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_avian_integration::AvianCollider;
 use jackdaw_geometry::{is_convex_topology, triangulate_polygons};
 

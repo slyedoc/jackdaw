@@ -1,4 +1,4 @@
-// See the root build.rs: bevy_aurora links libshaderc_shared.so.1 from the Vulkan SDK, and
+// See the root build.rs: aurora links libshaderc_shared.so.1 from the Vulkan SDK, and
 // `cargo:rustc-link-arg` does not propagate from a dependency's build script, so every
 // package that produces a RUNNABLE artifact against aurora embeds the rpath itself.
 fn main() {

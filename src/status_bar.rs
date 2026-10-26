@@ -1,5 +1,5 @@
 use bevy::{light::RectLight, prelude::*};
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::mesh::AuroraMesh3d;
 use jackdaw_feathers::status_bar::{StatusBarCenter, StatusBarLeft, StatusBarRight};
 
 use crate::{

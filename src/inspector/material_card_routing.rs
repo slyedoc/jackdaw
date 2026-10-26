@@ -7,7 +7,7 @@ use super::{
     ComponentDisplay, ComponentDisplayBody, ComponentDisplayTypePath, ComponentName, Inspector,
     InspectorDirty, InspectorTarget,
 };
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// Resolve which `Handle<AuroraMaterial>` to display for a brush entity.
 ///

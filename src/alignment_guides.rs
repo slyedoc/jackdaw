@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
 use crate::active_tool::ActiveTool;
 use crate::brush::BrushMeshCache;
@@ -393,7 +393,7 @@ fn draw_alignment_guides(
 #[cfg(test)]
 mod measurable_geometry_tests {
     use bevy::camera::primitives::Aabb;
-    use bevy_aurora::mesh::Triangles;
+    use aurora::mesh::Triangles;
 
     use super::*;
 

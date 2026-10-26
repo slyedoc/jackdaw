@@ -1,11 +1,11 @@
 # The aurora branch
 
-Replaces jackdaw's wgpu/`bevy_render` back end with `bevy_aurora`, the pure-Vulkan
+Replaces jackdaw's wgpu/`bevy_render` back end with `aurora`, the pure-Vulkan
 ray tracer. Based on `bevy-main`; see FORK.md for how updates flow.
 
 ## What aurora already provides
 
-Most of the editor needs no port at all. `bevy_aurora::ui_render` rasterizes the whole
+Most of the editor needs no port at all. `aurora::ui_render` rasterizes the whole
 `bevy_ui` node tree on Vulkan -- backgrounds, borders, outlines, images, text glyphs,
 gradients, clipping -- so feathers, the docks, the inspector and the node graph draw
 as they did. `gizmo_render` is the matching half for `bevy_gizmos`. `UiPolyline`
@@ -75,12 +75,12 @@ Confirm a feature is really gone rather than merely compiling:
 
 ## Gotcha: the shaderc rpath
 
-`bevy_aurora` links `libshaderc_shared.so.1` from the Vulkan SDK, and the SDK's
+`aurora` links `libshaderc_shared.so.1` from the Vulkan SDK, and the SDK's
 `setup-env.sh` puts only `$VULKAN_SDK/lib/VulkanLoader/lib` on `LD_LIBRARY_PATH` --
 not `$VULKAN_SDK/lib`, where shaderc actually lives. `cargo:rustc-link-arg` does NOT
 propagate from a dependency's build script, so every package here that produces a
 RUNNABLE artifact against aurora needs its own `build.rs` emitting the rpath. The root
-crate and `jackdaw_node_graph` have one; **any new crate that takes `bevy_aurora` needs
+crate and `jackdaw_node_graph` have one; **any new crate that takes `aurora` needs
 the same file**, or it links fine and then dies at startup with "error while loading
 shared libraries".
 

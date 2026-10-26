@@ -11,7 +11,7 @@ pub mod ui;
 use std::path::PathBuf;
 
 use bevy::{camera::visibility::RenderLayers, gizmos::config::GizmoConfigStore, prelude::*};
-use bevy_aurora::environment::{InEnvironment, RenderEnvironments};
+use aurora::environment::{InEnvironment, RenderEnvironments};
 
 use crate::commands::CommandHistory;
 use crate::project::ProjectRoot;

@@ -35,8 +35,8 @@ use crate::JackdawCatalog;
 
 #[cfg(feature = "physics")]
 use avian3d::prelude::{Collider, RigidBody};
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 /// Colour of a terrain drawn without a texture set.
 ///
@@ -742,7 +742,7 @@ mod tests {
     use bevy::asset::{AssetApp, AssetPlugin};
     use jackdaw_terrain::sidecar::{AutoTerrainSettings, RegionTerrainData};
 
-    const GRASS: &str = "#grass\nbevy_aurora::material::AuroraMaterial {\n    \
+    const GRASS: &str = "#grass\naurora::material::AuroraMaterial {\n    \
         base_color_texture: \"textures/grass_basecolor.png\",\n    \
         normal_map_texture: \"textures/grass_normal.png\",\n    \
         depth_map: \"textures/grass_height.png\",\n    \

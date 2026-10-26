@@ -32,8 +32,8 @@ pub use worn::WornMaterial;
 
 use bevy::color::ColorToComponents;
 use bevy::prelude::*;
-use bevy_aurora::material::AuroraMaterial;
-use bevy_aurora::surface_group::{LayeredParams, layered_flags};
+use aurora::material::AuroraMaterial;
+use aurora::surface_group::{LayeredParams, layered_flags};
 
 pub use surface_class::{LayeredSurface3d, LayeredSurfacePlugin};
 

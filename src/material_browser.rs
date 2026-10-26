@@ -20,7 +20,7 @@ use bevy::{
     prelude::*,
     tasks::{AsyncComputeTaskPool, Task, futures_lite::future},
 };
-use bevy_aurora::material::{AuroraMaterial, ParallaxMappingMethod};
+use aurora::material::{AuroraMaterial, ParallaxMappingMethod};
 use jackdaw_commands::{CommandGroup, EditorCommand};
 use jackdaw_feathers::{
     button::{ButtonOperatorCall, ButtonVariant, IconButtonProps, icon_button},

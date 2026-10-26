@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 
 use bevy::camera_controller::free_camera::{FreeCamera, FreeCameraPlugin};
 use bevy::prelude::*;
-use bevy_aurora::AuroraDefaultPlugins;
-use bevy_aurora::environment::MainPhysicsEnvironmentEntity;
-use bevy_aurora::util::ScreenshotExt;
+use aurora::AuroraDefaultPlugins;
+use aurora::environment::MainPhysicsEnvironmentEntity;
+use aurora::util::ScreenshotExt;
 use jackdaw_runtime::prelude::*;
 use jackdaw_terrain::Control;
 use jackdaw_terrain::sidecar::{self, RegionTerrainData, TerrainMaterialSlot};
@@ -55,7 +55,7 @@ fn author(dir: &Path) {
         std::fs::write(
             dir.join(format!("materials/splatcheck_{name}.material.bsn")),
             format!(
-                "#splatcheck_{name}\nbevy_aurora::material::AuroraMaterial {{\n    base_color_texture: \"splat_check/textures/{file}\",\n}}\n"
+                "#splatcheck_{name}\naurora::material::AuroraMaterial {{\n    base_color_texture: \"splat_check/textures/{file}\",\n}}\n"
             ),
         )
         .expect("material");

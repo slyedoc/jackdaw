@@ -16,7 +16,7 @@ pub mod topology_ops;
 use bevy::prelude::*;
 
 use crate::commands::EditorCommand;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 pub use self::csg::{
     brush_planes_to_world, brushes_intersect, clean_degenerate_faces, subtract_brush,

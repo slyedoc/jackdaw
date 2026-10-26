@@ -15,7 +15,7 @@ use super::asset_row::{
     AssetFieldReader, AssetFieldTarget, AssetFieldWriter, AssetRowProps, spawn_asset_row,
 };
 use crate::worn_material::WornMaterial;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// Reflect type path of the component a mesh entity wears its material on.
 /// The inspector lists it whether or not the document authors it, so a mesh

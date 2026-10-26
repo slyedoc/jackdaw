@@ -21,7 +21,7 @@
 use bevy::ecs::relationship::Relationship;
 use bevy::prelude::*;
 use bevy::ui::UiGlobalTransform;
-use bevy_aurora::ui_render::UiPolyline;
+use aurora::ui_render::UiPolyline;
 use std::collections::HashSet;
 
 use crate::canvas::GraphCanvasViewport;

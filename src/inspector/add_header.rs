@@ -14,7 +14,7 @@ use jackdaw_api::prelude::*;
 
 use super::category_strip::ActiveInspectorCategory;
 use super::component_picker::InspectorAddComponentButton;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// Marker placed on the add-header host entity in the content column.
 /// `on_add_header_mount_added` installs layout; [`rebuild_add_header`]

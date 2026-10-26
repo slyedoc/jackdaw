@@ -8,8 +8,8 @@ use bevy::{
     light::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
 };
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 use jackdaw_geometry::build_face_render_buffers;
 use jackdaw_scene_types::Brush;
 

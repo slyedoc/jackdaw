@@ -13,10 +13,10 @@ use crate::{
 };
 use bevy::asset::UntypedHandle;
 use bevy::prelude::*;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Reflect type path of the component a mesh wears a standard material on.
-pub const STANDARD_MATERIAL_COMPONENT: &str = "bevy_aurora::material::AuroraMaterial3d";
+pub const STANDARD_MATERIAL_COMPONENT: &str = "aurora::material::AuroraMaterial3d";
 
 /// The material a mesh entity wears, whichever kind holds it.
 #[derive(Clone, Debug, PartialEq)]
@@ -69,7 +69,7 @@ impl WornMaterial {
         // An extended kind's own plugin puts the mirror `AuroraMaterial3d` and the
         // `SurfaceClass` back on; taking them off here is what makes the swap a swap.
         node.remove::<AuroraMaterial3d>();
-        node.remove::<bevy_aurora::surface_group::SurfaceClass>();
+        node.remove::<aurora::surface_group::SurfaceClass>();
         node.remove::<LayeredSurface3d>();
         node.remove::<Foliage3d>();
         node.remove::<Water3d>();

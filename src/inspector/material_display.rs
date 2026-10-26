@@ -9,7 +9,7 @@ use crate::material_ui::{
     ActionHeaderProps, DEPTH_BIAS_RANGE, UNIT_RANGE, fill_surface_rows, fill_texture_rows,
     spawn_action_header, spawn_checkbox_row, spawn_combobox_row, spawn_preview, spawn_scalar_row,
 };
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d, Face};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d, Face};
 
 /// The material cards shown in the Material inspector tab, in display order.
 /// Each maps to one card; the `material_card::` type-path prefix routes them
@@ -388,7 +388,7 @@ mod surface_card_tests {
     use super::fill_surface_card;
     use crate::material_ui::{MaterialFieldBinding, MaterialFieldMarker};
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     #[test]
     fn surface_card_spawns_rows() {
@@ -465,7 +465,7 @@ mod settings_card_tests {
         MaterialFieldMarker,
     };
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     #[test]
     fn settings_card_spawns_rows() {
@@ -532,7 +532,7 @@ mod textures_card_tests {
     use super::fill_textures_card;
     use crate::material_ui::{MaterialCheckboxBinding, MaterialTextureSlotRow, TextureSlot};
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
     use jackdaw_feathers::icons::IconFont;
 
     #[test]
@@ -589,7 +589,7 @@ mod preview_card_tests {
         MaterialPreviewView, PreviewShapeButton, refresh_preview_shape_buttons,
     };
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     fn make_app() -> App {
         let mut app = App::new();
@@ -664,7 +664,7 @@ mod inject_material_cards_tests {
     use crate::inspector::{ComponentDisplayTypePath, InspectorCollapseState};
     use bevy::ecs::system::RunSystemOnce;
     use bevy::prelude::*;
-    use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+    use aurora::material::{AuroraMaterial, AuroraMaterial3d};
     use jackdaw_feathers::icons::{EditorFont, IconFont};
     use std::collections::HashSet;
 

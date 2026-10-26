@@ -1,4 +1,4 @@
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::mesh::AuroraMesh3d;
 use bevy::{
     input_focus::{FocusCause, InputFocus},
     light::RectLight,

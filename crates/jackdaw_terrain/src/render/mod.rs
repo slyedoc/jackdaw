@@ -19,7 +19,7 @@ use bevy::image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerD
 use bevy::prelude::*;
 // `resolve_with` and the splat cache read a plain PBR material for its texture handles;
 // on this branch that is aurora's.
-use bevy_aurora::material::AuroraMaterial;
+use ::aurora::material::AuroraMaterial;
 use path_slash::PathExt as _;
 use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
@@ -555,7 +555,7 @@ mod resolve_tests {
     use bevy::app::App;
     use bevy::asset::{AssetPlugin, AssetServer, Assets};
     use bevy::prelude::*;
-    use bevy_aurora::material::AuroraMaterial;
+    use ::aurora::material::AuroraMaterial;
 
     use super::{ResolvedSlots, resolve_with};
     use crate::sidecar::TerrainMaterialSlot;

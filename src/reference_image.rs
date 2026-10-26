@@ -4,11 +4,11 @@ use bevy::asset::LoadState;
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, futures_lite::future};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use path_slash::PathExt as _;
 
 use crate::selection::Selection;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
 
 /// A 2D reference picture in the scene. Serialized with the scene so
 /// front/side boards survive sessions. `locked` makes viewport clicks

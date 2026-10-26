@@ -4,8 +4,8 @@
 //! points at, the list to choose another from, and a Clear that takes the
 //! choice back out of the scene again.
 
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::AuroraMesh3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;

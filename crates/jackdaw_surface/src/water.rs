@@ -26,8 +26,8 @@
 
 use bevy::color::ColorToComponents;
 use bevy::prelude::*;
-use bevy_aurora::material::AuroraMaterial;
-use bevy_aurora::surface_group::SurfaceClass;
+use aurora::material::AuroraMaterial;
+use aurora::surface_group::SurfaceClass;
 use jackdaw_scene_types::{SceneWind, Wind};
 
 use crate::surface_class::{ExtendedSurface, Mirrors, mirror_extended};

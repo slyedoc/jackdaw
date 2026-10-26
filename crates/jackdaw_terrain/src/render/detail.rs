@@ -16,8 +16,8 @@ use bevy::math::{Affine3A, Mat3A};
 use bevy::mesh::{Indices, MeshVertexAttribute, PrimitiveTopology, VertexFormat};
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_scene_types::{
     DetailLayer, DetailMesh, DetailPresser, NavmeshExclude, SceneWind, Terrain, Wind,
 };

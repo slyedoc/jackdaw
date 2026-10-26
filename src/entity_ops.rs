@@ -585,7 +585,7 @@ pub fn create_entity(
         EntityTemplate::Environment => commands
             .spawn((
                 Name::new("Environment"),
-                bevy_aurora::environment::Environment::default(),
+                aurora::environment::Environment::default(),
                 Transform::default(),
                 Visibility::default(),
             ))

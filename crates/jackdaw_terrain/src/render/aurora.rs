@@ -10,7 +10,7 @@
 use ash::vk;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_aurora::{
+use aurora::{
     assets::aurora_asset,
     material::{AuroraMaterial, AuroraMaterial3d},
     render_buffer::{Buffer, BufferProvider},

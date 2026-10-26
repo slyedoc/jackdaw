@@ -19,7 +19,7 @@ use bevy::{
     prelude::*,
     window::SystemCursorIcon,
 };
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::mesh::AuroraMesh3d;
 use jackdaw_api::{
     DefaultArea, ExtensionPoint, HierarchyWindow, InspectorWindow, WidgetDefinition,
     prelude::{ExtensionContext, ExtensionKind, JackdawExtension, WindowDescriptor},
@@ -492,7 +492,7 @@ fn world_kind_icons() -> Vec<(String, Icon)> {
     use bevy::reflect::TypePath;
     vec![
         (
-            bevy_aurora::environment::Environment::type_path().to_string(),
+            aurora::environment::Environment::type_path().to_string(),
             Icon::CloudSun,
         ),
         (Camera::type_path().to_string(), Icon::Video),

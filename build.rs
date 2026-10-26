@@ -1,4 +1,4 @@
-// RPATH for libshaderc_shared.so.1: bevy_aurora links shaderc from the Vulkan SDK, and the
+// RPATH for libshaderc_shared.so.1: aurora links shaderc from the Vulkan SDK, and the
 // SDK's setup-env.sh puts only $VULKAN_SDK/lib/VulkanLoader/lib on LD_LIBRARY_PATH -- not
 // $VULKAN_SDK/lib, where shaderc actually lives. `cargo:rustc-link-arg` does NOT propagate
 // from a dependency's build script, so every binary in a downstream workspace embeds the

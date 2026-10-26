@@ -1,8 +1,8 @@
 //! The foliage material: an asset of its own that a mesh wears in place of its
 //! standard one, and that blows with the scene's wind.
 
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::AuroraMesh3d;
 use jackdaw_surface::foliage::Foliage3d;
 use std::path::{Path, PathBuf};
 

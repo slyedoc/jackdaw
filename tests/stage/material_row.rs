@@ -5,8 +5,8 @@
 //! row lists it and takes a choice, which lasts as long as the editor holds
 //! what put the mesh there.
 
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::AuroraMesh3d;
 use std::path::{Path, PathBuf};
 
 use bevy::prelude::*;

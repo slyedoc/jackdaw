@@ -40,7 +40,7 @@ pub(crate) fn plugin(app: &mut App) {
         (
             drive_shot_probe.run_if(crate::editor_active),
             // Aurora publishes the queue; a headless app has no render loop to fill it.
-            drain_window_captures.run_if(resource_exists::<bevy_aurora::util::ScreenshotRequests>),
+            drain_window_captures.run_if(resource_exists::<aurora::util::ScreenshotRequests>),
         ),
     );
     crate::camera_capture::plugin(app);
@@ -229,7 +229,7 @@ pub fn queue_window_capture(world: &mut World, path: PathBuf, exit_when_done: bo
         world.get_resource_or_init::<ExitAfterCapture>().0 = Some(path.clone());
     }
     world
-        .get_resource_or_init::<bevy_aurora::util::ScreenshotRequests>()
+        .get_resource_or_init::<aurora::util::ScreenshotRequests>()
         .request(path);
 }
 
@@ -240,7 +240,7 @@ struct ExitAfterCapture(Option<PathBuf>);
 /// Moves aurora's finished swapchain captures into [`CaptureLog`], which is what the
 /// remote screenshot method and the unattended run both poll.
 fn drain_window_captures(
-    mut requests: ResMut<bevy_aurora::util::ScreenshotRequests>,
+    mut requests: ResMut<aurora::util::ScreenshotRequests>,
     mut log: ResMut<CaptureLog>,
     mut exit_after: ResMut<ExitAfterCapture>,
     mut exit: MessageWriter<AppExit>,

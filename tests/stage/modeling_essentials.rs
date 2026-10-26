@@ -6,8 +6,8 @@
 //! order: removal marker, then regenerate.
 
 use crate::util;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw::brush::{

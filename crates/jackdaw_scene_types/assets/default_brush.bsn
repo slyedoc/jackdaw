@@ -1,5 +1,5 @@
 #default_brush
-bevy_aurora::material::AuroraMaterial {
+aurora::material::AuroraMaterial {
     base_color: bevy_color::color::Color::Srgba(bevy_color::srgba::Srgba { red: 0.98, green: 0.8549, blue: 0.3686, alpha: 1.0 }),
     base_color_texture: "embedded://jackdaw_scene_types/jd_grid.png",
     uv_transform: glam::Affine2 {

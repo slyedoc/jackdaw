@@ -27,14 +27,14 @@ use bevy::prelude::*;
 use crate::asset_catalog::AssetCatalog;
 use crate::prelude::*;
 use crate::project::ProjectRoot;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 /// Directory under `assets/` holding saved material files.
 pub const MATERIALS_DIR: &str = "materials";
 
 // The type path a saved material file carries: the editor authors `AuroraMaterial`, so that
 // is what `material_to_bsn` writes and what the loader looks up.
-const STANDARD_MATERIAL: &str = "bevy_aurora::material::AuroraMaterial";
+const STANDARD_MATERIAL: &str = "aurora::material::AuroraMaterial";
 
 /// The materials editor surfaces browse, in display order.
 ///
@@ -1081,7 +1081,7 @@ mod tests {
     #[test]
     fn a_missing_texture_file_loads_without_panicking_and_keeps_its_path() {
         let mut app = material_app();
-        let text = "#probe\nbevy_aurora::material::AuroraMaterial {\n\
+        let text = "#probe\naurora::material::AuroraMaterial {\n\
                     base_color_texture: \"t/does_not_exist.png\",\n}\n";
         let handle = load_material_bsn(app.world_mut(), text).expect("material still loads");
         let loaded = app

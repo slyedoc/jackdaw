@@ -6,7 +6,7 @@
 //! Headless, so no texture decodes and the surfaces carry the untextured
 //! material rather than the splat one.
 
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::path::{Path, PathBuf};
 
 use bevy::asset::AssetApp;
@@ -45,7 +45,7 @@ fn project(sidecar_bytes: Option<Vec<u8>>) -> tempfile::TempDir {
     std::fs::write(assets.join("catalog.bsn"), "// no catalog entries\n").expect("catalog");
     std::fs::write(
         assets.join("materials/grass.material.bsn"),
-        "#grass\nbevy_aurora::material::AuroraMaterial {\n    \
+        "#grass\naurora::material::AuroraMaterial {\n    \
          base_color_texture: \"textures/grass.png\",\n}\n",
     )
     .expect("material");

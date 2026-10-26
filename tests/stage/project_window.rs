@@ -2,7 +2,7 @@
 //! selects a file into the inspector and the kind filter stands in for the
 //! catalog listing that used to be a window of its own.
 
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 use std::path::{Path, PathBuf};
 
 use bevy::asset::{Asset, Assets};

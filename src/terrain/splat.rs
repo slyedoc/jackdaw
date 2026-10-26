@@ -28,7 +28,7 @@ use super::regions::{
 };
 use super::{TerrainDataStore, TerrainDirtyChunks};
 use crate::material_assets::MaterialRegistry;
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<TerrainSplatMaterials>().add_systems(

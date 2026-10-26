@@ -3,7 +3,7 @@
 //! `is_available` check, so the Edit menu and the command palette can grey the
 //! entry when it would be a no-op.
 use crate::util;
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw_api::prelude::*;

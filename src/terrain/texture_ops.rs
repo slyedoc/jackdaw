@@ -598,7 +598,7 @@ mod tests {
     use super::*;
     // Only the tests build materials here, so the import lives in the test module rather
     // than at file scope where it would be unused.
-    use bevy_aurora::material::AuroraMaterial;
+    use aurora::material::AuroraMaterial;
 
     /// Control words go in, the list is edited, and what each painted cell
     /// resolves to drawing comes out. Asserting on names alone would pass

@@ -152,7 +152,7 @@ use bevy::{
     prelude::*,
     ui_widgets::ValueChange,
 };
-use bevy_aurora::material::AuroraMaterial;
+use aurora::material::AuroraMaterial;
 use jackdaw_api::prelude::*;
 use jackdaw_api_internal::{
     ToAnchorId as _,

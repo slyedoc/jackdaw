@@ -11,8 +11,8 @@
 use bevy::math::Vec3;
 use bevy::prelude::*;
 
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 use jackdaw_geometry::{BrushTopology, triangulate_polygon};
 
 #[derive(Resource, Default)]

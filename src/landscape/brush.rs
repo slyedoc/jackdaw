@@ -10,7 +10,7 @@ use aurora_landscape::{
     SculptLayer, SculptPages,
 };
 use bevy::{platform::collections::HashMap, prelude::*};
-use bevy_aurora::render_device::RenderDevice;
+use aurora::render_device::RenderDevice;
 
 use super::LandscapeBrush;
 use crate::commands::{CommandHistory, EditorCommand};

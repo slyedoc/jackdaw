@@ -591,13 +591,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "ash-window",
+ "aurora_material",
+ "aurora_mesh",
+ "avian3d",
+ "bevy",
+ "bevy_animation_graph",
+ "bevy_hanabi",
+ "bevy_seedling",
+ "bincode 1.3.3",
+ "blake3",
+ "bytemuck",
+ "crossbeam",
+ "glam 0.33.10",
+ "gpu-allocator",
+ "half",
+ "libc",
+ "log",
+ "openxr",
+ "parry3d",
+ "png 0.17.16",
+ "rand 0.8.7",
+ "rand_chacha 0.3.1",
+ "raw-window-handle",
+ "rayon",
+ "thiserror 1.0.69",
+ "wgpu-types",
+]
+
+[[package]]
 name = "aurora_landscape"
 version = "0.1.0"
 dependencies = [
  "ash",
+ "aurora",
  "avian3d",
  "bevy",
- "bevy_aurora",
  "bevy_seedling",
  "bytemuck",
  "gpu-allocator",
@@ -892,36 +925,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
-]
-
-[[package]]
-name = "bevy_aurora"
-version = "0.1.0"
-dependencies = [
- "ash",
- "ash-window",
- "aurora_material",
- "aurora_mesh",
- "avian3d",
- "bevy",
- "bevy_animation_graph",
- "bevy_seedling",
- "blake3",
- "bytemuck",
- "crossbeam",
- "glam 0.33.10",
- "gpu-allocator",
- "half",
- "libc",
- "log",
- "openxr",
- "png 0.17.16",
- "rand 0.8.7",
- "rand_chacha 0.3.1",
- "raw-window-handle",
- "rayon",
- "thiserror 1.0.69",
- "wgpu-types",
 ]
 
 [[package]]
@@ -1404,6 +1407,23 @@ dependencies = [
  "thiserror 2.0.20",
  "tracing",
  "wgpu-types",
+]
+
+[[package]]
+name = "bevy_hanabi"
+version = "0.20.0-dev"
+dependencies = [
+ "anyhow",
+ "bevy",
+ "bitflags 2.13.1",
+ "bytemuck",
+ "fixedbitset",
+ "getrandom 0.4.3",
+ "rand 0.10.2",
+ "rand_pcg",
+ "ron 0.12.2",
+ "serde",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -1952,7 +1972,7 @@ dependencies = [
  "bevy_shape",
  "bevy_tasks",
  "bevy_transform",
- "bincode",
+ "bincode 2.0.1",
  "glam 0.33.10",
  "rerecast",
  "serde",
@@ -2370,6 +2390,15 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "uuid",
+]
+
+[[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -3860,9 +3889,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
  "rand_core 0.10.1",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3966,6 +3997,7 @@ dependencies = [
  "approx",
  "glam 0.33.10",
  "num-traits",
+ "serde",
  "simba",
 ]
 
@@ -4523,12 +4555,12 @@ version = "0.19.0"
 dependencies = [
  "anyhow",
  "arboard",
+ "aurora",
  "aurora_landscape",
  "avian3d",
  "base64 0.22.1",
  "bevy",
  "bevy_animation_graph",
- "bevy_aurora",
  "bevy_enhanced_input",
  "bevy_monitors",
  "bevy_rerecast",
@@ -4798,8 +4830,8 @@ dependencies = [
 name = "jackdaw_node_graph"
 version = "0.19.0"
 dependencies = [
+ "aurora",
  "bevy",
- "bevy_aurora",
  "bevy_enhanced_input",
  "bevy_monitors",
  "jackdaw_commands",
@@ -4835,9 +4867,9 @@ dependencies = [
 name = "jackdaw_runtime"
 version = "0.19.0"
 dependencies = [
+ "aurora",
  "avian3d",
  "bevy",
- "bevy_aurora",
  "jackdaw_animation_runtime",
  "jackdaw_avian_integration",
  "jackdaw_bind",
@@ -4902,8 +4934,8 @@ name = "jackdaw_surface"
 version = "0.19.0"
 dependencies = [
  "ash",
+ "aurora",
  "bevy",
- "bevy_aurora",
  "bytemuck",
  "jackdaw_scene_types",
 ]
@@ -4913,8 +4945,8 @@ name = "jackdaw_terrain"
 version = "0.19.0"
 dependencies = [
  "ash",
+ "aurora",
  "bevy",
- "bevy_aurora",
  "bevy_math",
  "bytemuck",
  "jackdaw_scene_types",
@@ -6283,6 +6315,8 @@ dependencies = [
  "ordered-float",
  "rayon",
  "rstar",
+ "serde",
+ "serde_arrays",
  "simba",
  "slab",
  "smallvec",
@@ -6740,6 +6774,15 @@ checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
  "rand 0.10.2",
+]
+
+[[package]]
+name = "rand_pcg"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caa0f4137e1c0a72f4c651489402276c8e8e1cf081f3b0ba156d2cbeef09e86a"
+dependencies = [
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -7254,6 +7297,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_arrays"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a16b99c5ea4fe3daccd14853ad260ec00ea043b2708d1fd1da3106dcd8d9df"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7472,6 +7524,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "num-traits",
  "robust",
+ "serde",
  "smallvec",
 ]
 

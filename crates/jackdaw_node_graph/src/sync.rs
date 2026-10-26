@@ -13,7 +13,7 @@
 
 use bevy::ecs::relationship::Relationship;
 use bevy::prelude::*;
-use bevy_aurora::ui_render::UiPolyline;
+use aurora::ui_render::UiPolyline;
 use std::collections::HashMap;
 
 use crate::canvas::{GraphCanvasViewport, GraphCanvasWorld};

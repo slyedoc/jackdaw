@@ -37,7 +37,7 @@ use bevy_animation_graph::core::{
     skeleton::Skeleton,
     state_machine::high_level::{StateId, StateMachine},
 };
-use bevy_aurora::ui_render::UiPolyline;
+use aurora::ui_render::UiPolyline;
 use uuid::Uuid;
 
 use std::any::TypeId;

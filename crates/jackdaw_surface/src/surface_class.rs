@@ -8,7 +8,7 @@
 use ash::vk;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
-use bevy_aurora::{
+use aurora::{
     assets::aurora_asset,
     material::{AuroraMaterial, AuroraMaterial3d},
     render_buffer::{Buffer, BufferProvider},
@@ -126,7 +126,7 @@ fn sync_materials(
             handle
                 .as_ref()
                 .and_then(|h| textures.get_by_id(h.id()))
-                .map_or(bevy_aurora::render_env::WHITE_TEXTURE_IDX, |texture| {
+                .map_or(aurora::render_env::WHITE_TEXTURE_IDX, |texture| {
                     render_device.register_bindless_texture(texture)
                 })
         };

@@ -10,7 +10,7 @@ one above it, so a change only ever flows DOWN:
       |         whole graph -- see the `[patch]` table in Cargo.toml and the commit
       |         message on 5d5c0dc for why the manifest names upstream git urls.
       |
-    aurora      swaps bevy_render for `bevy_aurora`, the pure-Vulkan ray tracer.
+    aurora      swaps bevy_render for `aurora`, the pure-Vulkan ray tracer.
 
 To take upstream work: merge into `main`, then `main` -> `bevy-main`, then
 `bevy-main` -> `aurora`. Never merge upstream straight into a lower branch; the
@@ -25,7 +25,7 @@ The patch table redirects every bevy crate to `../bevy`, so this repo expects:
 
     /mnt/code/f/bevy        slyedoc/bevy, branch `aurora`
     /mnt/code/f/jackdaw     this repo
-    /mnt/code/p/aurora      slyedoc/aurora (crate `bevy_aurora`)
+    /mnt/code/p/zero        slyedoc/zero (crate `aurora` in crates/aurora)
 
 ## Build
 

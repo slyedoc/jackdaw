@@ -243,7 +243,7 @@ mod tests {
         // registrations are what let an unsaved material be written into the scene inline
         // rather than as a dangling `@Name`.
         {
-            use bevy_aurora::material::{AlphaMode, AuroraMaterial, Face, ParallaxMappingMethod};
+            use aurora::material::{AlphaMode, AuroraMaterial, Face, ParallaxMappingMethod};
             app.init_asset::<AuroraMaterial>()
                 .register_type::<AuroraMaterial>()
                 .register_type::<AlphaMode>()
@@ -267,7 +267,7 @@ mod tests {
     // bare `@Name` would resolve to nothing outside this editor run.
     #[test]
     fn an_unsaved_catalog_material_embeds_inline_instead_of_emitting_a_name() {
-        use bevy_aurora::material::AuroraMaterial;
+        use aurora::material::AuroraMaterial;
         use jackdaw_scene_types::Brush;
 
         let mut app = material_snapshot_app();
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     #[ignore = "bevy_bsn_asset writes an inline asset inside a Vec it cannot read back (Handle outside a template)"]
     fn bsn_snapshot_embeds_runtime_face_material() {
-        use bevy_aurora::material::AuroraMaterial;
+        use aurora::material::AuroraMaterial;
         use jackdaw_scene_types::Brush;
 
         let mut app = material_snapshot_app();

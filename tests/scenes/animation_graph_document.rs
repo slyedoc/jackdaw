@@ -441,7 +441,7 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     // A rig as aurora_files bakes one: bones named by a `Name` component, no root Transform.
     std::fs::write(
         assets.join("ual/Mannequin.bsn"),
-        "#Mannequin\nbevy_ecs::hierarchy::Children [\n    bevy_ecs::name::Name(\"Armature\")\n    bevy_transform::components::transform::Transform\n    bevy_aurora::material::AuroraMaterial3d(\n        bevy_aurora::material::AuroraMaterial {\n            base_color: bevy_color::color::Color::LinearRgba(bevy_color::linear_rgba::LinearRgba { red: 0.8, green: 0.4, blue: 0.0, alpha: 1.0 }),\n        },\n    )\n]\n",
+        "#Mannequin\nbevy_ecs::hierarchy::Children [\n    bevy_ecs::name::Name(\"Armature\")\n    bevy_transform::components::transform::Transform\n    aurora::material::AuroraMaterial3d(\n        aurora::material::AuroraMaterial {\n            base_color: bevy_color::color::Color::LinearRgba(bevy_color::linear_rgba::LinearRgba { red: 0.8, green: 0.4, blue: 0.0, alpha: 1.0 }),\n        },\n    )\n]\n",
     )
     .unwrap();
     std::fs::write(assets.join("ual/Mannequin.skn.ron"), "()").unwrap();
@@ -523,13 +523,13 @@ fn a_new_character_is_a_prefab_of_the_rig_with_a_starter_graph() {
     // A material written inline in the rig is a real material, not an empty handle.
     let material = app
         .world()
-        .get::<bevy_aurora::material::AuroraMaterial3d>(armature)
+        .get::<aurora::material::AuroraMaterial3d>(armature)
         .expect("the bone carries its material")
         .0
         .clone();
     let material = app
         .world()
-        .resource::<Assets<bevy_aurora::material::AuroraMaterial>>()
+        .resource::<Assets<aurora::material::AuroraMaterial>>()
         .get(&material)
         .expect("the inline material was added to the store");
     assert_eq!(

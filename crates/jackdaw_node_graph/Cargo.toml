@@ -11,7 +11,7 @@ include = ["src/**/*", "Cargo.toml", "LICENSE*"]
 [dependencies]
 bevy.workspace = true
 # Connection wires are drawn as UiPolyline segments by aurora's ui_render.
-bevy_aurora.workspace = true
+aurora.workspace = true
 bevy_monitors.workspace = true
 bevy_enhanced_input.workspace = true
 jackdaw_widgets.workspace = true

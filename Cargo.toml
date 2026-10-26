@@ -44,7 +44,7 @@ members = ["crates/*"]
 
 [dependencies]
 bevy = { workspace = true, features = ["system_font_discovery"] }
-bevy_aurora.workspace = true
+aurora.workspace = true
 aurora_landscape.workspace = true
 bytemuck = "1"
 # Types only: the editor registers the binding components so they are
@@ -278,15 +278,15 @@ rfd = "0.15"
 # `StandardMaterial` overlay, so it drags bevy_pbr and the whole wgpu stack in for a
 # feature this editor never calls. `editor_integration` (a default) does the same.
 bevy_rerecast = { version = "0.5.0", default-features = false, features = ["bevy_mesh"] }
-# The renderer. Named by its upstream url like every other fork here; the
-# `[patch]` section below swaps in the side-by-side checkout at ../../p/aurora.
-bevy_aurora = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+# The renderer, a crate of zero (crates/aurora). Named by its upstream url like every other fork
+# here; `.cargo/local.toml` swaps in the side-by-side zero checkout.
+aurora = { git = "https://github.com/slyedoc/zero.git", branch = "main" }
 # The material as data, no Vulkan: for the crates that only name materials.
-aurora_material = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+aurora_material = { git = "https://github.com/slyedoc/zero.git", branch = "main" }
 # The mesh as data, no Vulkan: for the crates that build traced meshes.
-aurora_mesh = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+aurora_mesh = { git = "https://github.com/slyedoc/zero.git", branch = "main" }
 # Layered terrain (height / material / scatter stacks over GPU pages).
-aurora_landscape = { git = "https://github.com/slyedoc/aurora.git", branch = "main" }
+aurora_landscape = { git = "https://github.com/slyedoc/zero.git", branch = "main" }
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 anyhow = { version = "1", default-features = false }
 dirs = "6"

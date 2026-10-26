@@ -30,7 +30,7 @@
 //!   failed for that mtime and skipped until the file changes.
 
 use crate::image_capture::{ImageCapture, ImageCaptured};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -49,8 +49,8 @@ use path_slash::PathExt as _;
 
 use crate::asset_index::AssetIndex;
 use crate::entity_ops::GltfSource;
-use bevy_aurora::environment::Environment;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::environment::Environment;
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
 
 /// Edge of the square render target, in pixels. The browser draws the result
 /// at [`THUMBNAIL_DISPLAY_SIZE`]; rendering larger keeps it crisp on a

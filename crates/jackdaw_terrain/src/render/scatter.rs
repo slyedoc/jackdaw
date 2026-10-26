@@ -23,8 +23,8 @@ use bevy::log::warn;
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy::scene::ScenePatch;
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 
 use crate::placement::{ScatterPalette, ScatterPaletteEntry, ScatterPlacement, is_prefab_asset};
 use crate::region::RegionCoord;

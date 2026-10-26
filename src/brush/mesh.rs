@@ -10,8 +10,8 @@ use super::{BrushMaterialPalette, BrushMeshCache, BrushPreview};
 use crate::default_style;
 use crate::draw_brush::DrawBrushState;
 use crate::selection::Selected;
-use bevy_aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d};
+use aurora::material::{AlphaMode, AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d};
 use jackdaw_geometry::{compute_brush_geometry_from_planes, compute_face_tangent_axes};
 use jackdaw_scene_types::BrushFaceData;
 

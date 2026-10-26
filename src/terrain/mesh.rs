@@ -6,8 +6,8 @@ use jackdaw_terrain::render::TerrainSplat3d;
 use super::regions::{TerrainRegionView, region_of};
 use super::{CHUNK_SIZE, TerrainDataStore, TerrainDirtyChunks, TerrainPaintState, TerrainSurface};
 use crate::viewport::{ActiveViewport, MainViewportCamera};
-use bevy_aurora::material::{AuroraMaterial, AuroraMaterial3d};
-use bevy_aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
+use aurora::material::{AuroraMaterial, AuroraMaterial3d};
+use aurora::mesh::{AuroraMesh, AuroraMesh3d, Triangles};
 
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(

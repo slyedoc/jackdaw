@@ -5,7 +5,7 @@
 //! menu, so a kind looks the same wherever it is named.
 
 use crate::util;
-use bevy_aurora::mesh::AuroraMesh3d;
+use aurora::mesh::AuroraMesh3d;
 
 use bevy::prelude::*;
 use jackdaw::hierarchy::HierarchyTreeContainer;
