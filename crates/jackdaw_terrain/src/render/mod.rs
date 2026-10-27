@@ -4,7 +4,8 @@
 //! buildable with no GPU crate in the graph.
 //!
 //! A surface wearing one ([`TerrainSplat3d`]) traces through aurora's surface class for it
-//! (`aurora.rs`, `terrain_splat.slang`), which reads each slot's own maps bindless.
+//! (`aurora.rs`, `terrain_splat.slang`), which reads each slot's own maps through descriptor
+//! handles.
 //!
 //! [`resolve_with`] maps each slot onto a [`TextureSetEntry`] and its images; finding the
 //! material behind a name is the host's job, done through the closure passed to it.

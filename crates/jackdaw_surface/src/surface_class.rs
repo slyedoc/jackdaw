@@ -10,9 +10,11 @@ use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use aurora::{
     assets::aurora_asset,
+    descriptor_heap::GpuHandle,
     material::{AuroraMaterial, AuroraMaterial3d},
     render_buffer::{Buffer, BufferProvider},
     render_device::RenderDevice,
+    render_env::WHITE_TEXTURE,
     surface_group::{
         LayeredParams, SurfaceClass, SurfaceGroup, SurfaceGroupData, SurfaceGroupRegistry,
     },
@@ -120,14 +122,14 @@ fn sync_materials(
         };
         data.set_row(mirror.id(), row);
 
-        // Bindless slots for the six triplanar maps. A map still loading resolves to white
+        // Descriptor handles for the six triplanar maps. A map still loading resolves to white
         // this frame; the asset event when it lands brings us back through here.
-        let slot = |handle: &Option<Handle<Image>>| -> u32 {
+        let slot = |handle: &Option<Handle<Image>>| -> GpuHandle {
             handle
                 .as_ref()
                 .and_then(|h| textures.get_by_id(h.id()))
-                .map_or(aurora::render_env::WHITE_TEXTURE_IDX, |texture| {
-                    render_device.register_bindless_texture(texture)
+                .map_or(WHITE_TEXTURE, |texture| {
+                    render_device.texture_handle(texture)
                 })
         };
         let params = LayeredParams {

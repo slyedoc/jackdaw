@@ -4,18 +4,19 @@
 //!
 //! A surface wearing [`TerrainSplat3d`] gets the material's mirror `AuroraMaterial` (whose
 //! record carries the row) and the class. The row is rebuilt every frame and written when it
-//! changed: texture slots resolve to bindless indices as aurora finishes uploading them, and a
-//! re-uploaded image (a tint stroke) comes back under a new index.
+//! changed: texture slots resolve to descriptor handles as aurora finishes uploading them, and a
+//! re-uploaded image (a tint stroke) comes back under a new handle.
 
 use ash::vk;
 use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use aurora::{
     assets::aurora_asset,
+    descriptor_heap::GpuHandle,
     material::{AuroraMaterial, AuroraMaterial3d},
     render_buffer::{Buffer, BufferProvider},
     render_device::RenderDevice,
-    render_env::WHITE_TEXTURE_IDX,
+    render_env::WHITE_TEXTURE,
     surface_group::{SurfaceClass, SurfaceGroup, SurfaceGroupData, SurfaceGroupRegistry},
     vulkan_asset::VulkanAssets,
 };
@@ -37,11 +38,11 @@ const HAS_ROUGHNESS: u32 = 32;
 struct SplatSlotGpu {
     uv_scale: f32,
     detile: f32,
-    albedo: u32,
-    normal: u32,
-    height: u32,
-    occlusion: u32,
-    roughness: u32,
+    albedo: GpuHandle,
+    normal: GpuHandle,
+    height: GpuHandle,
+    occlusion: GpuHandle,
+    roughness: GpuHandle,
     flags: u32,
 }
 
@@ -62,9 +63,8 @@ struct TerrainSplatGpu {
     autoterrain_slope_start: f32,
     autoterrain_slope_end: f32,
     tint_strength: f32,
-    tint: u32,
+    tint: GpuHandle,
     terrain_origin: [f32; 2],
-    pad: u32,
     slots: [SplatSlotGpu; MAX_TEXTURES],
 }
 
@@ -263,11 +263,11 @@ fn sync_rows(
             entry.maps_dirty = entry.control.is_none();
         }
 
-        let index = |handle: Option<&Handle<Image>>| -> Option<u32> {
+        let index = |handle: Option<&Handle<Image>>| -> Option<GpuHandle> {
             let texture = textures.get_by_id(handle?.id())?;
-            Some(rd.register_bindless_texture(texture))
+            Some(rd.texture_handle(texture))
         };
-        let pick = |list: &Vec<Option<Handle<Image>>>, slot: usize| -> Option<u32> {
+        let pick = |list: &Vec<Option<Handle<Image>>>, slot: usize| -> Option<GpuHandle> {
             index(list.get(slot).and_then(Option::as_ref))
         };
         let mut slots = [SplatSlotGpu::default(); MAX_TEXTURES];
@@ -278,8 +278,8 @@ fn sync_rows(
             );
             let bit = |mask: u32| mask & (1 << slot) != 0;
             let mut flags = 0;
-            let mut take = |found: Option<u32>, flag: u32| {
-                found.map_or(WHITE_TEXTURE_IDX, |i| {
+            let mut take = |found: Option<GpuHandle>, flag: u32| {
+                found.map_or(WHITE_TEXTURE, |i| {
                     flags |= flag;
                     i
                 })
@@ -323,9 +323,8 @@ fn sync_rows(
             autoterrain_slope_start: splat.autoterrain_slope_start,
             autoterrain_slope_end: splat.autoterrain_slope_end,
             tint_strength: splat.tint_strength,
-            tint: index(Some(&splat.tint)).unwrap_or(WHITE_TEXTURE_IDX),
+            tint: index(Some(&splat.tint)).unwrap_or(WHITE_TEXTURE),
             terrain_origin: splat.terrain_origin.to_array(),
-            pad: 0,
             slots,
         };
         if entry.written != Some(row) {
@@ -368,10 +367,10 @@ fn shed_class(remove: On<Remove<TerrainSplat3d>>, mut commands: Commands) {
 mod tests {
     use super::*;
 
-    /// The row is read by address with the shader's layout; `TerrainSplat` there is 592 bytes.
+    /// The row is read by address with the shader's layout; `TerrainSplat` there is 912 bytes.
     #[test]
     fn the_row_is_the_shaders_size() {
-        assert_eq!(size_of::<SplatSlotGpu>(), 32);
-        assert_eq!(size_of::<TerrainSplatGpu>(), 80 + 32 * MAX_TEXTURES);
+        assert_eq!(size_of::<SplatSlotGpu>(), 52);
+        assert_eq!(size_of::<TerrainSplatGpu>(), 80 + 52 * MAX_TEXTURES);
     }
 }
