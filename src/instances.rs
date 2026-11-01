@@ -72,6 +72,7 @@ pub fn place_instance(
         base_span: None,
         patches: Vec::new(),
         relations: Vec::new(),
+        descendant_patches: Vec::new(),
     });
     document.push_root(root);
     let registry = world.resource::<AppTypeRegistry>().clone();
